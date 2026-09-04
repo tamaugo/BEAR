@@ -1,0 +1,10 @@
+{
+  "packages": [
+    "npm:pi-tmux-subagents",
+    "git:github.com/amosblomqvist/pi-interactive-subagents",
+    "git:github.com/amosblomqvist/pi-observational-memory",
+    "git:github.com/amosblomqvist/pi-dictate"
+  ],
+  "lastChangelogVersion": "0.84.3",
+  "theme": "dark"
+}

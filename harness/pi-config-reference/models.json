@@ -1,0 +1,11 @@
+{
+  "providers": {
+    "openrouter": {
+      "modelOverrides": {
+        "meta/muse-spark-1.3": {
+          "maxTokens": 16384
+        }
+      }
+    }
+  }
+}

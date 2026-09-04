@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Prose docs — deliberately excluded pending a rewrite; a master file will replace them.
+# Files are on disk, just untracked. Remove this line to start tracking them.
+docs/
+
+# Session working notes — handoffs and context snapshots, prose in flux
+session-notes/
+
+# Claude Code local settings (machine-specific)
+.claude/
+
+# Dependencies
+harness/.pi/npm/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# Harness working copies — canonical copies are tracked under tests/
+harness/photos/
+harness/output/
+harness/agent2_dummy_input.md
+harness/agent3_dummy_input.md
+
+# Stray duplicate of .pi/agents left behind by a pipeline run. Its agent1 copy is
+# missing `tools: read` and would reintroduce the recursion bug if restored. Delete it.
+harness/agents/
+
+# Ad-hoc test scripts from debugging sessions
+harness/test_*.sh
+harness/test_subagent.md

@@ -1,0 +1,31 @@
+{
+  "packages": [
+    {
+      "source": "npm:@baryonlabs/pi-agent-harness",
+      "extensions": [
+        "+extensions/subagent/index.ts"
+      ]
+    },
+    {
+      "source": "git:github.com/amosblomqvist/pi-dictate",
+      "autoload": false,
+      "extensions": [
+        "+index.ts"
+      ]
+    },
+    {
+      "source": "git:github.com/amosblomqvist/pi-observational-memory",
+      "autoload": false,
+      "extensions": [
+        "-src/index.ts"
+      ]
+    },
+    {
+      "source": "git:github.com/amosblomqvist/pi-interactive-subagents",
+      "autoload": false,
+      "extensions": [
+        "-pi-extension/subagents/index.ts"
+      ]
+    }
+  ]
+}
