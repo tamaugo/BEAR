@@ -31,3 +31,10 @@ harness/agents/
 # Ad-hoc test scripts from debugging sessions
 harness/test_*.sh
 harness/test_subagent.md
+
+# Real customer job data must never be committed. It lives OUTSIDE this repo at
+# ~/Desktop/ebay-jobs/ — these patterns are a safety net in case anything lands here.
+jobs/
+job-data/
+real-data/
+*_job/

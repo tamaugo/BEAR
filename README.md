@@ -49,6 +49,14 @@ Then `/run-pipeline` inside the session. Outputs land in `harness/output/`.
 **Launch with no flags.** Do not pass `-ne` (it strips the `subagent` tool the pipeline needs) or
 `--tools` (a strict allowlist that would disable the built-in read/write tools).
 
+## Real job data
+
+Real customer photographs and job output live **outside this repo**, at `~/Desktop/ebay-jobs/`, one
+folder per vehicle. That separation is deliberate: this repo goes to GitHub, and customer data must
+not follow it there. See that folder's README for the job convention and pre-run checklist.
+
+Only the 9-photo test set in `tests/photos/` belongs in version control.
+
 ## Configuration that is load-bearing
 
 Two files outside this repo make the pipeline work. Reference copies are in
