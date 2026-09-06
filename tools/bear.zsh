@@ -3,6 +3,11 @@
 # Sourced from ~/.zshrc. Puts you in the harness with pi running and everything
 # pre-flighted. Edit this file, not ~/.zshrc — it is version controlled.
 #
+# Credentials are read from the macOS Keychain if not already exported, so they
+# never sit in plaintext in a dotfile. Store them once with:
+#   security add-generic-password -a "$USER" -s ebay-app-id  -w
+#   security add-generic-password -a "$USER" -s ebay-cert-id -w
+#
 #   BEAR         pre-flight, then launch pi in the harness (inside tmux)
 #   BEAR check   pre-flight only, do not launch
 #   BEAR raw     launch pi without tmux
@@ -23,15 +28,30 @@ _bear_preflight() {
     print -P "  %F{red}FAIL%f harness missing at $BEAR_HARNESS"; ok=0
   fi
 
-  # 2. eBay credentials — presence and length only, never the values
+  # 2. eBay credentials — presence and length only, never the values.
+  #    If not already exported, pull them from the macOS Keychain.
+  if [[ -z "$EBAY_APP_ID" || -z "$EBAY_CERT_ID" ]]; then
+    local k_app k_cert
+    k_app=$(security find-generic-password -a "$USER" -s ebay-app-id -w 2>/dev/null)
+    k_cert=$(security find-generic-password -a "$USER" -s ebay-cert-id -w 2>/dev/null)
+    if [[ -n "$k_app" && -n "$k_cert" ]]; then
+      export EBAY_APP_ID="$k_app" EBAY_CERT_ID="$k_cert"
+      print -P "  %F{green}OK%f   eBay creds loaded from Keychain"
+    fi
+    unset k_app k_cert
+  fi
   if [[ -n "$EBAY_APP_ID" && -n "$EBAY_CERT_ID" ]]; then
     print -P "  %F{green}OK%f   eBay creds set (App ID ${#EBAY_APP_ID} chars, Cert ID ${#EBAY_CERT_ID} chars)"
     [[ ${#EBAY_APP_ID} -lt 38 ]] && print -P "  %F{yellow}WARN%f App ID looks short — the Dev ID is 36 chars and is NOT the App ID"
     [[ "$EBAY_CERT_ID" != PRD-* ]] && print -P "  %F{yellow}WARN%f Cert ID does not start PRD- — sandbox keys fail against production"
   else
-    print -P "  %F{red}FAIL%f eBay creds not set in THIS shell. Agent 2 will fail on every lookup."
-    print    "       export EBAY_APP_ID=\"...\" && export EBAY_CERT_ID=\"...\""
-    print    "       (they must be set before pi starts — child agents inherit its environment)"
+    print -P "  %F{red}FAIL%f No eBay credentials, in this shell or the Keychain."
+    print    "       Store them once (each prompts silently, nothing hits shell history):"
+    print    "         security add-generic-password -a \"\$USER\" -s ebay-app-id  -w"
+    print    "         security add-generic-password -a \"\$USER\" -s ebay-cert-id -w"
+    print    "       BEAR then loads them automatically in every new shell."
+    print    "       Or export them by hand for one session:"
+    print    "         export EBAY_APP_ID=\"...\" && export EBAY_CERT_ID=\"...\""
     ok=0
   fi
 
