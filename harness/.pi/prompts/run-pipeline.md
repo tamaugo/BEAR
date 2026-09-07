@@ -51,8 +51,13 @@ and asks the operator before every agent — unnecessary here.
 On a previous run the coordinator cost $0.059 while the agent it was coordinating cost $0.0043 —
 fourteen times the price of the actual work, almost all of it avoidable exploration.
 
-- **Do not explore the filesystem.** Everything needed is stated here. Do not `ls` the agents
-  directory, do not `grep` agent frontmatter, do not inspect `.pi/`.
+- **Do not rediscover configuration.** Everything about the setup is stated here. Do not `ls` the
+  agents directory, do not `grep` agent frontmatter, do not inspect `.pi/`.
+- **But DO look at the input data.** Listing the photo folder and the output folder is required
+  work, not exploration. The rule above is about configuration you have already been told; it never
+  applies to the images you are being asked to process. A previous run read it too broadly, never
+  listed `photos/`, guessed at a filename pattern, matched nothing, and reported an empty folder
+  that held four images. **Never conclude a folder is empty without listing it.**
 - The three agents are `agent1-part-reader`, `agent2-ebay-lookup`, `agent3-compiler`. They exist,
   they are project-local, they are configured correctly. Take that as given.
 - `./photos` holds the images. `./output` is the output folder.
