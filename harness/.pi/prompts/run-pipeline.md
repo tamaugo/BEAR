@@ -59,6 +59,19 @@ fourteen times the price of the actual work, almost all of it avoidable explorat
 - Delegate, write the file, move on. Do not re-read a file you just wrote, do not summarise
   intermediate results to yourself, and do not verify an agent's work beyond the counts asked for.
 
+## Finding the photos — read this before listing anything
+
+Image files in this project are usually **uppercase `.JPEG`**, and filenames **may contain spaces**.
+Both have caused a run to fail by reporting an empty folder that was not empty.
+
+- **Never glob for lowercase extensions.** `photos/*.jpg` and `photos/*.jpeg` match nothing here even
+  though the files exist, because globbing is case-sensitive regardless of the filesystem.
+- **List the directory itself** (`ls photos/`) rather than globbing by extension, and ignore
+  `.DS_Store`.
+- **Always quote paths.** `"photos/0118 part number.JPEG"`, never `photos/0118 part number.JPEG`.
+- If a folder looks empty, **say what command you ran and stop** — do not conclude it is empty. It
+  has been wrong every time so far.
+
 ## Inputs (ask the user if not already given)
 
 - Car make and year (required — Agent 1 needs it for its format sanity check)
