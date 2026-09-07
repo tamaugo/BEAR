@@ -38,16 +38,67 @@ Only their changelog footers differ.
 ## Running it
 
 ```bash
-cd harness
-cp -n ../tests/photos/* photos/ 2>/dev/null || true   # first run only
-export EBAY_APP_ID="..." && export EBAY_CERT_ID="..."
-pi
+BEAR
 ```
 
-Then `/run-pipeline` inside the session. Outputs land in `harness/output/`.
+That is the whole thing. **B**atch **e**Bay **A**gentic **R**etrieval — it cds into the harness,
+loads the eBay credentials, pre-flights the known failure modes and starts pi inside tmux. Then type
+`/run-pipeline` in the session. Outputs land in `harness/output/`.
 
-**Launch with no flags.** Do not pass `-ne` (it strips the `subagent` tool the pipeline needs) or
-`--tools` (a strict allowlist that would disable the built-in read/write tools).
+`BEAR check` runs the pre-flight without launching. `BEAR raw` skips tmux.
+
+**Launch with no flags** if you ever start pi by hand. Do not pass `-ne` (it strips the `subagent`
+tool the pipeline needs) or `--tools` (a strict allowlist that would disable the built-in read/write
+tools the orchestration uses).
+
+### Setting BEAR up on a new machine
+
+The function itself lives in `tools/bear.zsh` and is version controlled, but the hook that activates
+it is a line in `~/.zshrc`, which is not. On a fresh clone you need both steps.
+
+**1. Source it from your shell profile.** Adjust the path if the repo is not on your Desktop:
+
+```bash
+echo 'source "$HOME/Desktop/ebay-pipeline/tools/bear.zsh"' >> ~/.zshrc && source ~/.zshrc
+```
+
+**2. Store the eBay credentials once, in the macOS Keychain.** Each command prompts silently, so the
+secret never appears on screen or in shell history:
+
+```bash
+security add-generic-password -a "$USER" -s ebay-app-id  -w
+security add-generic-password -a "$USER" -s ebay-cert-id -w
+```
+
+BEAR loads them into the environment on every launch, so they do not need re-exporting per terminal
+tab — and child agents inherit them from pi, which they must. Keychain is used rather than a
+plaintext line in `~/.zshrc` deliberately: this repo is public, and secrets should not sit in a
+dotfile that might get shared or backed up.
+
+To replace a stored value, delete it first — `add-generic-password` will not overwrite silently:
+
+```bash
+security delete-generic-password -a "$USER" -s ebay-cert-id
+```
+
+Use `EBAY_APP_ID` / `EBAY_CERT_ID` environment variables instead if you ever want a one-off run with
+different keys; an explicit export always beats the Keychain.
+
+**Caveat:** the `source` line hard-codes a path. Move this folder and `BEAR` silently stops working
+until `~/.zshrc` is updated.
+
+### What the pre-flight checks
+
+Not generic health checks — these are the four things that have actually broken this project:
+
+- **eBay credentials present in the launching shell.** Warns if the App ID looks like the 36-char
+  Dev ID, or the Cert ID is not `PRD-` prefixed. Reports lengths only, never values.
+- **`~/.pi/agent/models.json` output-token cap** — without it every Agent 2 and 3 call returns a 402.
+- **The subagent extension collision fix** in `.pi/settings.json` — without it every spawned agent
+  dies silently with `(no output)`.
+- **Harness and agent files present and parseable.**
+
+A failed pre-flight stops rather than launching into a run that would die partway through.
 
 ## Real job data
 
