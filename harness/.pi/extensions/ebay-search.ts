@@ -35,10 +35,90 @@ interface EbayItemSummary {
 	condition?: string;
 	seller?: { username?: string };
 	itemWebUrl?: string;
+	// Everything below arrives only with fieldgroups=EXTENDED, and even then
+	// not on every listing. These declarations are a hint about the shape we
+	// hope for, NOT a guarantee — the payload is unvalidated JSON from eBay, so
+	// every read below re-checks the type at runtime instead of trusting this.
+	shortDescription?: string;
+	mpn?: string;
+	subtitle?: string;
+	localizedAspects?: Array<{ type?: string; name?: string; value?: string }>;
+	image?: { imageUrl?: string };
+	thumbnailImages?: Array<{ imageUrl?: string }>;
 }
 
 function normalize(s: string): string {
 	return s.replace(/[\s-]/g, "").toUpperCase();
+}
+
+/** A non-empty string, or null. Anything else (number, null, object) is null. */
+function asNonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Every string on a search result that could plausibly carry the part number:
+ * the title, plus whatever fieldgroups=EXTENDED attached.
+ *
+ * Deliberately defensive. EXTENDED's payload is not uniform — which extra
+ * fields eBay sends varies by listing and by category, and any of them may be
+ * absent or an unexpected shape. A single malformed listing must never throw
+ * and kill a whole job, so this reads what is there and silently skips what
+ * isn't. Mirrors extract_match_text() in ../../ebay_browse_lookup.py.
+ */
+function extractMatchText(item: EbayItemSummary): string[] {
+	const chunks: string[] = [];
+	const record = item as unknown as Record<string, unknown>;
+
+	for (const key of ["title", "shortDescription", "mpn", "subtitle"]) {
+		const value = asNonEmptyString(record[key]);
+		if (value) chunks.push(value);
+	}
+
+	// Item specifics: a list of {type,name,value}. Take BOTH the name and the
+	// value of every entry. Restricting to entries named exactly "MPN" would
+	// miss the sellers who label the same field "Manufacturer Part Number",
+	// "OE/OEM Part Number", "Reference OE/OEM Number" and so on — do not
+	// "tidy" this into a name === "MPN" lookup.
+	const aspects = record.localizedAspects;
+	if (Array.isArray(aspects)) {
+		for (const aspect of aspects) {
+			if (typeof aspect !== "object" || aspect === null) continue;
+			const aspectRecord = aspect as Record<string, unknown>;
+			for (const key of ["name", "value"]) {
+				const value = asNonEmptyString(aspectRecord[key]);
+				if (value) chunks.push(value);
+			}
+		}
+	}
+
+	return chunks;
+}
+
+/**
+ * Best available thumbnail URL for a listing, or null. image.imageUrl first,
+ * then the first usable entry of thumbnailImages — either may be missing or
+ * malformed. Mirrors extract_image_url() in ../../ebay_browse_lookup.py.
+ */
+function extractImageUrl(item: EbayItemSummary): string | null {
+	const record = item as unknown as Record<string, unknown>;
+
+	const image = record.image;
+	if (typeof image === "object" && image !== null) {
+		const url = asNonEmptyString((image as Record<string, unknown>).imageUrl);
+		if (url) return url;
+	}
+
+	const thumbs = record.thumbnailImages;
+	if (Array.isArray(thumbs)) {
+		for (const thumb of thumbs) {
+			if (typeof thumb !== "object" || thumb === null) continue;
+			const url = asNonEmptyString((thumb as Record<string, unknown>).imageUrl);
+			if (url) return url;
+		}
+	}
+
+	return null;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -116,14 +196,17 @@ export default function (pi: ExtensionAPI) {
 		label: "eBay Search",
 		description:
 			"Search eBay.co.uk for ACTIVE listings matching an exact car part number. " +
-			"UK item location only. Returns up to 20 candidates with title/price/seller " +
-			"for you to apply the tie-break rule to (clearest title, else most-common " +
-			"price, else median). Does NOT search sold/completed listings — that data " +
-			"source isn't connected yet. Returns no candidates if nothing matches exactly.",
+			"UK item location only. Scans up to 200 results and keeps every one whose " +
+			"title OR eBay item-specifics (MPN and similar) contain the exact number, " +
+			"returning each as: title | price currency | condition | seller | listing URL " +
+			"(final field, copy it verbatim). Apply the tie-break rule to them (clearest " +
+			"title, else most-common price, else median). Does NOT search sold/completed " +
+			"listings — that data source isn't connected yet. Returns no candidates if " +
+			"nothing matches exactly.",
 		promptSnippet: "Search eBay.co.uk active listings for an exact part number, UK only",
 		promptGuidelines: [
 			"Use ebay_search with the primary part number only — never the OEM bonus number, never a modified/fuzzed version of the number.",
-			"ebay_search already filters to UK item location and post-filters to exact part-number matches in the title — do not re-filter or second-guess its exact-match results, but DO apply the tie-break rule yourself across whatever candidates it returns.",
+			"ebay_search already filters to UK item location and post-filters to exact part-number matches across each listing's title AND eBay's structured item specifics — do not re-filter or second-guess its exact-match results, but DO apply the tie-break rule yourself across whatever candidates it returns.",
 		],
 		parameters: Type.Object({
 			part_number: Type.String({
@@ -136,7 +219,20 @@ export default function (pi: ExtensionAPI) {
 			const qs = new URLSearchParams({
 				q: params.part_number,
 				filter: "itemLocationCountry:GB",
-				limit: "20",
+				// 200, the Browse API per-page maximum — NOT 20. The exact-match test
+				// below is a POST-filter, so anything eBay doesn't return here can
+				// never match. `q` is relevance-ranked keyword search, and a part
+				// number built from generic-looking tokens ("C235 51 310") routinely
+				// buries its genuine listings around position 25-60. This is free:
+				// eBay's 5,000/day tier bills per CALL, not per result, so a
+				// 200-result page costs exactly what a 20-result page did. Do not
+				// "optimise" this back down.
+				limit: "200",
+				// Asks eBay for the extra per-item fields (shortDescription, mpn,
+				// localizedAspects/item specifics) that extractMatchText reads.
+				// Without it, a listing whose seller wrote a human-friendly title and
+				// put the part number only in the MPN field can never match.
+				fieldgroups: "EXTENDED",
 			});
 
 			const resp = await fetch(`${SEARCH_URL}?${qs.toString()}`, {
@@ -155,16 +251,19 @@ export default function (pi: ExtensionAPI) {
 			const data = (await resp.json()) as { itemSummaries?: EbayItemSummary[] };
 			const allItems = data.itemSummaries ?? [];
 
+			// Haystack = title PLUS the structured fields from fieldgroups=EXTENDED.
+			// normalize() (strip spaces/hyphens, uppercase) is applied to both sides
+			// so "C235 51 310" still matches a listing written "C23551310".
 			const needle = normalize(params.part_number);
 			const exact = allItems.filter((item) => {
-				const title = item.title ?? "";
-				return normalize(title).includes(needle);
+				if (typeof item !== "object" || item === null) return false;
+				return normalize(extractMatchText(item).join(" ")).includes(needle);
 			});
 
 			if (exact.length === 0) {
 				const note =
 					allItems.length > 0
-						? ` (${allItems.length} loosely-matching result(s) came back from the keyword search, but none contained the exact part number in the title — not used, per exact-match-only rule)`
+						? ` (${allItems.length} loosely-matching result(s) came back from the keyword search, but none contained the exact part number in the title or item specifics — not used, per exact-match-only rule)`
 						: "";
 				return {
 					content: [
@@ -177,6 +276,12 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
+			// LINE FORMAT IS A CONTRACT. Agent 2 v5 reads these as pipe-delimited
+			// text and copies the FINAL field through as the listing URL, verbatim.
+			// Do not append, reorder or remove fields here without updating
+			// agents/agent2_instructionsv5.md and .pi/agents/agent2-ebay-lookup.md
+			// in the same change — the thumbnail deliberately does NOT go on this
+			// line for exactly that reason (it rides in `details` instead).
 			const lines = exact.map((item) => {
 				const price = item.price?.value ?? "?";
 				const currency = item.price?.currency ?? "";
@@ -184,6 +289,20 @@ export default function (pi: ExtensionAPI) {
 				const condition = item.condition ?? "";
 				return `- "${item.title}" | ${price} ${currency} | ${condition} | seller: ${seller} | ${item.itemWebUrl ?? ""}`;
 			});
+
+			// Structured mirror of the same candidates, carrying the thumbnail URL
+			// that has no safe home on the prompt-facing line above. Available to
+			// the harness/UI and to any later consumer that wants images, without
+			// touching what Agent 2 parses.
+			const candidates = exact.map((item) => ({
+				title: item.title ?? null,
+				price: item.price?.value ?? null,
+				currency: item.price?.currency ?? null,
+				condition: item.condition ?? null,
+				seller: item.seller?.username ?? null,
+				url: item.itemWebUrl ?? null,
+				image: extractImageUrl(item),
+			}));
 
 			return {
 				content: [
@@ -194,7 +313,7 @@ export default function (pi: ExtensionAPI) {
 							`(no sold-price data available):\n${lines.join("\n")}`,
 					},
 				],
-				details: { part_number: params.part_number, matchCount: exact.length },
+				details: { part_number: params.part_number, matchCount: exact.length, candidates },
 			};
 		},
 	});
