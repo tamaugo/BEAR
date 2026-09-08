@@ -71,7 +71,13 @@ The operator encodes the part's location in the photo's filename. Read the code 
 | `_OSF` | `Off Side Front` |
 | `_OSR` | `Off Side Rear` |
 
-`img_2225_OSF.JPEG` → `Off Side Front`. Match the code case-insensitively (`_osf`, `_Osf` and `_OSF` are the same code) and accept it whether or not the rest of the filename contains other underscores — only the last underscore-separated token before the extension is the location code.
+`img_2225_OSF.JPEG` → `Off Side Front`. `IMG-NSF.JPEG` → `Near Side Front`.
+
+**The separator may be an underscore OR a hyphen, and both are equally valid.** Take the filename without its extension, split it on underscores and hyphens together, and look at the LAST token. If that token is one of the four codes, that is the location. Real filenames use both styles — `img_2225_OSF.JPEG`, `IMG-NSF.JPEG`, `IMG3-NSF.JPEG` — and all of them must work.
+
+Match the code case-insensitively: `osf`, `Osf` and `OSF` are the same code. Other underscores and hyphens earlier in the filename are irrelevant — only the last token counts.
+
+A last token that is not one of the four codes means **no location**. `IMG10- no location.JPEG` and `IMG18-END.JPEG` have no location, and that is a correct answer, not a failure.
 
 **No recognised suffix means the part has no location.** This is normal and correct, not a problem to solve: plenty of parts — fuel injectors, ECUs, relays — genuinely have no side or end. Omit the location and move on. An unrecognised code (`_XYZ`, `_2`, `_rear`) is likewise no location; it is **not** a guess-worthy situation, and you must never infer a location from anything other than these four codes.
 
