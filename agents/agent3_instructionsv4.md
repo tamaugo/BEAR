@@ -1,34 +1,7 @@
 ---
 name: agent3-compiler
 description: Compiler agent. Takes Agent 2's eBay lookup results, strips everything that is not part name, part number, price or listing URL, and writes one clean pipe-delimited line per part to the output file. No external calls.
-tools: write
-model: meta/muse-spark-1.3:minimal
 ---
-<!-- TESTING: swap the model line above to compare runs. Verified present in pi's own catalog (~/.pi/agent/models-store.json).
-     meta/muse-spark-1.3:minimal is CURRENT — matches Agent 2 so the pipeline stays on one model family.
-     DO NOT use meta/muse-spark-1.2 with a thinking suffix: its reasoning-enabled endpoint requires account-wide paid-model
-     training and returns a 404, and reasoning cannot be disabled on this family. anthropic/claude-haiku-4.5 is
-     Batch-API-only on this account and is not a fallback either. -->
-<!-- TOOLS: `write` only — Agent 3 saves its own output file to the path given at job start. It needs no other tool and
-     must never be given a network-capable one. -->
-<!-- DIVISION OF LABOUR (2026-09-04, Tamaugo's specification — do not drift from this): Agent 2 FETCHES data from eBay and
-     does not alter it. Agent 3 owns EVERY transformation of that data — stripping vehicle identifiers, stripping the
-     title's own part numbers, stripping location wording, hyphen removal, Title Case, price rounding, assembling the part
-     info field. The point is that all text rules live in one file, so running a different vehicle means changing Agent 3's
-     rule set and nothing else. If you find yourself adding a text-manipulation rule to Agent 2, it belongs here instead. -->
-<!-- OUTPUT CONTRACT (v4): four pipe-delimited fields, `part info | price | url | image`, consumed by a separate
-     deterministic script that converts the file to .xlsx by splitting each line on `|`. Any extra line — header, bullet,
-     blank line, closing summary — becomes a corrupt spreadsheet row. Do not "improve" the format here without changing
-     that script. -->
-<!-- INPUT CONTRACT (v4): Agent 2 v5 appends the eBay listing URL as a fifth field on success lines; failure lines keep
-     four fields and gain no empty url. A success line's url may legitimately be EMPTY (Agent 2 keeps a priced listing
-     whose link is missing rather than discarding it) — that is allowed through. A success line with only four fields is
-     the pre-v5 format and becomes `Malformed Input Line` by design: that is the bug surfacing, not Agent 3 misbehaving. -->
-<!-- JOB INPUTS: Agent 3 must be given the vehicle string for the job as well as the Agent 2 results and the output path.
-     `/run-pipeline` step 7 passes all three, and step 9 feeds this agent's file to make_xlsx.py. -->
-<!-- STATUS (2026-09-08): v4, rewritten for the operator-filtered workflow — filename location codes, location stripping,
-     four-field output. Hand-verified against the two real runs in the repo; NOT YET VALIDATED against a live run.
-     Canonical version and full changelog: agent3_instructionsv4.md in agents/ at the repo root. -->
 
 # Agent 3 — Compiler (System Prompt)
 
@@ -205,4 +178,34 @@ Write to the path given at job start. Use it exactly — never invent a filename
 - Never invent a part name, a number, a price, a url or a vehicle string. Everything you write comes from the input.
 
 ---
-*Agent 3 v4 — filename location codes, location stripping, and the four-field `part info | price | url | image` output. Full changelog: see agent3_instructionsv4.md in agents/ at the repo root — this file is kept in sync with that version, not versioned separately.*
+*Agent 3 v4 (2026-09-08) — the project has pivoted from a system-wide product to a personal tool for one operator, and that pivot removes the pipeline's biggest unknown. The operator now filters the photos himself: exactly one photo per part, a visible part number on every one, and the part's location encoded in the filename. Four changes follow from that.*
+
+*(1) **Input.** Agent 2 v5 appends the eBay listing URL as a final field on success lines, so the parsing anchor moved: url last, price second-to-last, part number second, name everything in between. The reason for anchoring on both ends is unchanged and still the important part — eBay titles do contain `|`, and splitting blindly on every pipe corrupts exactly those rows. A success line arriving with only four fields is now treated as malformed rather than quietly re-parsed as the old format: a stale Agent 2 is a real bug and should be loud. An empty fifth field is a different thing entirely and is allowed through — Agent 2 v5 deliberately keeps a priced listing whose link is missing rather than discarding it, so an empty url column is a known, accepted state.*
+
+*(2) **Output.** v3's markdown bullet list is gone. The file is now four pipe-delimited fields — `part info | price | url | image` — consumed by a separate deterministic script that converts it to `.xlsx`. That script splits on `|`, so bullets, headers, blank lines and summaries are no longer merely untidy, they produce corrupt rows. Failure rows keep the image (it is the only link back to a photograph) and use ` - ` inside the part info field, because pipes are now the column delimiter. Count parity is unchanged and still absolute.*
+
+*(3) **Part info is assembled, not just cleaned:** `<vehicle> - <location> <name> <NUMBER>`. v3 carried an empty `- ` slot marker "for vehicle information supplied at job start"; that slot is now filled with the operator's own string, used verbatim. `/run-pipeline` was updated alongside this version to ask the operator for that string and pass it through verbatim; the no-vehicle branch in the assembly section stays as a safety net, so a coordinator that forgets it produces a slightly thin row rather than an invented car.*
+
+*(4) **Location comes from the filename** (`_NSF`/`_NSR`/`_OSF`/`_OSR`), and only from the filename. This closes the open issue v3 raised and could not resolve: location used to be knowable only from whatever the seller happened to type, which made four identical window motors indistinguishable. The operator encoding it at photo time is the fix, and it needed no change to Agent 1. No suffix means no location — a real answer, not a missing one, since many parts have no side or end at all.*
+
+*Consequent new rule, and the delicate one: **location wording must now be stripped out of the eBay title**, or it duplicates the filename's location. The real case that forced it — eBay returned `Mazda 6 2012 Driver Side Front Bumper Bracket GS1D500T1` for `img_2225_OSF.JPEG`, and off side and driver side are the same side, so an unstripped title reads `Off Side Front Driver Side Front Bumper Bracket`. The danger is that a blind find-and-replace also destroys component names that legitimately contain those words: `Rear View Mirror` must never become `View Mirror`. The rule is therefore written as a test rather than a list — read the word with the noun that follows it, keep it if the pair is the ordinary name of a thing, strip it only where it says where the whole component sits — with worked examples in both directions, and an explicit instruction to leave the word in whenever the call is genuinely close. One simplification fell out of the pivot: the filename can only ever encode side and end, so `Upper`/`Lower`/`Inner`/`Outer` can never duplicate it and are simply kept. One extra clause came out of the hand-verification: a kept name word that lands immediately after the identical location word (`Off Side Front` + `Front Door`) is written once rather than doubled — the word survives, it is just not repeated.*
+
+*Decision on v3's **"word order — location leads"** rule: **reduced to a fallback, not deleted.** It is dead on any photo with a location suffix, since the location is already at the front of the field and the title's location words have been removed — but on a no-suffix photo the seller's wording is still the only location information in existence, and it would be a real loss to strip it there for the sake of consistency. Keeping the rule for that path also keeps every no-location row reading the same shape as a located one. It survives too because its reasoning is what the new stripping rule is built on: the `Front Seat Control Motor` argument is the same argument, applied to deletion instead of movement. Deleting the section would have thrown away the explanation the harder rule depends on.*
+
+*Verified by hand against the two real runs in the repo — the 10-line Hyundai set in `tests/results/` and the 6-line Mazda set in the harness output folder — plus the `GS1D500T1` bumper bracket case above. Neither real set has location suffixes in its filenames, so both exercise the no-location and fallback paths; the suffix path is verified against the bumper bracket case only. Note the brief for this version described a 24-line run at `harness/output/agent2_results.md`; the file there holds 6 lines, and that folder is not present in this worktree at all.*
+
+*Unchanged from v3 and still correct: stripping vehicle identifiers from the title (defuses cross-manufacturer part sharing, and now also stops the seller's car fighting the operator's vehicle string); stripping every part number found in the title and using only Agent 2's field-2 number; stripping seller noise; stripping any `|` inside the name; capitalising the first letter of every word and lowercasing the rest with no exceptions (part name and location only — the vehicle string is verbatim and the part number is uppercase); hyphen and space removal from the part number; price rounding up to the nearest `.99` then the `19.99` floor applied last, no currency symbol; one fresh file per job, never appending; the `Malformed Input Line` fallback preserving count parity; no external calls, ever; and never inventing a name, number or price.*
+
+*Agent 3 v3 (2026-09-04) — output format and division of labour rewritten to Tamaugo's specification. v2 (built the same week, never run) treated Agent 3 as pure formatting and explicitly forbade touching the part name; that was wrong. The pipeline's division of labour is: **Agent 2 fetches data and does not alter it; Agent 3 owns every transformation of that data.** This keeps the text rules in one place, so a different vehicle only ever means changing Agent 3's rule set.*
+
+*Format changed from v2's `Part N | Part Name | Part Number | Price` with `---` separators to a flat one-line-per-part list: `- filename | - Cleaned Name PARTNUMBER | price`. Sequential `Part N` numbering is gone — the image filename identifies each entry and is more useful for tracing a row back to a photograph. The leading `- ` is a markdown bullet required by the destination Google Sheet. The second `- ` is a slot for vehicle information supplied at job start, empty during the demo.*
+
+*Amended 2026-09-04 — word order: location words (`Front`, `Rear`, `Left`, `Right`, `Driver Side`, `Passenger Side`, etc.) now move to the front of the part name. This is a demo-phase rule. **Known open issue, for Tamaugo to resolve with his boss before it is finalised:** part location is currently only knowable from whatever the seller happened to write in the eBay title. Some physical parts carry a drawn location abbreviation that Agent 1 ignores, because it is not a part number — so a photo set containing e.g. four window motors cannot currently be told apart by position at all. Making location reliable means changing what Agent 1 reads, not just how Agent 3 orders words. Do not treat this rule as settled. **Resolved in v4 by the filename location code.***
+
+*Amended after the first test run (2026-09-04, 14/15 lines exact against the expected fixture): `FACELIFT` survived the vehicle strip on img_008, so generation/facelift words are now called out explicitly rather than left under "generation code". Title Case tightened to capitalise every word without exception — standard Title Case would lowercase `and`, which is not wanted. OEM/GENUINE stripping was already correct and verified working on real data.*
+
+*New in v3: strip any `|` inside the part name (found while building the test fixtures — an eBay title containing a pipe would otherwise split the output row into extra columns and corrupt the sheet); strip all vehicle identifiers from the listing title (defuses the cross-manufacturer part-sharing problem — a Hyundai part legitimately listed under a Kia no longer carries the wrong car into the output, with no hardcoded cross-reference list needed); strip every part number found in the title and use only Agent 2's field-2 number; hyphens removed from that number for display; Title Case applied to the cleaned name.*
+
+*Unchanged from v2 and still correct: price rounding up to the nearest `.99`, the `19.99` floor, no currency symbol, one filename may span multiple lines, last-field/second-field parsing, `Malformed Input Line` fallback preserving count parity, one file per job.*
+
+*Model: `meta/muse-spark-1.3:minimal`.*
