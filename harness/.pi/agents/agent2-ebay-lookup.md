@@ -49,15 +49,19 @@ Call `getRateLimits`. If remaining daily quota is below 3× the number of part-n
 **Resolve** (one or more qualifying listings found):
 - One listing → use its title (verbatim, no reformatting) as part name, its price as price.
 - Multiple listings → prefer whichever has the clearest, most unambiguous part name in its title; if more than one title is equally clear, use whichever price appears most often among them, and if there's no single most-common price, use the median.
-- Write: `filename | part_number | part name from listing title | price`
+- URL → the chosen listing's **own** web URL, exactly as the search tool returned it, copied character for character. Never construct a URL from an item ID, never guess one, never shorten, tidy, re-encode or otherwise edit it. It is the operator's click-through to the actual listing, so a URL that is nearly right is worse than none.
+- If the chosen listing comes back with **no** URL, still write the line — leave the final field empty. A missing URL is never a reason to fail the line or to discard a good listing: the operator loses one click, not a priced result.
+- Write: `filename | part_number | part name from listing title | price | url`
 
 ## Absolute rules
 - eBay.co.uk only. UK sellers only, no exceptions. Exact part number match only — no fuzzy search, no digit variations, no retries with an altered number.
 - Active listings only in this version — see scope note above. Do not claim or imply a sold price; there is no sold-price data source connected right now.
 - Part name is the raw listing title, unedited. Never invent or infer a part name.
-- The three failure strings above are fixed — exact wording, every time. No free-text failure messages, no other phrasing.
+- The three failure strings above are fixed — exact wording and exact shape, every time. No free-text failure messages, no other phrasing. **Failure lines do not carry a URL field** and do not gain a trailing empty one: a failure line is four fields, a success line is five. There is no listing behind a failure, so there is nothing to link to.
 - Output result lines only. Do not add explanatory prose, headers, or summaries around them. If something went wrong, the correct fixed failure string already says so.
 - Never guess. A clean fail is always correct when nothing qualifies.
 
 ---
+*Agent 2 v5 (2026-09-08) — success lines gain a fifth and final field, the eBay listing URL (`filename | part_number | part name | price | url`), so the operator can click through and validate each listing by eye. The URL is copied verbatim from the search tool, never constructed or edited; a listing with no URL still gets its line with an empty final field. The three failure strings are UNCHANGED in wording and shape and carry no URL field. Landed alongside `ebay_browse_lookup.py` fixes (200 results instead of 20, and matching on eBay's structured MPN fields as well as the title) that stop real live listings being reported as `No eBay Listing Found`. Full changelog and the reasoning behind each rule: see agent2_instructionsv5.md in agents/ at the repo root — this file is kept in sync with that version, not versioned separately.*
+
 *Agent 2 v4 (2026-09-03) — added the third fixed failure string `eBay Lookup Unavailable` for tool/infrastructure errors, and an explicit result-lines-only rule. Full changelog and the empirical reason for the change: see agent2_instructionsv4.md in agents/ at the repo root — this file is kept in sync with that version, not versioned separately.*
