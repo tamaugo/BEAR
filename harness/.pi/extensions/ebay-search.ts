@@ -30,6 +30,9 @@ interface CachedToken {
 }
 
 interface EbayItemSummary {
+	// eBay's listing id. Used to deduplicate the merged results of the two
+	// searches issued per part number (see execute() below).
+	itemId?: string;
 	title?: string;
 	price?: { value?: string; currency?: string };
 	condition?: string;
@@ -121,6 +124,53 @@ function extractImageUrl(item: EbayItemSummary): string | null {
 	return null;
 }
 
+/**
+ * One Browse API search for one literal query string. Returns eBay's raw
+ * itemSummaries array (possibly empty); merging, deduplication and the
+ * exact-match post-filter are the caller's job. Mirrors _search_once() in
+ * ../../ebay_browse_lookup.py.
+ */
+async function searchOnce(
+	token: string,
+	query: string,
+	signal?: AbortSignal,
+): Promise<EbayItemSummary[]> {
+	const qs = new URLSearchParams({
+		q: query,
+		filter: "itemLocationCountry:GB",
+		// 200, the Browse API per-page maximum — NOT 20. The exact-match test
+		// in execute() is a POST-filter, so anything eBay doesn't return here
+		// can never match. `q` is relevance-ranked keyword search, and a part
+		// number built from generic-looking tokens ("C235 51 310") routinely
+		// buries its genuine listings around position 25-60. This is free:
+		// eBay's 5,000/day tier bills per CALL, not per result, so a
+		// 200-result page costs exactly what a 20-result page did. Do not
+		// "optimise" this back down.
+		limit: "200",
+		// Asks eBay for the extra per-item fields (shortDescription, mpn,
+		// localizedAspects/item specifics) that extractMatchText reads.
+		// Without it, a listing whose seller wrote a human-friendly title and
+		// put the part number only in the MPN field can never match.
+		fieldgroups: "EXTENDED",
+	});
+
+	const resp = await fetch(`${SEARCH_URL}?${qs.toString()}`, {
+		headers: {
+			Authorization: `Bearer ${token}`,
+			"X-EBAY-C-MARKETPLACE-ID": MARKETPLACE_ID,
+		},
+		signal,
+	});
+
+	if (!resp.ok) {
+		const errText = await resp.text();
+		throw new Error(`eBay Browse API search failed (${resp.status}): ${errText}`);
+	}
+
+	const data = (await resp.json()) as { itemSummaries?: EbayItemSummary[] };
+	return data.itemSummaries ?? [];
+}
+
 export default function (pi: ExtensionAPI) {
 	let cachedToken: CachedToken | null = null;
 
@@ -199,14 +249,15 @@ export default function (pi: ExtensionAPI) {
 			"UK item location only. Scans up to 200 results and keeps every one whose " +
 			"title OR eBay item-specifics (MPN and similar) contain the exact number, " +
 			"returning each as: title | price currency | condition | seller | listing URL " +
-			"(final field, copy it verbatim). Apply the tie-break rule to them (clearest " +
-			"title, else most-common price, else median). Does NOT search sold/completed " +
+			"(final field, copy it verbatim). Resolve them by following the Resolve section " +
+			"of your own instructions — do not work from any summary of it. " +
+			"Does NOT search sold/completed " +
 			"listings — that data source isn't connected yet. Returns no candidates if " +
 			"nothing matches exactly.",
 		promptSnippet: "Search eBay.co.uk active listings for an exact part number, UK only",
 		promptGuidelines: [
 			"Use ebay_search with the primary part number only — never the OEM bonus number, never a modified/fuzzed version of the number.",
-			"ebay_search already filters to UK item location and post-filters to exact part-number matches across each listing's title AND eBay's structured item specifics — do not re-filter or second-guess its exact-match results, but DO apply the tie-break rule yourself across whatever candidates it returns.",
+			"ebay_search already filters to UK item location and post-filters to exact part-number matches across each listing's title AND eBay's structured item specifics — do not re-filter or second-guess its exact-match results, but DO resolve the candidates yourself, following the Resolve section of your own instructions rather than any summary of it.",
 		],
 		parameters: Type.Object({
 			part_number: Type.String({
@@ -216,40 +267,59 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal) {
 			const token = await getAccessToken(signal);
 
-			const qs = new URLSearchParams({
-				q: params.part_number,
-				filter: "itemLocationCountry:GB",
-				// 200, the Browse API per-page maximum — NOT 20. The exact-match test
-				// below is a POST-filter, so anything eBay doesn't return here can
-				// never match. `q` is relevance-ranked keyword search, and a part
-				// number built from generic-looking tokens ("C235 51 310") routinely
-				// buries its genuine listings around position 25-60. This is free:
-				// eBay's 5,000/day tier bills per CALL, not per result, so a
-				// 200-result page costs exactly what a 20-result page did. Do not
-				// "optimise" this back down.
-				limit: "200",
-				// Asks eBay for the extra per-item fields (shortDescription, mpn,
-				// localizedAspects/item specifics) that extractMatchText reads.
-				// Without it, a listing whose seller wrote a human-friendly title and
-				// put the part number only in the MPN field can never match.
-				fieldgroups: "EXTENDED",
-			});
+			// TWO SEARCHES PER PART NUMBER, ON PURPOSE — do not "optimise" the
+			// second one away.
+			//
+			// The exact-match filter below normalises both sides (strips spaces
+			// and hyphens, uppercases), so it does not care how the part number
+			// is punctuated. The SEARCH does. `q` is sent to eBay verbatim and
+			// eBay's keyword tokeniser splits "DF71-67-5RZ" differently from
+			// "DF71-675RZ", returning a different result set for each — so the
+			// filter only ever sees what that one tokenisation happened to
+			// return.
+			//
+			// Real case: the same photo of the same part was read by the vision
+			// agent as "DF71-675RZ" on 7 Sep (found the listing, £12.00) and
+			// "DF71-67-5RZ" on 8 Sep ("No eBay Listing Found"). The correct
+			// listing was never in the second day's results at all. The upstream
+			// vision agent's punctuation is not stable between runs, so the
+			// search is made resilient to that variance here rather than
+			// depending on curing it upstream.
+			//
+			// COST: this doubles the eBay calls for any part number that has
+			// something to strip — a 20-40 part job goes from ~40 to ~80 calls
+			// against the free tier's 5,000/day, which is comfortably fine. When
+			// the raw and normalised strings are identical (e.g. "5WK43826")
+			// only ONE call is made.
+			const rawQuery = params.part_number;
+			const normalisedQuery = normalize(rawQuery);
+			const queries =
+				normalisedQuery === rawQuery ? [rawQuery] : [rawQuery, normalisedQuery];
 
-			const resp = await fetch(`${SEARCH_URL}?${qs.toString()}`, {
-				headers: {
-					Authorization: `Bearer ${token}`,
-					"X-EBAY-C-MARKETPLACE-ID": MARKETPLACE_ID,
-				},
-				signal,
-			});
-
-			if (!resp.ok) {
-				const errText = await resp.text();
-				throw new Error(`eBay Browse API search failed (${resp.status}): ${errText}`);
+			// Merge, preserving order: everything the raw query returned, in
+			// eBay's own relevance order, then only the extra listings the
+			// normalised query turned up. Deduplicated on eBay's itemId so a
+			// listing both queries returned is offered once. Not re-sorted.
+			const allItems: EbayItemSummary[] = [];
+			const seenItemIds = new Set<string>();
+			for (const query of queries) {
+				const items = await searchOnce(token, query, signal);
+				for (const item of items) {
+					// eBay's payload is unvalidated JSON; a null/garbage entry
+					// must be skipped, not allowed to throw and kill the job.
+					if (typeof item !== "object" || item === null) continue;
+					const itemId = asNonEmptyString(
+						(item as unknown as Record<string, unknown>).itemId,
+					);
+					// No usable itemId means we cannot prove it is a duplicate,
+					// so keep it — the exact-match filter still has to pass it.
+					if (itemId !== null) {
+						if (seenItemIds.has(itemId)) continue;
+						seenItemIds.add(itemId);
+					}
+					allItems.push(item);
+				}
 			}
-
-			const data = (await resp.json()) as { itemSummaries?: EbayItemSummary[] };
-			const allItems = data.itemSummaries ?? [];
 
 			// Haystack = title PLUS the structured fields from fieldgroups=EXTENDED.
 			// normalize() (strip spaces/hyphens, uppercase) is applied to both sides

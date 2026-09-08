@@ -42,10 +42,19 @@ DOES:
     fetch. See "Fix 1" below.
   - Matches against the listing's structured fields as well as its title
     (MPN / item specifics), not the title alone. See "Fix 2" below.
+  - Issues TWO searches per part number — the part number exactly as
+    given, and its normalised (spaces/hyphens stripped) form — and merges
+    the results before exact-matching. See "Fix 4" below. This roughly
+    DOUBLES the eBay call count for any part number that has something to
+    strip: a typical 20-40 part job goes from ~40 to ~80 calls against the
+    free tier's 5,000/day. That is a deliberate, accepted cost.
   - Surfaces every matching candidate with title/price/condition/seller/
-    URL/thumbnail so you (or the real Agent 2 prompt) can apply the
-    clearest-title / most-common-price tie-break rule — this script
-    deliberately does NOT try to automate that judgment call itself.
+    URL/thumbnail so you (or the real Agent 2 prompt) can apply Agent 2's
+    Resolve rule — used listings first, then the consensus price, then the
+    clearest title only to decide which listing gets named and linked.
+    This script deliberately does NOT try to automate that itself.
+    Agent 2's own prompt is the authority; do not restate the rule here,
+    because a stale copy of it is worse than no copy.
 
 DOES NOT:
   - Search sold/completed listings. That requires the Marketplace Insights
@@ -70,7 +79,8 @@ DOES NOT:
 
 A real run had Agent 2 report "No eBay Listing Found" for GS8T 66 EM0 and
 C235 51 310, both of which demonstrably have live UK listings (3 and ~7).
-Three separate causes, all fixed here:
+Three separate causes, all fixed here. Fix 4 was added later, from a
+different root cause with the same "No eBay Listing Found" surface:
 
   Fix 1 — only the first 20 results were ever examined.
     search_active_listings() defaulted to limit=20. Because the exact-match
@@ -102,6 +112,24 @@ Three separate causes, all fixed here:
     thumbnailImages[0].imageUrl) through to the output, alongside the
     existing condition and seller. The downstream pipeline needs the URL in
     its final spreadsheet, and the thumbnail makes eyeballing a match easy.
+
+  Fix 4 — the search query was sent to eBay with the part number's
+  punctuation exactly as the upstream vision agent happened to read it.
+    filter_exact_match() normalises both sides, so it does not care where
+    the hyphens fall. The SEARCH does: `q` goes to eBay verbatim and eBay's
+    keyword tokeniser splits "DF71-67-5RZ" differently from "DF71-675RZ",
+    returning a different result set for each. The same photo of the same
+    part was read as "DF71-675RZ" on 7 Sep (found the listing, GBP 12.00)
+    and "DF71-67-5RZ" on 8 Sep ("No eBay Listing Found") — the correct
+    listing was simply never in the second day's results, so the normalising
+    filter never got the chance to match it. search_active_listings() now
+    queries BOTH the raw string and its normalised form and merges the
+    results (deduplicated on itemId, raw-query results first, not
+    re-sorted). The upstream agent's formatting is not reliably stable
+    between runs; making the search resilient to that is the cheaper half of
+    the problem and is fixed first. Cost: roughly double the calls, quantified
+    in the header above and considered acceptable. Do not remove the second
+    query.
 """
 
 import base64
@@ -150,9 +178,11 @@ def get_access_token(app_id: str, cert_id: str) -> str:
     return data["access_token"]
 
 
-def search_active_listings(token: str, part_number: str, limit: int = 200) -> list:
+def _search_once(token: str, query: str, limit: int = 200) -> list:
     """
-    Search Browse API active listings, UK-located items only.
+    One Browse API search for one literal query string, UK-located items
+    only. Returns eBay's raw itemSummaries list; merging, deduplication and
+    the exact-match post-filter are the caller's job.
 
     limit defaults to 200 — the Browse API per-page maximum — not 20.
     filter_exact_match() runs AFTER this fetch, so anything not returned
@@ -164,9 +194,11 @@ def search_active_listings(token: str, part_number: str, limit: int = 200) -> li
     (short description / item specifics) that extract_match_text() needs in
     order to match a listing whose part number lives in its MPN field
     rather than its title.
+
+    Mirrors searchOnce() in .pi/extensions/ebay-search.ts.
     """
     params = {
-        "q": part_number,
+        "q": query,
         "filter": "itemLocationCountry:GB",
         "limit": str(limit),
         "fieldgroups": "EXTENDED",
@@ -185,6 +217,57 @@ def search_active_listings(token: str, part_number: str, limit: int = 200) -> li
         raise SystemExit(f"Browse API search failed ({e.code}): {error_body}")
 
     return data.get("itemSummaries", [])
+
+
+def search_active_listings(token: str, part_number: str, limit: int = 200) -> list:
+    """
+    Search active UK listings for a part number, using TWO queries.
+
+    WHY TWO — do not "optimise" the second one away. `q` is sent to eBay
+    verbatim, and eBay's keyword tokeniser splits "DF71-67-5RZ" differently
+    from "DF71-675RZ", so each punctuation of the same part number returns a
+    different result set. filter_exact_match() normalises both sides and
+    would happily have matched either form, but it only ever sees what the
+    query returned: on 8 Sep the correct DF71-675RZ listing was not in the
+    results at all, and the part came back "No eBay Listing Found" after
+    being priced at GBP 12.00 the day before off the same photo. The vision
+    agent upstream does not punctuate stably between runs, so the search is
+    made resilient to that here. See "Fix 4" in the module docstring.
+
+    COST: this doubles the eBay calls for any part number with something to
+    strip (~40 -> ~80 for a typical 20-40 part job, against a 5,000/day free
+    tier — comfortably fine). When the raw and normalised strings are
+    identical (e.g. "5WK43826") only ONE call is made.
+
+    Ordering and dedup: everything the raw query returned, in eBay's own
+    relevance order, then only the additional listings the normalised query
+    found. Deduplicated on eBay's itemId so a listing returned by both is
+    carried once. Not re-sorted.
+
+    Mirrors the two-query merge in ebay_search's execute() in
+    .pi/extensions/ebay-search.ts.
+    """
+    raw_query = part_number
+    normalised_query = normalize(part_number)
+    queries = [raw_query] if normalised_query == raw_query else [raw_query, normalised_query]
+
+    merged = []
+    seen_item_ids = set()
+    for query in queries:
+        for item in _search_once(token, query, limit):
+            # eBay's payload is unvalidated JSON; skip a null/garbage entry
+            # rather than letting it throw and kill the whole job.
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("itemId")
+            if isinstance(item_id, str) and item_id:
+                if item_id in seen_item_ids:
+                    continue
+                seen_item_ids.add(item_id)
+            # No usable itemId means we cannot prove it is a duplicate, so
+            # keep it — filter_exact_match() still has to pass it.
+            merged.append(item)
+    return merged
 
 
 def normalize(text: str) -> str:
@@ -317,8 +400,8 @@ def lookup_one(token: str, filename: str, part_number: str) -> None:
         print(f"    - \"{c['title']}\" | {c['price']} {c['currency']} | "
               f"{c['condition']} | seller: {c['seller']} | {c['url']} | "
               f"img: {c['image']}")
-    print("  -> apply Agent 2's tie-break rule (clearest title, else most-common "
-          "price, else median) to pick one from the candidates above.")
+    print("  -> apply Agent 2's Resolve rule (used listings first, then the "
+          "consensus price) to pick one from the candidates above.")
 
 
 def read_agent1_file(path: str):
