@@ -79,12 +79,15 @@ Both have caused a run to fail by reporting an empty folder that was not empty.
 - **Always quote paths.** `"photos/0118 part number.JPEG"`, never `photos/0118 part number.JPEG`.
 - If a folder looks empty, **say what command you ran and stop** — do not conclude it is empty. It
   has been wrong every time so far.
-- **A location suffix before the extension is normal and expected.** Filenames may end `_NSF`,
-  `_NSR`, `_OSF` or `_OSR` — near/off side, front/rear — as in `img_2225_OSF.JPEG`. That is the
-  operator recording where on the car the part came from. Agent 3 reads the suffix itself; you do
-  nothing with it. Do not treat it as an anomaly, do not strip or rewrite it, and never rename a
-  file — pass filenames through exactly as they are so every stage can be traced back to its photo.
-- **One photo = one part, and every photo carries a visible part number.** The operator prepares the
+- **A code before the extension is normal and expected.** Filenames may end `NSF`, `NSR`, `OSF`,
+  `OSR` (near/off side, front/rear) or `NULL`, separated by an underscore **or a hyphen** — both are
+  used: `img_2225_OSF.JPEG`, `IMG-NSF.JPEG`, `IMG4-NSF-NULL.JPEG`. That is the operator recording
+  where on the car the part came from, and whether it has a part number at all. Agent 3 reads the
+  location codes itself; you do nothing with those. Do not treat a code as an anomaly, do not strip
+  or rewrite it, and **never rename a file** — pass filenames through exactly as they are so every
+  stage can be traced back to its photo.
+- **`NULL` is the one code you DO act on. See step 0 below.**
+- **One photo = one part. Every photo carries a visible part number, EXCEPT the `NULL` ones.** The operator prepares the
   job that way, so the expected shape of a run is one line per image at every stage. This is a
   property of the input, not something you police: if Agent 1 still cannot read a number, its
   failure line *is* the correct output and travels down the chain untouched. Never re-crop, re-send,
@@ -108,10 +111,25 @@ Pipeline rule: one folder = one make/year. Confirm both before running against u
 
 ## Steps
 
-1. Delegate to `agent1-part-reader` with every image in the photo folder plus the stated car make.
+0. **Split the folder first.** List the photo folder and separate it into two groups by filename:
+   any file whose last one or two `_`/`-` separated tokens include `NULL` (case-insensitive) is a
+   **NULL photo**; everything else is a **part photo**.
+
+   NULL means the operator already knows that part has no number printed on it anywhere. He
+   photographs it and files it with the rest on purpose, so there is only ever one folder to work
+   through. Sending it to Agent 1 would spend a vision call to be told what he already told you, and
+   risks Agent 1 inventing a number off a casting mark. So these are held back here — no vision
+   call, no eBay search — and handed straight to Agent 3 at step 7.
+
+   Report both counts before going further. If EVERY photo is NULL there is nothing for Agents 1 and
+   2 to do: skip to step 7 with an empty Agent 2 result set and the full NULL list.
+
+1. Delegate to `agent1-part-reader` with **the part photos only** — never a NULL photo — plus the
+   stated car make.
 2. Write its response verbatim to `<output>/agent1_results.md`. Do not edit, reformat or reorder it.
-3. Confirm every image has a line. One photo is one part, and Agent 1's own rules say N images in →
-   N result blocks out, so a mismatch is a real bug — surface it, never silently fix it.
+3. Confirm every **part photo** has a line — NULL photos are excluded and must not appear here. One
+   photo is one part, and Agent 1's own rules say N images in → N result blocks out, so a mismatch is
+   a real bug — surface it, never silently fix it.
 4. Delegate to `agent2-ebay-lookup`, passing the full contents of `agent1_results.md`.
 5. Write Agent 2's response verbatim to `<output>/agent2_results.md`.
 6. Check the line count against step 3. **Count lines, not fields.** Agent 2's success lines now
@@ -123,10 +141,15 @@ Pipeline rule: one folder = one make/year. Confirm both before running against u
    without a link, not a broken line. If a filename does appear on more than one line, leave every
    line as it is and mention it in the final report; never merge, delete or reorder lines to make
    counts tidy.
-7. Delegate to `agent3-compiler`, passing three things: the contents of `agent2_results.md`, the
-   **vehicle string verbatim**, and the output path `<output>/agent3_results.txt`. Agent 3 writes
-   that file itself.
-8. Confirm `agent3_results.txt` exists and its line count equals step 6's. **Agent 3 no longer writes
+7. Delegate to `agent3-compiler`, passing four things: the contents of `agent2_results.md`, the
+   **vehicle string verbatim**, the **list of NULL filenames** from step 0, and the output path
+   `<output>/agent3_results.txt`. Agent 3 writes that file itself.
+
+   Pass the NULL list explicitly **even when it is empty**, and say so — an absent list and a job
+   with no NULL photos look identical to Agent 3, and it has no way to ask.
+8. Confirm `agent3_results.txt` exists and its line count equals **step 6's count plus the number of
+   NULL photos from step 0**. Agent 3 writes one row per Agent 2 line and then one row per NULL
+   photo, as a block at the end. **Agent 3 no longer writes
    markdown.** It writes a pipe-delimited text file, four fields per line —
    `part info | price | url | image` — which is the input the converter in step 9 expects. Do not ask
    it for `.md`, and do not reformat, re-indent or bullet what it writes.
@@ -143,10 +166,15 @@ Pipeline rule: one folder = one make/year. Confirm both before running against u
    prompt. If it errors, **report the error verbatim and stop** — do not edit the script, do not
    hand-edit the .txt to get past a complaint, and do not build a spreadsheet by hand.
 10. Confirm `<output>/BEAR_results.xlsx` exists.
-11. Report briefly: images in; Agent 1 failures; Agent 2 failures **split by type** (`No eBay Listing
-    Found` vs `eBay Lookup Unavailable` — these mean different things and must be counted
-    separately); Agent 3 malformed-line failures; final line count; and that
-    `<output>/BEAR_results.xlsx` was written.
+11. Report briefly: images in, split into part photos and NULL photos; Agent 1 failures; Agent 2
+    failures **split by type** (`No eBay Listing Found` vs `eBay Lookup Unavailable` — these mean
+    different things and must be counted separately); Agent 3 malformed-line failures; final line
+    count; and that `<output>/BEAR_results.xlsx` was written.
+
+    Count NULL photos separately from failures and never fold them together. A NULL row is the
+    system working exactly as intended; a failure is something that went wrong. Reporting "5
+    failures" when three of them were parts the operator already knew had no number would send him
+    looking for a fault that is not there.
 
 ## Notes
 
