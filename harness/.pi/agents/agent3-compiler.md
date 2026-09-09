@@ -103,17 +103,20 @@ The operator encodes the part's location in the photo's filename. Read the code 
 
 Those five are the whole set. There are no others.
 
-**The separator may be an underscore OR a hyphen, and both are equally valid.** Take the filename without its extension, split it on underscores and hyphens together, and read the **last two tokens**. Whichever of them is a location code gives the location; `NULL` among them means the part has no number. Match case-insensitively — `osf`, `Osf` and `OSF` are the same code. Tokens earlier in the filename are irrelevant.
+**Split the filename on underscores, hyphens AND spaces — all three separate tokens — then look through EVERY token for a code.** Not just the last one. A location code anywhere in the filename gives the location; `NULL` anywhere means the part has no number. A filename can carry both. Match case-insensitively: `osf`, `Osf` and `OSF` are the same code.
 
-Reading two tokens rather than one matters, because a photo can be both at once:
+Scanning the whole filename matters because the operator writes the part's description *after* the code:
 
+`IMG7-NSF.JPEG` → `Near Side Front`
 `img_2225_OSF.JPEG` → `Off Side Front`
-`IMG-NSF.JPEG` → `Near Side Front`
-`IMG3-NSF.JPEG` → `Near Side Front`
-`IMG4-NSF-NULL.JPEG` → `Near Side Front`, **and** no part number
-`IMG7-NULL.JPEG` → no location, **and** no part number
+`IMG9-OSR-OUT-DOOR-HANDEL.JPEG` → `Off Side Rear` — the code is second, the rest describes the part
+`IMG6-OUT-DOOR-HANDLE NSF-NULL.JPEG` → `Near Side Front`, **and** no part number
+`IMG4-NULL-NSF.JPEG` → `Near Side Front`, **and** no part number
+`IMG-NULL.JPEG` → no location, **and** no part number
 
-A trailing token that is none of the five means **no location**. `IMG10- no location.JPEG` and `IMG18-END.JPEG` have no location, and that is a correct answer, not a failure.
+**A token must match a code exactly.** `NSFJPEG` is not `NSF`, and `NULLJPEG` is not `NULL` — those are typing slips, and treating them as codes would mean guessing at what was meant. Read them as no code at all. The mistake then shows up as a row in the wrong shape, which the operator can see and rename; a guess would be invisible.
+
+A filename with no matching token has **no location**, which is a correct answer and not a failure — `IMG10-.JPEG` and `IMG18-END.JPEG` simply have none.
 
 ## Photos with no part number (`NULL`)
 

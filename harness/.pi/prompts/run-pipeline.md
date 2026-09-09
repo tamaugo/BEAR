@@ -112,8 +112,10 @@ Pipeline rule: one folder = one make/year. Confirm both before running against u
 ## Steps
 
 0. **Split the folder first.** List the photo folder and separate it into two groups by filename:
-   any file whose last one or two `_`/`-` separated tokens include `NULL` (case-insensitive) is a
-   **NULL photo**; everything else is a **part photo**.
+   split each filename on underscores, hyphens and spaces, and if **any** token is exactly `NULL`
+   (case-insensitive) it is a **NULL photo**; everything else is a **part photo**. Scan every token,
+   not just the last — `IMG6-OUT-DOOR-HANDLE NSF-NULL.JPEG` is a NULL photo. A token must match
+   exactly: `NULLJPEG` is a typing slip, not a code, and is treated as a normal part photo.
 
    NULL means the operator already knows that part has no number printed on it anywhere. He
    photographs it and files it with the rest on purpose, so there is only ever one folder to work
