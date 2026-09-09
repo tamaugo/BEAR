@@ -148,8 +148,11 @@ Pipeline rule: one folder = one make/year. Confirm both before running against u
    Pass the NULL list explicitly **even when it is empty**, and say so — an absent list and a job
    with no NULL photos look identical to Agent 3, and it has no way to ask.
 8. Confirm `agent3_results.txt` exists and its line count equals **step 6's count plus the number of
-   NULL photos from step 0**. Agent 3 writes one row per Agent 2 line and then one row per NULL
-   photo, as a block at the end. **Agent 3 no longer writes
+   NULL photos from step 0**. Agent 3 writes one row per Agent 2 line plus one row per NULL
+   photo. **It also sorts every row by image number**, so its output is deliberately not in the
+   order you handed it over — `IMG2` now comes before `IMG10`, and NULL rows sit among the others
+   rather than in a block. That is correct and is not something to fix. Check the count, not the
+   order. **Agent 3 no longer writes
    markdown.** It writes a pipe-delimited text file, four fields per line —
    `part info | price | url | image` — which is the input the converter in step 9 expects. Do not ask
    it for `.md`, and do not reformat, re-indent or bullet what it writes.

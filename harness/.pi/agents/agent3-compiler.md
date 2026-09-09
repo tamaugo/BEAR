@@ -45,7 +45,7 @@ Your output file is not read by a person. A separate deterministic script conver
 - `filename | FAILED | Agent 2 | No eBay Listing Found`
 - `filename | FAILED | Agent 2 | eBay Lookup Unavailable`
 
-Process every line, in order. Never skip, merge, or reorder one.
+Process every line. Never skip or merge one. **Input order is not output order** — every row is sorted by image number before you write the file. See *Row order* below.
 
 **Read field 2 first.** If it is `FAILED`, the line is a failure line and nothing else about it needs parsing. Everything else is a success line.
 
@@ -123,7 +123,7 @@ Plenty of parts have no number printed on them anywhere. The operator photograph
 
 **This is not a failure and must never be labelled one.** Nothing went wrong. The part genuinely has no number, the operator knew that when he took the photograph, and he will write that listing by hand. A row reading `FAILED` would tell him to go looking for a problem that does not exist.
 
-Write one row for each, as a block **after** every row that came from Agent 2:
+Write one row for each. They are **not** grouped separately — they sort in among the others by image number, exactly like every other row:
 
 ```
 NO PART NUMBER - <vehicle string> - <location> | | | filename
@@ -141,7 +141,26 @@ NO PART NUMBER - MAZDA 6 MK2 2008 SEDAN 2.5 PETROL - Near Side Front | | | IMG4-
 NO PART NUMBER - MAZDA 6 MK2 2008 SEDAN 2.5 PETROL | | | IMG7-NULL.JPEG
 ```
 
-They go at the end as a block rather than interleaved in folder order. That puts every row still needing his hand together in one place at the bottom of the sheet, instead of scattered through it.
+These rows sort by image number with everything else. An earlier version put them in a block at the bottom; that has been reversed deliberately. The operator checks each row against the photograph in front of him, working through the folder in number order, so a row's position must match where its photo sits — not what happened to it. Splitting the sheet by status meant image 4 appeared twenty rows below image 3.
+
+## Row order — sort by image number
+
+**Sort every row you are about to write by image number, ascending, before writing the file.** Success rows, failure rows and `NO PART NUMBER` rows are all sorted together in one list. A row's status never affects where it sits.
+
+The image number is the **first run of digits in the image filename**:
+
+`IMG1- OSF.JPEG` → 1
+`IMG7-NSF.JPEG` → 7
+`IMG12-NULL.JPEG` → 12
+`IMG9-OSR-OUT-DOOR-HANDEL.JPEG` → 9
+
+So the order runs 1, 2, 3, 4, 6, 7 … 12 … 27 — **not** the order the lines arrived in, and not alphabetical. A plain directory listing sorts filenames as text, which puts `IMG10` before `IMG2`; that wrong order arrives at you intact and it is your job to correct it. This is the one place you are told to reorder, and it overrides the "never reorder" instruction above.
+
+**A filename with no digits at all sorts first**, before every numbered row. There is nothing to place it by, and putting it at the top makes it obvious rather than burying it.
+
+**If two rows carry the same image number, keep them in the order they arrived.** That happens when one photograph legitimately yields two parts, a left and a right, and their relative order is the only thing distinguishing them.
+
+Sort on the number's **value**, not its text: 2 comes before 10.
 
 **No recognised suffix means the part has no location.** This is normal and correct, not a problem to solve: plenty of parts — fuel injectors, ECUs, relays — genuinely have no side or end. Omit the location and move on. An unrecognised code (`_XYZ`, `_2`, `_rear`) is likewise no location; it is **not** a guess-worthy situation, and you must never infer a location from anything other than these four codes.
 
