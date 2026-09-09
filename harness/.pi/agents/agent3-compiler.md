@@ -168,7 +168,7 @@ eBay returned `Mazda 6 2012 Driver Side Front Bumper Bracket GS1D500T1` for the 
 `MAZDA 6 MK2 2008 SEDAN 2.5 PETROL - Off Side Front Driver Side Front Bumper Bracket GS1D500T1` ✗
 `MAZDA 6 MK2 2008 SEDAN 2.5 PETROL - Off Side Front Bumper Bracket GS1D500T1` ✓
 
-**This only applies when the filename gave you a location.** With no suffix there is nothing to duplicate, nothing to strip, and the seller's own wording is the only location information anyone has — keep it and see the fallback section below.
+**This applies to every line, whether or not the filename gave a location.** Location comes from the filename or it does not exist — never from the seller. If the filename had no code, the title's location words are still stripped and the row simply has no location. That is the correct answer, not a gap to be filled: many parts genuinely have no side or end, and the seller is describing a different part off a different car.
 
 Words that can act as a position: `Front`, `Rear`, `Left`, `Right`, `Near Side`, `Off Side`, `Driver Side`, `Passenger Side`, `Nearside`, `Offside`, `N/S`, `O/S`, `NS`, `OS`, `LH`, `RH`. Strip an abbreviation only where it stands alone as a whole word.
 
@@ -201,19 +201,13 @@ Some components have those words *in their names*, and stripping them turns a co
 
 **When you genuinely cannot tell whether a word is a position or part of the name, leave it in.** A slightly redundant name is recoverable by eye in the spreadsheet; a mangled part name is not, and nobody reading `View Mirror` later can tell what was removed.
 
-## Word order — location leads (fallback only)
+## Word order
 
-This rule now applies **only when the filename gave no location**. When it did, the location is already at the front of the field and the title's location words are gone, so there is nothing to reorder.
+Once the title's location words are stripped and the filename's location is written in front of the name, the location already leads. There is nothing left to reorder.
 
-With no suffix, move the words describing where on the car the part sits to the front of the cleaned name, keeping their order relative to each other; the rest of the name follows unchanged. This keeps a no-location row reading the same shape as a located one.
+**There is no fallback to the seller's wording.** Earlier versions moved a seller's location words to the front when the filename carried no code. That is gone deliberately. It meant a located row showed the operator's own location while a no-location row showed a stranger's — two different sources of truth sitting in one spreadsheet with nothing to tell them apart. Worse, a part that genuinely has no side (a fuel injector, an ECU) would pick up `Front Left Passenger Side` from whichever listing eBay happened to match, and read as though someone had established that.
 
-`Tailgate Strut Gas Spring Rear` → `Rear Tailgate Strut Gas Spring`
-`Window Control Switch Front Left Passenger Side` → `Front Left Passenger Side Window Control Switch`
-
-**Leave a word where it is when it names the component rather than its position** — the same test as the section above. In `Driver Side Front Seat Control Motor` the motor operates the *front seat*, so `Front` belongs to `Front Seat` and only `Driver Side` is a location; it already leads. Moving `Front` would turn a correct name into a wrong one. When unsure, leave it in place: a slightly awkward order is recoverable, a mangled part name is not.
-
-`HYUNDAI I40 DOOR CARD PUDDLE LIGHT FRONT RIGHT DRIVER SIDE 2012 92632-3Z500` on `IMG_0808.JPEG`
-→ `Front Right Driver Side Door Card Puddle Light`
+One source, always: the filename. No code means no location in the output.
 
 ## Part number
 
