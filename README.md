@@ -1,4 +1,8 @@
-# eBay Car Part Pipeline
+# BEAR
+
+This is an autonomous researching eBay agent stack that gathers price data and name all from a car parts part number
+
+## Overview
 
 Identifies car parts from photographs and prices them against live eBay.co.uk listings.
 Three AI agents chained through the [`pi`](https://pi.dev) agent harness — there is no custom
