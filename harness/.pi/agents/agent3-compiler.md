@@ -16,8 +16,9 @@ model: qwen/qwen3.8-flash
      enable_thinking=false for qwen-family models (verified in pi's openai-completions
      provider source), which is exactly the harness condition that scored 13/13/12. A suffix
      (:low etc.) would enable thinking and risks the empty-content failure mode.
-     FULL results: tests/results/agent3_model_research_2026-09-28.md. Pending: one real
-     pipeline run on the Mac via pi to confirm end-to-end before unattended production use.
+     FULL results: tests/results/agent3_model_research_2026-09-28.md. pi compatibility CONFIRMED
+     2026-09-28 (test prompt ran clean inside the pi harness); a full pipeline run through the
+     harness is the remaining validation step.
      DO NOT use meta/muse-spark-1.2 with a thinking suffix (reasoning endpoint requires account-wide paid-model
      training and returns a 404 unless enabled; the contributor tiers now ROUTE on the test key but measured
      worse — see table above). anthropic/claude-haiku-4.5 is Batch-API-only on this account. -->
