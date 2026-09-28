@@ -101,25 +101,48 @@ def QUESTION_SET_AGENT1(candidates, make: str = "the stated") -> dict:
 
 
 def QUESTION_SET_AGENT2(listings, part_number: str = "the target part number") -> dict:
-    """Agent 2: pick the best eBay listing for a known part number and score title match.
+    """Agent 2: decide whether any candidate genuinely offers the part, pick the single
+    listing to report, and score how well that choice matches the part number.
 
-    listings: list of listing strings, or dict of listing-id -> title/description text.
+    listings: dict of listing-key -> candidate line string (title/price/condition/seller,
+    no URL -- Jev doesn't need it; the reported price and link come from the chosen key
+    by construction once the caller looks it up).
     part_number: the part number being matched, dropped into the instructions text.
     """
     return {
+        "has_genuine_match": {
+            "type": "noul",
+            "instructions": (
+                "Do any of these candidates genuinely offer the exact part number "
+                f"({part_number}) as a real, purchasable listing?"
+            ),
+            "criteria": {
+                "true": (
+                    "At least one candidate is a real, purchasable listing that "
+                    "genuinely offers this exact part number."
+                ),
+                "false": (
+                    "No candidate genuinely offers this part -- they're for the wrong "
+                    "part, or the part number only appears as keyword noise/spam."
+                ),
+            },
+        },
         "best_listing": {
             "type": "choice",
             "instructions": (
-                f"Which listing best matches the exact part number ({part_number}) and "
-                "is the most appropriate source (used condition preferred)?"
+                f"Which single listing should be reported for part number "
+                f"({part_number})? Prefer listings in used condition; among those "
+                "prefer the listing whose title clearly names the actual part rather "
+                "than a string of codes. The reported price and link will come from "
+                "the listing you choose."
             ),
             "criteria": _as_criteria_dict(listings),
         },
         "title_match_score": {
             "type": "score",
             "instructions": (
-                f"How well does this listing's title match the part number "
-                f"({part_number}) and description?"
+                "How well does the candidate you chose match the part number "
+                f"({part_number}) and the part it names?"
             ),
             "criteria": _match_quality_scale(),
         },
