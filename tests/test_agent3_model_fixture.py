@@ -31,7 +31,29 @@ INSTRUCTIONS_PATH = REPO_ROOT / "agents" / "agent3_instructionsv4.md"
 INPUT_PATH = REPO_ROOT / "tests" / "fixtures" / "agent3_v4_dummy_input.md"
 EXPECTED_PATH = REPO_ROOT / "tests" / "fixtures" / "agent3_v4_expected_output.md"
 
-CANDIDATES = ["mistralai/mistral-nemo", "openai/gpt-oss-20b", "qwen/qwen3.7-flash"]
+CANDIDATES = [
+    # Phase 1 quick screen (tests/results/agent3_model_research_2026-09-28.md §4)
+    "nvidia/nemotron-3.5-lightning",
+    "qwen/qwen3.8-flash",
+    "openai/gpt-4.1-nano",
+    "google/gemini-2.5-flash-lite",
+    "qwen/qwen3.5-27b",
+    # Rescue round: the previous sweep's empty-content victims, retried at
+    # effort "none" — effort "low" (~20% of budget on thinking) may have been
+    # what starved them, not model incapability (report §2.1, §6).
+    "qwen/qwen3.7-flash",
+    "deepseek/deepseek-v4-flash",
+    "inclusionai/ling-3.0-flash",
+]
+
+# Per-model reasoning effort. Reasoning-OPTIONAL models get "none": the previous
+# sweep sent "low" to everything and three models burned their whole output
+# budget thinking (empty content, finish_reason length). Mandatory-reasoning
+# models need "minimal". Models without reasoning ignore the parameter.
+DEFAULT_EFFORT = "none"
+REASONING_EFFORT = {
+    "openai/gpt-5-nano": "minimal",  # mandatory reasoning
+}
 
 MAX_ATTEMPTS = 2
 BACKOFF_SECONDS = 2.0
@@ -56,6 +78,7 @@ def build_messages() -> list:
 
 
 def call_chat(model: str, messages: list, api_key: str) -> dict:
+    effort = REASONING_EFFORT.get(model, DEFAULT_EFFORT)
     body = json.dumps({
         "model": model,
         "messages": messages,
@@ -63,8 +86,10 @@ def call_chat(model: str, messages: list, api_key: str) -> dict:
         "max_tokens": MAX_TOKENS,
         # Cap reasoning models' thinking so budget goes to the answer, not the
         # trace (gpt-oss-20b burned 2000 tokens reasoning and returned empty
-        # content on the first run). Ignored by non-reasoning models.
-        "reasoning": {"effort": "low", "exclude": True},
+        # content on the first run). Reasoning-optional models get effort
+        # "none" via REASONING_EFFORT/DEFAULT_EFFORT above; mandatory-reasoning
+        # models get "minimal". Ignored by models without reasoning.
+        "reasoning": {"effort": effort, "exclude": True},
     }).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {api_key}",

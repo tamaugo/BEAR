@@ -2,13 +2,25 @@
 name: agent3-compiler
 description: Compiler agent. Takes Agent 2's eBay lookup results, strips everything that is not part name, part number, price or listing URL, and writes one clean pipe-delimited line per part to the output file. No external calls.
 tools: write
-model: meta/muse-spark-1.3:minimal
+model: qwen/qwen3.8-flash
 ---
-<!-- TESTING: swap the model line above to compare runs. Verified present in pi's own catalog (~/.pi/agent/models-store.json).
-     meta/muse-spark-1.3:minimal is CURRENT — matches Agent 2 so the pipeline stays on one model family.
-     DO NOT use meta/muse-spark-1.2 with a thinking suffix: its reasoning-enabled endpoint requires account-wide paid-model
-     training and returns a 404, and reasoning cannot be disabled on this family. anthropic/claude-haiku-4.5 is
-     Batch-API-only on this account and is not a fallback either. -->
+<!-- TESTING: swap the model line above to compare runs. CURRENT (2026-09-28, Jev fork): qwen/qwen3.8-flash,
+     chosen on live fixture evidence (tests/test_agent3_model_fixture.py, v4 fixture pair):
+       qwen/qwen3.8-flash      13/13/12  avg 12.7, floor 12, ~$0.0012/run  <- SWAPPED IN
+       meta/muse-spark-1.3     11/11/11  avg 11.0, floor 11, ~$0.0142/run (former incumbent, standard tier)
+       muse-spark-1.2-contrib  13/10/12/13 avg 12.0 but floor 10 (unstable low runs)
+       muse-spark-1.3-contrib  11/11/10/9  worse AND less stable than the standard tier — skip
+       gpt-oss-20b/120b        unstable across runs (10/5/11, 11/1) even at temp 0 — skip
+       nemo / qwen3.7-flash(:low) / deepseek-v4-flash / ling-3.0-flash  0/15 — skip
+     NOTE: no thinking suffix on the qwen line, DELIBERATELY — pi maps a missing suffix to
+     enable_thinking=false for qwen-family models (verified in pi's openai-completions
+     provider source), which is exactly the harness condition that scored 13/13/12. A suffix
+     (:low etc.) would enable thinking and risks the empty-content failure mode.
+     FULL results: tests/results/agent3_model_research_2026-09-28.md. Pending: one real
+     pipeline run on the Mac via pi to confirm end-to-end before unattended production use.
+     DO NOT use meta/muse-spark-1.2 with a thinking suffix (reasoning endpoint requires account-wide paid-model
+     training and returns a 404 unless enabled; the contributor tiers now ROUTE on the test key but measured
+     worse — see table above). anthropic/claude-haiku-4.5 is Batch-API-only on this account. -->
 <!-- TOOLS: `write` only — Agent 3 saves its own output file to the path given at job start. It needs no other tool and
      must never be given a network-capable one. -->
 <!-- DIVISION OF LABOUR (2026-09-04, Tamaugo's specification — do not drift from this): Agent 2 FETCHES data from eBay and
