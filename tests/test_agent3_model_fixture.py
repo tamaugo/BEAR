@@ -27,7 +27,13 @@ from jev_client import resolve_api_key  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-INSTRUCTIONS_PATH = REPO_ROOT / "agents" / "agent3_instructionsv4.md"
+# Optional first CLI arg: path to an alternative Agent 3 prompt file, so A/B
+# tests can run a tuned prompt variant without editing this harness:
+#   python3 tests/test_agent3_model_fixture.py agents/agent3_instructions_v4_jev_tuned.md
+INSTRUCTIONS_PATH = (
+    Path(sys.argv[1]).resolve() if len(sys.argv) > 1
+    else REPO_ROOT / "agents" / "agent3_instructionsv4.md"
+)
 INPUT_PATH = REPO_ROOT / "tests" / "fixtures" / "agent3_v4_dummy_input.md"
 EXPECTED_PATH = REPO_ROOT / "tests" / "fixtures" / "agent3_v4_expected_output.md"
 

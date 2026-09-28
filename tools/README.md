@@ -60,3 +60,23 @@ dollar cost of that one request, as billed by OpenRouter.
 - **402** -- the OpenRouter account is out of credits. Fails immediately, no retry.
 - **429 / 5xx** -- retried up to 3 times with exponential backoff (1s, 2s, 4s)
   before raising.
+
+## Agent 3 output validator
+
+`agent3_validator.py` validates Agent 3's 4-field pipe-delimited output file
+against every contract in its prompt, repairs what is deterministically
+repairable, and marks the rest:
+
+```
+python3 tools/agent3_validator.py <agent3_results.txt> <agent2_results_file> [backup_path]
+```
+
+- **Repairs (exit 0):** row re-sort by image number; row-shift remap when the
+  part number uniquely identifies the right filename; price format
+  normalisation (strip currency, pad to 2dp); price floor to 19.99; round-up
+  to .99; failure-row field cleanup.
+- **Marks (exit 2):** count mismatch, unknown failure string, invented or
+  altered part number, unparseable price, ambiguous remaps — investigate
+  before sending to a customer.
+- Original file is atomically replaced only when a repair happened; give a
+  third argument to keep a backup. Self-tests: `python3 tools/test_agent3_validator.py`.
