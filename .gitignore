@@ -11,6 +11,11 @@ session-notes/
 # Claude Code local settings (machine-specific)
 .claude/
 
+# Secrets — API keys live here, never in chat, never in git.
+.env
+*.env
+harness/.env
+
 # Dependencies
 harness/.pi/npm/node_modules/
 

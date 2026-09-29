@@ -1,61 +1,6 @@
 ---
 name: agent3-compiler
 description: Compiler agent. Takes Agent 2's eBay lookup results, strips everything that is not part name, part number, price or listing URL, and writes one clean pipe-delimited line per part to the output file. No external calls.
-tools: write
-model: qwen/qwen3.8-flash
----
-<!-- TESTING: swap the model line above to compare runs. CURRENT (2026-09-28, Jev fork): qwen/qwen3.8-flash,
-     chosen on live fixture evidence (tests/test_agent3_model_fixture.py, v4 fixture pair):
-       qwen/qwen3.8-flash      13/13/12  avg 12.7, floor 12, ~$0.0012/run  <- SWAPPED IN
-       meta/muse-spark-1.3     11/11/11  avg 11.0, floor 11, ~$0.0142/run (former incumbent, standard tier)
-       muse-spark-1.2-contrib  13/10/12/13 avg 12.0 but floor 10 (unstable low runs)
-       muse-spark-1.3-contrib  11/11/10/9  worse AND less stable than the standard tier — skip
-       gpt-oss-20b/120b        unstable across runs (10/5/11, 11/1) even at temp 0 — skip
-       nemo / qwen3.7-flash(:low) / deepseek-v4-flash / ling-3.0-flash  0/15 — skip
-     NOTE: no thinking suffix on the qwen line, DELIBERATELY — pi maps a missing suffix to
-     enable_thinking=false for qwen-family models (verified in pi's openai-completions
-     provider source), which is exactly the harness condition that scored 13/13/12. A suffix
-     (:low etc.) would enable thinking and risks the empty-content failure mode.
-     FULL results: tests/results/agent3_model_research_2026-09-28.md. pi compatibility CONFIRMED
-     2026-09-28 (test prompt ran clean inside the pi harness); a full pipeline run through the
-     harness is the remaining validation step.
-     DO NOT use meta/muse-spark-1.2 with a thinking suffix (reasoning endpoint requires account-wide paid-model
-     training and returns a 404 unless enabled; the contributor tiers now ROUTE on the test key but measured
-     worse — see table above). anthropic/claude-haiku-4.5 is Batch-API-only on this account. -->
-<!-- TOOLS: `write` only — Agent 3 saves its own output file to the path given at job start. It needs no other tool and
-     must never be given a network-capable one. -->
-<!-- DIVISION OF LABOUR (2026-09-04, Tamaugo's specification — do not drift from this): Agent 2 FETCHES data from eBay and
-     does not alter it. Agent 3 owns EVERY transformation of that data — stripping vehicle identifiers, stripping the
-     title's own part numbers, stripping location wording, hyphen removal, Title Case, price rounding, assembling the part
-     info field. The point is that all text rules live in one file, so running a different vehicle means changing Agent 3's
-     rule set and nothing else. If you find yourself adding a text-manipulation rule to Agent 2, it belongs here instead. -->
-<!-- OUTPUT CONTRACT (v4): four pipe-delimited fields, `part info | price | url | image`, consumed by a separate
-     deterministic script that converts the file to .xlsx by splitting each line on `|`. Any extra line — header, bullet,
-     blank line, closing summary — becomes a corrupt spreadsheet row. Do not "improve" the format here without changing
-     that script. -->
-<!-- INPUT CONTRACT (v4): Agent 2 v5 appends the eBay listing URL as a fifth field on success lines; failure lines keep
-     four fields and gain no empty url. A success line's url may legitimately be EMPTY (Agent 2 keeps a priced listing
-     whose link is missing rather than discarding it) — that is allowed through. A success line with only four fields is
-     the pre-v5 format and becomes `Malformed Input Line` by design: that is the bug surfacing, not Agent 3 misbehaving. -->
-<!-- JOB INPUTS: Agent 3 must be given the vehicle string, the Agent 2 results, the list of NULL filenames held back
-     from the pipeline, and the output path. `/run-pipeline` step 7 passes all four, and step 9 feeds this agent's file to
-     make_xlsx.py. A missing NULL list is indistinguishable from a job with no NULL photos, so the coordinator must pass
-     it explicitly even when empty. -->
-<!-- STATUS (2026-09-08): v4, rewritten for the operator-filtered workflow — filename location codes, location stripping,
-     four-field output. Hand-verified against the two real runs in the repo; NOT YET VALIDATED against a live run.
-     Canonical version and full changelog: agent3_instructionsv4.md in agents/ at the repo root. -->
-
-<!-- BODY SOURCE (2026-09-28): the prompt body below is agents/agent3_instructions_v4_jev_tuned.md
-     (v4 + three worked-example additions: Front Right keep-case, malformed-line verbatim image
-     field, sort worked example). Chosen over plain v4 on live A/B: qwen3.8-flash v4 11/11 vs tuned
-     14/13 (and 15/15 ceiling) on the corrected fixture; raw failures that remained are variance
-     classes (row-shift, price floor) now caught/repaired by tools/agent3_validator.py, which runs
-     on Agent 3's file after each job: python3 tools/agent3_validator.py <agent3_results.txt>
-     <agent2_results_file>. Exit 2 = marked rows, investigate; exit 0 = clean or repaired. -->
-
----
-name: agent3-compiler
-description: Compiler agent. Takes Agent 2's eBay lookup results, strips everything that is not part name, part number, price or listing URL, and writes one clean pipe-delimited line per part to the output file. No external calls.
 ---
 
 # Agent 3 — Compiler (System Prompt)
@@ -327,6 +272,6 @@ Write to the path given at job start. Use it exactly — never invent a filename
 
 *Unchanged from v2 and still correct: price rounding up to the nearest `.99`, the `19.99` floor, no currency symbol, one filename may span multiple lines, last-field/second-field parsing, `Malformed Input Line` fallback preserving count parity, one file per job.*
 
-*Model (updated 2026-09-28, Jev fork): `qwen/qwen3.8-flash`, no thinking suffix — chosen on live fixture evidence (tests/test_agent3_model_fixture.py over tests/fixtures/agent3_v4_*.md): 13/13/12 lines exact at ~$0.0012/run vs the former incumbent meta/muse-spark-1.3:minimal's 11/11/11 at ~$0.0142/run (better floor, better average, ~12x cheaper). pi maps a missing reasoning suffix to enable_thinking=false for qwen-family models — the exact condition the harness scored; adding a suffix would re-enable thinking and risks empty-content runs, so leave the slug bare. Contributor-tier Muse models now route on the test key (training approved) but measured worse: 1.3-contributor 11/11/10/9 (worse and less stable than its own standard tier), 1.2-contributor 13/10/12/13 (good average, floor 10). gpt-oss-20b/120b unstable across runs. Pending before unattended production: one real pipeline run on the Mac via pi. Full data: tests/results/agent3_model_research_2026-09-28.md.*
+*Model (updated 2026-09-28, Jev fork): `qwen/qwen3.8-flash`, no thinking suffix — chosen on live fixture evidence (tests/test_agent3_model_fixture.py over tests/fixtures/agent3_v4_*.md): 13/13/12 lines exact at ~$0.0012/run vs the former incumbent meta/muse-spark-1.3:minimal's 11/11/11 at ~$0.0142/run (better floor, better average, ~12x cheaper). pi maps a missing reasoning suffix to enable_thinking=false for qwen-family models — the exact condition the harness scored; adding a suffix would re-enable thinking and risks empty-content runs, so leave the slug bare. Contributor-tier Muse models now route on the test key (training approved) but measured worse: 1.3-contributor 11/11/10/9 (worse and less stable than its own standard tier), 1.2-contributor 13/10/12/13 (good average, floor 10). gpt-oss-20b/120b unstable across runs. pi compatibility CONFIRMED 2026-09-28 (test prompt ran clean inside the pi harness). Full data: tests/results/agent3_model_research_2026-09-28.md.*
 
 *Agent 3 v4-jev-tuned (2026-09-28, Jev fork) — three surgical worked-example additions on top of v4, no rule changes: (1) `Front Right Seat Control Motor` keep-example in the trap section, teaching that position words are tested individually within a run and contrasting against the `Driver Side Front Bumper Bracket` strip case; (2) malformed-line example pinning that a pipe-less line's image field is the entire raw line verbatim; (3) sort worked example showing input order discarded for numeric order. Prompted by live A/B failures: every capable model stripped `Front` from `Front Right Seat Control Motor` on every run (the prompt's example lists were all single-position-word, so models over-generalized all-strip from the multi-word strip examples), and qwen3.8-flash truncated the malformed line's image field in one of two runs. Fixture note: line 11's expectation was corrected to `Tailgate Strut Gas Spring` per v4's removal of the seller-location fallback.*
