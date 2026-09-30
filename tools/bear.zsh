@@ -12,12 +12,27 @@
 #   BEAR check   pre-flight only, do not launch
 #   BEAR raw     launch pi without tmux
 
-BEAR_HOME="/Users/tamaugo/Desktop/ebay-pipeline"
+# Self-locate the repo from this script's own path (works from any clone
+# location). bear.zsh lives at <repo>/tools/bear.zsh, so the repo root is one
+# level up. Falls back to the legacy Desktop path only if self-location fails
+# — and the pre-flight below FAILS LOUDLY if the harness isn't there, so a
+# wrong path can never silently launch pi from the wrong directory.
+# (2026-09-28 fix: the old hard-coded BEAR_HOME made fresh clones cd elsewhere,
+# so pi launched outside harness/ and never discovered .pi/prompts/ —
+# /run-pipeline vanished and the coordinator had no instructions.)
+typeset _bear_script_path="${(%):-%x}"
+BEAR_HOME="${_bear_script_path:a}"      # absolute, resolves ./ and relative sources
+BEAR_HOME="${BEAR_HOME:h:h}"            # strip tools/bear.zsh -> repo root
+if [[ ! -d "$BEAR_HOME/harness/.pi/agents" ]]; then
+  BEAR_HOME="/Users/tamaugo/Desktop/ebay-pipeline"
+fi
 BEAR_HARNESS="$BEAR_HOME/harness"
 
 _bear_preflight() {
   local ok=1
   print -P "%F{cyan}BEAR%f — Batch eBay Agentic Retrieval"
+  print ""
+  print -P "  %F{242}repo: $BEAR_HOME%f"
   print ""
 
   # 1. harness present
