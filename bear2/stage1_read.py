@@ -46,14 +46,43 @@ def read_photo(path, vehicle, model=MODEL, max_side=1600, rotate=0):
     msgs = [{"role": "user", "content": [
         {"type": "text", "text": PROMPT.format(vehicle=vehicle)},
         {"type": "image_url", "image_url": {"url": c.img_data_uri(path, max_side, rotate)}}]}]
-    out, raw = c.chat(model, msgs, max_tokens=1200, response_format={"type": "json_object"},
-                      tag=f"s1:{Path(path).name}")
-    try:
-        d = parse_json(out) or {}
-    except Exception:
-        d = {"_parse_error": out[:500]}
-    d["_cost"] = (raw.get("usage") or {}).get("cost")
+    cost = 0
+    for attempt in range(2):
+        out, raw = c.chat(model, msgs, max_tokens=1200, response_format={"type": "json_object"},
+                          temperature=0 if attempt == 0 else 0.3, tag=f"s1:{Path(path).name}")
+        cost += (raw.get("usage") or {}).get("cost") or 0
+        try:
+            d = parse_json(out) or {}
+            break
+        except Exception:
+            # Measured r9: flash-lite sometimes repeats its candidate list until max_tokens,
+            # truncating the JSON. The readings are still there - salvage them, then retry.
+            d = salvage(out)
+    d["candidates"] = dedupe(d.get("candidates") or [])
+    d["_cost"] = cost
     return d
+
+
+def dedupe(cands):
+    seen, out = set(), []
+    for x in cands:
+        k = c.norm(x.get("text") or "")
+        if k and k not in seen:
+            seen.add(k)
+            out.append(x)
+    return out
+
+
+def salvage(text):
+    """Recover candidate objects from truncated JSON output."""
+    cands = []
+    for m in re.finditer(r'"text"\s*:\s*"([^"]+)"\s*,\s*"role"\s*:\s*"(\w+)"', text):
+        cands.append({"text": m.group(1), "role": m.group(2), "legibility": "unknown",
+                      "alt_readings": [], "note": "salvaged from truncated output"})
+    desc = re.search(r'"part_description"\s*:\s*"([^"]*)"', text)
+    cnt = re.search(r'"item_count"\s*:\s*(\d+)', text)
+    return {"candidates": cands, "part_description": desc.group(1) if desc else None,
+            "item_count": int(cnt.group(1)) if cnt else 1, "_salvaged": True}
 
 
 def read_photo_robust(path, vehicle, model=MODEL):

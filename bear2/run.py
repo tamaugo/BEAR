@@ -16,7 +16,7 @@ FAIL_UN = "FAILED | Agent 2 | eBay Lookup Unavailable"
 
 def process(name, s1, vehicle, make):
     tr = {"s1": s1}
-    if not s1 or s1.get("_parse_error") or not s1.get("candidates"):
+    if not s1 or not s1.get("candidates"):
         return f"{name} | {FAIL1}", tr
     verified = s2.verify(s1, make)
     tr["verified"] = [{"text": v["text"], "n": len(v["listings"]), "make": v["make_hits"],
