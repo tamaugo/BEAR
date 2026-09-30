@@ -276,3 +276,9 @@ export function extractAnswers(response: unknown): {
 	const cost = typeof usage?.cost === "number" ? usage.cost : null;
 	return { answers, cost };
 }
+
+// pi auto-loads every .ts in .pi/extensions/ and requires a default-exported
+// factory. This file is a helper library (imported by jev-decisions.ts), not an
+// extension, so register nothing -- without this stub pi refuses to load the
+// file at all ("Extension does not export a valid factory function").
+export default function (): void {}
