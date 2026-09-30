@@ -99,14 +99,36 @@ def sell_price(p):
     return max(19.99, round(r, 2))
 
 
+def price_bucket(p):
+    """x.99 bucket WITHOUT the 19.99 floor, so 12.49/12.50 group together but cheap
+    listings never merge with a real 19.99 (floor merging would let junk win the vote)."""
+    p = round(float(p), 2)
+    r = math.floor(p - 0.01 + 1e-9) + 0.99
+    if r < p - 0.01 - 1e-9:
+        r += 1
+    return round(r, 2)
+
+
 def consensus_price(prices):
-    prices = sorted(prices)
+    """Operator rule (2026-09-30): the MOST COMMON price wins. e.g. 2x19.99, 4x64.99,
+    3x43.99 + 6 singles -> 64.99. Tie between most-common prices -> lower median of the
+    tied values. No price repeats at all -> lower median of everything."""
+    b = sorted(price_bucket(p) for p in prices)
     counts = {}
-    for pr in prices:
-        counts[pr] = counts.get(pr, 0) + 1
+    for x in b:
+        counts[x] = counts.get(x, 0) + 1
     top = max(counts.values())
-    tops = [pr for pr, n in counts.items() if n == top]
-    return tops[0] if len(tops) == 1 and top > 1 else prices[(len(prices) - 1) // 2]
+    if top == 1:
+        return b[(len(b) - 1) // 2]
+    tied = sorted(x for x, n in counts.items() if n == top)
+    if len(tied) > 1:
+        # Tie-break: sellers at the IDENTICAL price is stronger agreement than prices that
+        # only round to the same .99 (2x139.99 beats 104.70+105.00).
+        exact = {x: max(sum(1 for p in prices if round(float(p), 2) == q)
+                        for q in {round(float(p), 2) for p in prices if price_bucket(p) == x}) for x in tied}
+        best = max(exact.values())
+        tied = [x for x in tied if exact[x] == best]
+    return tied[(len(tied) - 1) // 2]
 
 
 def best_title(bucket, all_titles, part_number, vehicle):
@@ -137,9 +159,10 @@ def pick_listing(scored, part_number="", vehicle=""):
     used = [(it, p) for it, p in matched if is_used(it)]
     pool = used or matched
     consensus = consensus_price([float(it["price"]["value"]) for it, _ in pool])
-    target = sell_price(consensus)
-    bucket = [it for it, _ in pool if sell_price(it["price"]["value"]) == target]
+    target = max(19.99, consensus)
+    bucket = [it for it, _ in pool if price_bucket(it["price"]["value"]) == consensus]
     all_titles = [it.get("title") or "" for it, _ in pool]
     chosen, tinfo = best_title(bucket, all_titles, part_number, vehicle)
     return chosen, {"matched": len(matched), "used": len(used), "consensus": consensus,
+                    "market_titles": all_titles,
                     "sell_price": target, "bucket": len(bucket), "title_pick": tinfo}

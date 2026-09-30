@@ -40,6 +40,7 @@ def process(name, s1, vehicle, make):
     tr["scored"] = [((it.get("legacyItemId") or it.get("itemId")), round(p, 2), it.get("title"),
                      it["price"]["value"], it.get("condition")) for it, p in scored]
     item, pinfo = s3.pick_listing(scored, chosen["text"], vehicle)
+    tr["market_titles"] = pinfo.pop("market_titles", [])[:30]
     tr["pick"] = pinfo
     if not item:
         return f"{name} | {FAIL_NF}", tr
@@ -80,6 +81,7 @@ def main():
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
+    (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
     print(assemble.main(out_dir, vehicle))
     cost = c.total_spend() - spend0
     print(f"\nrun cost ${cost:.4f} for {len(photos)} parts (${cost/max(1,len(photos)):.5f}/part); total spend ${c.total_spend():.4f}")
