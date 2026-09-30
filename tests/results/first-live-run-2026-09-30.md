@@ -51,9 +51,12 @@ part" is invisible to it), and eBay then listed the wrong part; (b) Jev picked a
 among equal-price carriers. Needs output/agent1_results.md + agent2_results.md from the run to
 attribute definitively.
 
-**Honest caveat:** there is no v8 baseline on this same 19-part batch, so "worse" is not yet a
-strict measurement — but the demotion mechanism is verifiable in the files and matches the
-failure pattern exactly.
+**Honest caveat RESOLVED with the operator's baseline:** a 28-part job on v8 got **ALL part
+numbers right**, and every eBay listing returned was one the operator would have picked. So v8 =
+100% on its batch; v9-jev = 13/15 correct reads (3 fails incl. 2 extraction misses, 1 wrong
+listing) on 19 parts. The regression is a strict measurement, not an impression: **the v9-jev
+rewrite made the pipeline measurably worse.** The "extraction is cheap and reliable" assumption
+was not just untested — it was false by ~13 points of recall versus the discipline it replaced.
 
 **Fix direction (proposed, awaiting go-ahead):** v9.1 restores v8's extraction scrutiny
 (char-by-char reading discipline, orientation handling incl. upside-down/rotated text,
