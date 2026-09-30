@@ -159,10 +159,12 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
     raise last
 
 
-def img_data_uri(path, max_side=1600):
+def img_data_uri(path, max_side=1600, rotate=0):
     from PIL import Image, ImageOps
     import io
     im = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    if rotate:
+        im = im.rotate(rotate, expand=True)
     im.thumbnail((max_side, max_side))
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=88)

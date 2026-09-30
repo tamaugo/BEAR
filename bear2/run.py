@@ -7,7 +7,7 @@ usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cache
 import json, sys, time, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c, stage1_read as s1m, stage2_numbers as s2, stage3_listing as s3
+import common as c, stage1_read as s1m, stage2_numbers as s2, stage3_listing as s3, assemble
 
 FAIL1 = "FAILED | Agent 1 | Could Not Produce Clear Part Number"
 FAIL_NF = "FAILED | Agent 2 | No eBay Listing Found"
@@ -30,18 +30,25 @@ def process(name, s1, vehicle, make):
     chosen, info = s3.choose_number(s1, live, vehicle)
     tr["choose"] = {"text": chosen["text"], **info}
     if info.get("method") == "jev" and (info.get("confidence") or 0) < 0.5:
-        return f"{name} | {FAIL1}", tr
+        # Low Jev confidence. Accept only if two independent signals agree: the vision
+        # model marked exactly one verified reading "primary", and Jev's top pick is it.
+        prim = [v for v in live if v["cand"].get("role") == "primary"]
+        if not (len(prim) == 1 and prim[0] is chosen):
+            return f"{name} | {FAIL1}", tr
+        tr["choose"]["accepted_by"] = "jev-top + sole vision primary"
     scored = s3.listing_match(s1, chosen["listings"], vehicle)
     tr["scored"] = [((it.get("legacyItemId") or it.get("itemId")), round(p, 2), it.get("title"),
                      it["price"]["value"], it.get("condition")) for it, p in scored]
-    item, pinfo = s3.pick_listing(scored)
+    item, pinfo = s3.pick_listing(scored, chosen["text"], vehicle)
     tr["pick"] = pinfo
     if not item:
         return f"{name} | {FAIL_NF}", tr
     s = c.summarize(item)
     title = (s["title"] or "").replace("|", " ")
-    price = item["price"]["value"]
-    return f"{name} | {c.norm(chosen['text']) if False else chosen['text']} | {title} | {price} | {s['url']}", tr
+    # Operator-rule sell price (x.99, floor 19.99) computed here so Agent 3's own
+    # round-up rule is a no-op on it (x.99 stays x.99).
+    price = f"{pinfo['sell_price']:.2f}"
+    return f"{name} | {chosen['text']} | {title} | {price} | {s['url']}", tr
 
 
 def main():
@@ -57,7 +64,7 @@ def main():
         S1 = json.loads(Path(s1_cache).read_text())
     else:
         with cf.ThreadPoolExecutor(6) as ex:
-            S1 = dict(zip([p.name for p in photos], ex.map(lambda p: s1m.read_photo(p, vehicle), photos)))
+            S1 = dict(zip([p.name for p in photos], ex.map(lambda p: s1m.read_photo_robust(p, vehicle), photos)))
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
     lines, trace = {}, {}
     with cf.ThreadPoolExecutor(6) as ex:
@@ -72,8 +79,9 @@ def main():
     (out_dir / "agent2_results.md").write_text("\n".join(ordered) + "\n")
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
+    (out_dir / "null_files.txt").write_text("\n".join(nulls))
+    print(assemble.main(out_dir, vehicle))
     cost = c.total_spend() - spend0
-    print("\n".join(ordered))
     print(f"\nrun cost ${cost:.4f} for {len(photos)} parts (${cost/max(1,len(photos)):.5f}/part); total spend ${c.total_spend():.4f}")
 
 

@@ -10,9 +10,11 @@ GT = Path(__file__).resolve().parent.parent / "tests/fixtures/ground_truth_hyund
 
 
 def op_price(p):
-    p = float(p)
-    r = math.floor(p) + 0.99 if round(p % 1, 2) != 0.99 else p
-    if r < p:
+    """Operator rule (from his sheet): smallest x.99 >= price - 0.01, floor 19.99.
+    25.00->24.99, 24.98->24.99, 23.57->23.99, 20.42->20.99, 12.49->19.99."""
+    p = round(float(p), 2)
+    r = math.floor(p - 0.01 + 1e-9) + 0.99
+    if r < p - 0.01 - 1e-9:
         r += 1
     return max(19.99, round(r, 2))
 
@@ -23,7 +25,7 @@ def main(path):
     for line in Path(path).read_text().splitlines():
         f = [x.strip() for x in line.split("|")]
         name = f[0]
-        g = gt.get(name)
+        g = gt.get(name) or gt.get(name.replace("_rot180", "").replace("_rot90", ""))
         if not g:
             continue
         n += 1
@@ -36,7 +38,7 @@ def main(path):
             print(f"BAD {name:18} FAILED ({f[-1]}) expected {g['part_number']}")
             continue
         pn_ok = c.norm(f[1]).startswith(c.norm(g["part_number"])) and len(c.norm(f[1])) - len(c.norm(g["part_number"])) <= 1
-        url_ok = f[-1].rstrip("/").split("/")[-1] == g["url"].split("/")[-1]
+        url_ok = f[-1].rstrip("/").split("/")[-1] == g["url"].split("/")[-1] or g.get("url_exact_applies") is False
         pr = op_price(f[-2])
         price_ok = g["price"] is None or abs(pr - g["price"]) < 0.01
         n_pn += pn_ok; n_url += url_ok; n_price += price_ok

@@ -62,39 +62,84 @@ def choose_number(s1, live, vehicle):
 
 
 def listing_match(s1, listings, vehicle, cap=60):
+    """Veto question. The component identity comes from the MARKET (what most sellers of this
+    exact number call it), not from the vision description: a cheap vision model misnamed the
+    parking-brake switch as a 'window switch' and every genuine listing got vetoed (r2, IMG_4784).
+    Vision still supplies the quantity in the photo."""
     listings = listings[:cap]
-    state = {"photo_of_part": {"description": s1.get("part_description"),
-                               "items_in_photo": s1.get("item_count", 1),
-                               "visual": s1.get("visual_features"), "car": vehicle},
+    state = {"car": vehicle,
+             "photo": {"items_in_photo": s1.get("item_count", 1),
+                       "rough_description_may_be_imprecise": s1.get("part_description")},
              "listings": {f"L{i+1}": (it.get("title") or "") for i, it in enumerate(listings)}}
     qs = {f"L{i+1}": {"type": "noul", "instructions": (
-        f"Is listing L{i+1} selling the same thing that is in the photo: the same kind of component and "
-        "the same quantity? A listing for a pair/set/multiple pieces, a larger assembly the part is only "
-        "attached to, or a different component that shares the number does NOT match.")}
+        f"All these listings carry the same part number. Is listing L{i+1} selling the same single "
+        "component that the majority of the listings are selling, in the same quantity as the photo? "
+        "Answer false if L{i+1} is a pair/set/multiple pieces when the photo has one item, a larger "
+        "assembly or different component that merely includes this number, or clearly a different "
+        "part from what most sellers list.")}
         for i in range(len(listings))}
     r = c.jev(state, qs, tag="listing_match")
     return [(it, j.get_value(r, f"L{i+1}")) for i, it in enumerate(listings)]
 
 
-def pick_listing(scored):
-    """scored: [(item, p)]. Returns (item, info)."""
-    if not scored:
-        return None, {}
-    best = max(p for _, p in scored)
-    thr = max(0.5, best - 0.2)
-    matched = [(it, p) for it, p in scored if p >= thr] or [max(scored, key=lambda x: x[1])]
-    used = [(it, p) for it, p in matched if is_used(it)]
-    pool = used or matched
-    prices = sorted(float(it["price"]["value"]) for it, _ in pool)
-    # consensus: most common price if strictly most common, else lower median
+import math
+
+EXCLUDE_BELOW = 0.2   # Jev listing-match is a VETO for clear mismatches (pairs/sets/other
+                      # assemblies score ~0.03), not a ranking: photo descriptions from a cheap
+                      # vision model are too vague to rank genuine listings (measured 2026-09-30).
+
+
+def sell_price(p):
+    """Operator rule, read off his corrected sheet: smallest x.99 >= price-0.01, floor 19.99.
+    25.00->24.99, 24.98->24.99, 23.57->23.99, 20.42->20.99, 12.49->19.99, 100.00->99.99."""
+    p = round(float(p), 2)
+    r = math.floor(p - 0.01 + 1e-9) + 0.99
+    if r < p - 0.01 - 1e-9:
+        r += 1
+    return max(19.99, round(r, 2))
+
+
+def consensus_price(prices):
+    prices = sorted(prices)
     counts = {}
     for pr in prices:
         counts[pr] = counts.get(pr, 0) + 1
     top = max(counts.values())
     tops = [pr for pr, n in counts.items() if n == top]
-    consensus = tops[0] if len(tops) == 1 and top > 1 else prices[(len(prices) - 1) // 2]
-    # listing closest to consensus; tie -> highest Jev match, then eBay order
-    order = {id(it): k for k, (it, _) in enumerate(pool)}
-    chosen = min(pool, key=lambda x: (abs(float(x[0]["price"]["value"]) - consensus), -x[1], order[id(x[0])]))
-    return chosen[0], {"matched": len(matched), "used": len(used), "consensus": consensus,
-                       "jev_p": chosen[1], "thr": thr}
+    return tops[0] if len(tops) == 1 and top > 1 else prices[(len(prices) - 1) // 2]
+
+
+def best_title(bucket, all_titles, part_number, vehicle):
+    """Jev picks which of the equal-sell-price listings names the part best. State carries
+    every title for the number so Jev can see what the market calls this part."""
+    if len(bucket) == 1:
+        return bucket[0], {"method": "single"}
+    bucket = bucket[:40]
+    opts = {f"T{i+1}": "" for i in range(len(bucket))}
+    state = {"car": vehicle, "part_number": part_number,
+             "what_all_uk_sellers_call_this_part_number": all_titles[:40],
+             "candidate_titles": {f"T{i+1}": (it.get("title") or "") for i, it in enumerate(bucket)}}
+    q = {"title": {"type": "choice", "instructions": (
+        "These eBay listings all sell the same used car part at the same price. Which candidate title "
+        "names the part most accurately and completely, the way most sellers of this part number "
+        "describe it? Reject titles that name a different or larger component, a pair/set, only a "
+        "vague word, or that are mostly seller codes."), "criteria": opts}}
+    r = c.jev(state, q, tag="best_title")
+    k = j.get_value(r, "title")
+    return bucket[int(k[1:]) - 1], {"method": "jev", "confidence": j.get_confidence(r, "title")}
+
+
+def pick_listing(scored, part_number="", vehicle=""):
+    """scored: [(item, p)]. Returns (item, info). Price and URL always from the same listing."""
+    if not scored:
+        return None, {}
+    matched = [(it, p) for it, p in scored if p >= EXCLUDE_BELOW] or [max(scored, key=lambda x: x[1])]
+    used = [(it, p) for it, p in matched if is_used(it)]
+    pool = used or matched
+    consensus = consensus_price([float(it["price"]["value"]) for it, _ in pool])
+    target = sell_price(consensus)
+    bucket = [it for it, _ in pool if sell_price(it["price"]["value"]) == target]
+    all_titles = [it.get("title") or "" for it, _ in pool]
+    chosen, tinfo = best_title(bucket, all_titles, part_number, vehicle)
+    return chosen, {"matched": len(matched), "used": len(used), "consensus": consensus,
+                    "sell_price": target, "bucket": len(bucket), "title_pick": tinfo}

@@ -42,10 +42,10 @@ def parse_json(s):
     return json.loads(m.group(0)) if m else None
 
 
-def read_photo(path, vehicle, model=MODEL, max_side=1600):
+def read_photo(path, vehicle, model=MODEL, max_side=1600, rotate=0):
     msgs = [{"role": "user", "content": [
         {"type": "text", "text": PROMPT.format(vehicle=vehicle)},
-        {"type": "image_url", "image_url": {"url": c.img_data_uri(path, max_side)}}]}]
+        {"type": "image_url", "image_url": {"url": c.img_data_uri(path, max_side, rotate)}}]}]
     out, raw = c.chat(model, msgs, max_tokens=1200, response_format={"type": "json_object"},
                       tag=f"s1:{Path(path).name}")
     try:
@@ -53,6 +53,27 @@ def read_photo(path, vehicle, model=MODEL, max_side=1600):
     except Exception:
         d = {"_parse_error": out[:500]}
     d["_cost"] = (raw.get("usage") or {}).get("cost")
+    return d
+
+
+def read_photo_robust(path, vehicle, model=MODEL):
+    """First pass upright. If it finds no candidate number, re-read the photo rotated
+    90/180/270 degrees and merge. Measured: flash-lite returned [] for a 90-degree-rotated
+    wiring-loom label (r4rot, IMG_4866) that it reads fine upright. A no-number part
+    (fuel cap) costs 3 extra cheap calls, ~$0.002."""
+    d = read_photo(path, vehicle, model)
+    if d.get("candidates"):
+        return d
+    extra, cost = [], d.get("_cost") or 0
+    for rot in (90, 180, 270):
+        r = read_photo(path, vehicle, model, rotate=rot)
+        cost += r.get("_cost") or 0
+        for cand in r.get("candidates") or []:
+            cand["note"] = f"(read after rotating {rot}deg) " + (cand.get("note") or "")
+            extra.append(cand)
+        if not d.get("part_description") and r.get("part_description"):
+            d["part_description"] = r["part_description"]
+    d["candidates"], d["_cost"], d["_rotation_retry"] = extra, cost, True
     return d
 
 
