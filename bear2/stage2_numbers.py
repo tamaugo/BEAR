@@ -54,10 +54,10 @@ def expand_candidates(s1):
     return res
 
 
-def ebay_for(text):
+def ebay_for(text, quick=False):
     seen, out = {}, []
     needle = c.norm(text)
-    for q in query_variants(text):
+    for q in (query_variants(text)[:1] if quick else query_variants(text)):
         try:
             items = c.ebay_search_raw(q)
         except Exception as e:

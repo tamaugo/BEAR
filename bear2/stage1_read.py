@@ -22,7 +22,8 @@ Your job is PERCEPTION ONLY. Report what is physically printed/moulded/stamped o
 - Do NOT invent characters you cannot see. If part of a number is hidden or cut off, still report the visible part and say so in `note`.
 - IGNORE: dates, date wheels, barcodes digits, voltages/ratings, E-marks/DOT/regulatory codes, recycling/material codes (>PP<, PA66), country of origin, brand names.
 - `role`: "primary" = most likely the part's own OEM number; "secondary" = another number on the part (sub-component, supplier, revision); "unclear".
-- Hyundai/Kia OEM numbers look like 5 digits + 5 characters (e.g. 97420-3Z000, 95920-0U000, 32727-2T900), often with a trailing revision/colour suffix (e.g. RY, 4X, 3X, WK) after the 10 characters — report the number with the suffix as printed; do not remove it.
+- OEM numbering differs by make, e.g. Hyundai/Kia 97420-3Z000 (5+5, may carry a 2-char suffix like RY), Peugeot/Citroen 96 386 698 80 (10 digits ending 80), Ford 3M51-9K546-AB (prefix-base-suffix), VW 3C0 015 404, BMW 63 21 7 160 779. Report the number exactly as printed, suffix included; do not remove anything.
+- Stamped/etched/cast metal: read slowly, report every plausible reading of each unclear character in alt_readings.
 
 Also describe the part itself as a UK car-breaker eBay seller would name it (e.g. "rear interior courtesy roof dome light", "accelerator throttle pedal", "airbag crash impact sensor"). Say how many separate items are in the photo (e.g. 2 sensors = item_count 2).
 

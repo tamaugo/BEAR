@@ -7,14 +7,22 @@ usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cache
 import json, sys, time, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c, stage1_read as s1m, stage2_numbers as s2, stage3_listing as s3, assemble
+import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble
 
 FAIL1 = "FAILED | Agent 1 | Could Not Produce Clear Part Number"
 FAIL_NF = "FAILED | Agent 2 | No eBay Listing Found"
 FAIL_UN = "FAILED | Agent 2 | eBay Lookup Unavailable"
 
 
-def process(name, s1, vehicle, make):
+def no_match_fail(s1):
+    """A clearly-read primary number that no UK seller lists (or only lists as a different
+    component) is an eBay miss, not a reading failure - tell the operator which it was."""
+    clear = [x for x in s1.get("candidates") or [] if x.get("role") == "primary"
+             and x.get("legibility") == "clear" and len(c.norm(x.get("text") or "")) >= 7]
+    return FAIL_NF if clear else FAIL1
+
+
+def process(name, s1, vehicle, make, photo_path=None):
     tr = {"s1": s1}
     if not s1 or not s1.get("candidates"):
         return f"{name} | {FAIL1}", tr
@@ -24,18 +32,38 @@ def process(name, s1, vehicle, make):
     if verified and all(v.get("error") for v in verified):
         return f"{name} | {FAIL_UN}", tr
     live = s3.drop_substring_readings(verified)
+    # Rescue unless a PRIMARY-role reading is strongly listed. Secondary junk like "10 10 3"
+    # (150 substring hits) must not suppress the rescue (IMG_3931, pt2).
+    if not any(len(v["listings"]) >= s2b.STRONG and v["cand"].get("role") == "primary" for v in live):
+        # hard read: try confusable-character / revision-suffix rescues
+        rescued = s2b.rescue(s1, make)
+        tr["rescued"] = [{"text": v["text"], "n": len(v["listings"]), "from": v["cand"].get("read_as"),
+                          "how": v["cand"].get("rescue")} for v in rescued]
+        live = s3.drop_substring_readings(live + rescued)
     if not live:
-        # vision saw numbers but no UK seller lists any reading
-        return f"{name} | {FAIL1}", tr
+        return f"{name} | {no_match_fail(s1)}", tr
     chosen, info = s3.choose_number(s1, live, vehicle)
     tr["choose"] = {"text": chosen["text"], **info}
+    weak = len(chosen["listings"]) < s2b.STRONG or chosen["cand"].get("rescue")
     if info.get("method") == "jev" and (info.get("confidence") or 0) < 0.5:
-        # Low Jev confidence. Accept only if two independent signals agree: the vision
-        # model marked exactly one verified reading "primary", and Jev's top pick is it.
-        prim = [v for v in live if v["cand"].get("role") == "primary"]
+        prim = [v for v in live if v["cand"].get("role") == "primary" and not v["cand"].get("rescue")]
         if not (len(prim) == 1 and prim[0] is chosen):
-            return f"{name} | {FAIL1}", tr
-        tr["choose"]["accepted_by"] = "jev-top + sole vision primary"
+            weak = True  # low confidence: must pass the component gate
+    if weak:
+        ranked = sorted(live, key=lambda v: -(info.get("probs") or {}).get(f"R{live.index(v)+1}", 1 if v is chosen else 0))
+        tr["gate"] = {"tried": []}
+        passed = None
+        for v in ranked[:3]:
+            ok = s2b.visual_gate(str(photo_path), v)
+            tr["gate"]["tried"].append((v["text"], ok))
+            if ok:
+                passed = v
+                break
+        if not passed:
+            return f"{name} | {no_match_fail(s1)}", tr
+        chosen = passed
+        tr["choose"]["text"] = chosen["text"]
+    out_number = chosen["cand"].get("read_as") if chosen["cand"].get("rescue") == "suffix-family" else chosen["text"]
     scored = s3.listing_match(s1, chosen["listings"], vehicle)
     tr["scored"] = [((it.get("legacyItemId") or it.get("itemId")), round(p, 2), it.get("title"),
                      it["price"]["value"], it.get("condition")) for it, p in scored]
@@ -49,7 +77,7 @@ def process(name, s1, vehicle, make):
     # Operator-rule sell price (x.99, floor 19.99) computed here so Agent 3's own
     # round-up rule is a no-op on it (x.99 stays x.99).
     price = f"{pinfo['sell_price']:.2f}"
-    return f"{name} | {chosen['text']} | {title} | {price} | {s['url']}", tr
+    return f"{name} | {out_number} | {title} | {price} | {s['url']}", tr
 
 
 def main():
@@ -69,7 +97,7 @@ def main():
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
     lines, trace = {}, {}
     with cf.ThreadPoolExecutor(6) as ex:
-        futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make): p.name for p in photos}
+        futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make, p): p.name for p in photos}
         for f in futs:
             try:
                 lines[futs[f]], trace[futs[f]] = f.result()

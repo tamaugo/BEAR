@@ -69,20 +69,33 @@ def ebay_token():
     return _tok["v"]
 
 
-def ebay_search_raw(q, limit=200, max_age_h=24):
-    key = hashlib.sha1(f"{q}|{limit}".encode()).hexdigest()[:16]
+CAR_PARTS_CATEGORY = "131090"   # eBay UK Vehicle Parts & Accessories. Without it a misread
+                                # number ("0165-18", IMG_3931) matched a gold watch listing.
+
+
+def ebay_search_raw(q, limit=200, max_age_h=24, category=CAR_PARTS_CATEGORY):
+    key = hashlib.sha1(f"{q}|{limit}|{category}".encode()).hexdigest()[:16]
     cf = CACHE / f"ebay_{key}.json"
     if cf.exists() and time.time() - cf.stat().st_mtime < max_age_h * 3600:
         return json.loads(cf.read_text())["items"]
     params = {"q": q, "filter": "itemLocationCountry:GB", "limit": str(limit), "fieldgroups": "EXTENDED"}
-    req = urllib.request.Request("https://api.ebay.com/buy/browse/v1/item_summary/search?"
-                                 + urllib.parse.urlencode(params))
-    req.add_header("Authorization", f"Bearer {ebay_token()}")
-    req.add_header("X-EBAY-C-MARKETPLACE-ID", "EBAY_GB")
-    with urllib.request.urlopen(req, timeout=45) as r:
-        items = json.loads(r.read()).get("itemSummaries", []) or []
-    cf.write_text(json.dumps({"q": q, "items": items}))
-    return items
+    if category:
+        params["category_ids"] = category
+    items = []
+    for attempt in range(3):
+        req = urllib.request.Request("https://api.ebay.com/buy/browse/v1/item_summary/search?"
+                                     + urllib.parse.urlencode(params))
+        req.add_header("Authorization", f"Bearer {ebay_token()}")
+        req.add_header("X-EBAY-C-MARKETPLACE-ID", "EBAY_GB")
+        with urllib.request.urlopen(req, timeout=45) as r:
+            items = json.loads(r.read()).get("itemSummaries", []) or []
+        # Measured (IMG_3974): eBay occasionally returns a degraded payload with no
+        # condition field on any item, which silently disables the used-first rule.
+        if not items or sum(1 for i in items if i.get("condition")) >= 0.5 * len(items):
+            cf.write_text(json.dumps({"q": q, "items": items}))
+            return items
+        time.sleep(1 + attempt)
+    return items  # degraded, not cached
 
 
 def norm(s):
