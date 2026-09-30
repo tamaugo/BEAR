@@ -18,13 +18,8 @@ import common as c
 LOC = {"NSF": "Near Side Front", "NSR": "Near Side Rear", "OSF": "Off Side Front", "OSR": "Off Side Rear"}
 MODEL = "qwen/qwen3.8-flash"
 
-CLEAN_PROMPT = """You write the part name for a UK car breaker's eBay listing. Buyers find a part either by its
-part number (added separately, never put it in the name) or by searching the part's NAME, so the
-name must contain the words buyers actually search for.
-For each item you get the chosen listing "title" and "market": titles of other UK listings of the SAME
-part number. Build the name from the component words that recur most across the market titles,
-combining common synonyms when sellers use both (e.g. "Airbag Srs Control Module Unit", "Wiper
-Indicator Stalk Switch"). 3-8 words. Only describe the single component itself. Remove:
+CLEAN_PROMPT = """You clean eBay listing titles into short part names for a UK car breaker's spreadsheet.
+For each item, return ONLY the words that say what the component is. Remove:
 - vehicle words: make, model, trim, generation (MK1, FACELIFT, FL, PRE FL), years/year ranges, engine size, fuel, power, body style (ESTATE, SALOON, CRDI, STYLE, BLUE DRIVE)
 - every part number, SKU, seller code, stray symbols
 - seller noise: GENUINE, OEM, FREE POSTAGE, condition words
@@ -93,10 +88,7 @@ def main(run_dir, vehicle):
         if len(f) >= 2:
             rows.append(f)
     nulls = [n for n in (run / "null_files.txt").read_text().split("\n") if n.strip()] if (run / "null_files.txt").exists() else []
-    mt_path = run / "market_titles.json"
-    market = json.loads(mt_path.read_text()) if mt_path.exists() else {}
-    titles = {f"i{k}": {"title": f[2], "locationcode": bool(location(f[0])),
-                        "market": market.get(f[0], [])[:20]} for k, f in enumerate(rows) if f[1] != "FAILED"}
+    titles = {f"i{k}": {"title": f[2], "locationcode": bool(location(f[0]))} for k, f in enumerate(rows) if f[1] != "FAILED"}
     names = clean_names(titles)
     out = []
     for k, f in enumerate(rows):
