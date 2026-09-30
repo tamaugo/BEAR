@@ -43,3 +43,9 @@ jobs/
 job-data/
 real-data/
 *_job/
+
+# Operator test photos (real job data) — never commit
+harness/photos-base/
+bear2/cache/
+bear2/spend.jsonl
+bear2/runs/
