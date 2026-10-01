@@ -1,3 +1,31 @@
+## BEAR 0.2 — quick start (Mac)
+
+1. Get the code: `git clone <repo-url> BEAR && cd BEAR && git checkout bear2` (already cloned? `git pull`).
+2. Install the command: `./install.sh` — links `bear` into `~/.local/bin` and adds it to your PATH (open a new Terminal afterwards).
+3. Store the three keys once in the macOS Keychain (each command prompts silently for the value):
+   ```
+   security add-generic-password -a "$USER" -s openrouter-api-key -w
+   security add-generic-password -a "$USER" -s ebay-app-id -w
+   security add-generic-password -a "$USER" -s ebay-cert-id -w
+   ```
+4. Run `bear`, drag the photo folder into Terminal, press Enter, then type the vehicle. Or non-interactively: `bear <folder> "HYUNDAI I40 MK1 SEDAN 2015 1.7 DIESEL"`.
+5. `bear check` verifies Python, Pillow and that all keys are present. `bear update` pulls the latest version and refreshes dependencies.
+
+**Results** go to `<photo folder>/bear-results-YYYYmmdd-HHMMSS/` (`results.xlsx`, `agent2_results.md`, `agent3_results.txt`, `trace.json`); the spreadsheet opens automatically on a Mac.
+
+**Cost:** about 0.2p per part (measured). Each run has a spend cap of $1.00; change it with the `BEAR_RUN_CAP_USD` environment variable, e.g. `BEAR_RUN_CAP_USD=2 bear`.
+
+### How 0.2 works
+
+1. **Read** — a vision model reads every candidate part number (plus alternates), describes the part and counts items; if no number is found it re-reads the photo rotated 90/180/270.
+2. **Numbers** — each reading is searched on eBay UK (exact match, several normalised forms). No UK listing means it is not a sellable number.
+3. **Listing** — Jev picks the number when more than one survives, vetoes listings for pairs/sets/other assemblies, prefers used items, takes the consensus price, and sets the sell price to the smallest x.99 at or above it (floor 19.99).
+4. **Assemble** — deterministic code builds the final rows (vehicle, location from filename, part number, price, URL, image, sort, FAILED/NULL rows); one cheap model call only tidies titles into names.
+
+---
+
+## Legacy pi pipeline (BEAR 0.1)
+
 # BEAR
 
 This is an autonomous researching eBay agent stack that gathers price data and name all from a car parts part number

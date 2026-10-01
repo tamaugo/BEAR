@@ -49,3 +49,8 @@ harness/photos-base/
 bear2/cache/
 bear2/spend.jsonl
 bear2/runs/
+
+# any env variant (e.g. .env.previous-unread, .env.local) - only the template is tracked
+.env.*
+!.env.example
+.venv/

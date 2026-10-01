@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# bear — BEAR 0.2 launcher (eBay part pricing). bash 3.2 safe (macOS) and Linux.
+set -euo pipefail
+
+# ---- locate repo root (resolve symlinks portably; macOS has no readlink -f) ----
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$DIR/$SOURCE" ;; esac
+done
+REPO="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+VENV="$REPO/.venv"
+VPY="$VENV/bin/python"
+USER_NAME="${USER:-$(id -un)}"
+
+version() { tr -d '[:space:]' < "$REPO/VERSION" 2>/dev/null || echo unknown; }
+
+usage() {
+  cat <<EOF
+BEAR $(version) — eBay part pricing
+
+Usage:
+  bear                       interactive: asks for photo folder + vehicle
+  bear <folder> "<vehicle>"  non-interactive run
+  bear check                 check python, Pillow and credentials
+  bear update                git pull --ff-only and refresh dependencies
+  bear version | --version   show version
+  bear help | -h | --help    this help
+
+Results are written to <folder>/bear-results-YYYYmmdd-HHMMSS/results.xlsx
+Per-run spend cap: BEAR_RUN_CAP_USD (default 1.00)
+EOF
+}
+
+# ---- path cleaning for drag-and-drop from macOS Terminal ----
+clean_path() {
+  local p="$1"
+  # trim leading/trailing whitespace
+  p="$(printf '%s' "$p" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  # strip one pair of surrounding quotes
+  case "$p" in
+    \'*\') if [ "${#p}" -ge 2 ]; then p="${p#\'}"; p="${p%\'}"; fi ;;
+    \"*\") if [ "${#p}" -ge 2 ]; then p="${p#\"}"; p="${p%\"}"; fi ;;
+  esac
+  # "\ " -> space and drop any other backslash escape (\( \) \' \& ...)
+  p="$(printf '%s' "$p" | sed -e 's/\\\(.\)/\1/g')"
+  printf '%s' "$p"
+}
+
+has_images() {
+  [ -d "$1" ] || return 1
+  [ -n "$(find "$1" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | head -n 1)" ]
+}
+
+# ---- python env ----
+need_python() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found. On a Mac, run:  xcode-select --install   then try again." >&2
+    exit 1
+  fi
+}
+
+pillow_ok() { [ -x "$VPY" ] && "$VPY" -c 'import PIL' >/dev/null 2>&1; }
+
+ensure_env() {
+  need_python
+  if ! pillow_ok; then
+    echo "Setting up BEAR's Python environment (first run only, one minute)..."
+    [ -x "$VPY" ] || python3 -m venv "$VENV"
+    "$VPY" -m pip install -q -r "$REPO/requirements.txt"
+  fi
+}
+
+# ---- credentials (never printed) ----
+CRED_VARS="OPENROUTER_API_KEY EBAY_APP_ID EBAY_CERT_ID"
+
+service_for() {
+  case "$1" in
+    OPENROUTER_API_KEY) echo openrouter-api-key ;;
+    EBAY_APP_ID) echo ebay-app-id ;;
+    EBAY_CERT_ID) echo ebay-cert-id ;;
+  esac
+}
+
+is_set() { [ -n "$(printenv "$1" 2>/dev/null || true)" ]; }
+
+load_creds() {
+  local v svc val
+  for v in $CRED_VARS; do
+    is_set "$v" && continue
+    if command -v security >/dev/null 2>&1; then
+      svc="$(service_for "$v")"
+      val="$(security find-generic-password -a "$USER_NAME" -s "$svc" -w 2>/dev/null || true)"
+      if [ -n "$val" ]; then export "$v=$val"; fi
+    fi
+  done
+}
+
+missing_creds() {
+  local v out=""
+  for v in $CRED_VARS; do is_set "$v" || out="$out $v"; done
+  echo "${out# }"
+}
+
+require_creds() {
+  load_creds
+  local miss; miss="$(missing_creds)"
+  if [ -n "$miss" ] && [ ! -f "$REPO/.env" ]; then
+    echo "BEAR is missing credentials: $miss" >&2
+    echo "" >&2
+    echo "Store them once in the macOS Keychain (each command prompts silently for the value):" >&2
+    local v
+    for v in $miss; do
+      echo "  security add-generic-password -a \"\$USER\" -s $(service_for "$v") -w" >&2
+    done
+    echo "" >&2
+    echo "Then run bear again (or 'bear check')." >&2
+    exit 1
+  fi
+}
+
+# ---- subcommands ----
+do_check() {
+  local bad=0 v
+  echo "BEAR $(version)"
+  if command -v python3 >/dev/null 2>&1; then
+    echo "python3: OK ($(python3 --version 2>&1))"
+  else
+    echo "python3: MISSING (run: xcode-select --install)"; bad=1
+  fi
+  if [ -x "$VPY" ]; then echo "venv:    OK ($VENV)"; else echo "venv:    MISSING (created on first run)"; bad=1; fi
+  if pillow_ok; then echo "Pillow:  OK"; else echo "Pillow:  MISSING (installed on first run)"; bad=1; fi
+  load_creds
+  for v in $CRED_VARS; do
+    if is_set "$v"; then
+      echo "$v: present"
+    elif [ -f "$REPO/.env" ]; then
+      echo "$v: not in environment/Keychain (.env file exists; not inspected)"
+    else
+      echo "$v: MISSING (security add-generic-password -a \"\$USER\" -s $(service_for "$v") -w)"; bad=1
+    fi
+  done
+  echo "VERSION: $(version)"
+  if [ "$bad" -ne 0 ]; then echo "Check: problems found."; return 1; fi
+  echo "Check: all good."
+}
+
+do_update() {
+  git -C "$REPO" pull --ff-only
+  need_python
+  [ -x "$VPY" ] || python3 -m venv "$VENV"
+  "$VPY" -m pip install -q -r "$REPO/requirements.txt"
+  echo "BEAR is now version $(version)."
+}
+
+do_run() {
+  local folder="$1" vehicle="$2"
+  if [ ! -d "$folder" ]; then
+    echo "Folder not found: $folder" >&2; exit 1
+  fi
+  if ! has_images "$folder"; then
+    echo "No .jpg/.jpeg/.png photos found directly inside: $folder" >&2; exit 1
+  fi
+  if [ -z "$vehicle" ]; then
+    echo "Vehicle description is empty." >&2; exit 1
+  fi
+  ensure_env
+  require_creds
+  local out rc=0
+  out="$folder/bear-results-$(date +%Y%m%d-%H%M%S)"
+  "$VPY" "$REPO/bear2/run.py" "$folder" "$vehicle" "$out" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "" >&2
+    echo "BEAR run failed (exit code $rc). See the messages above." >&2
+    exit "$rc"
+  fi
+  echo ""
+  echo "Results: $out/results.xlsx"
+  if command -v open >/dev/null 2>&1 && [ -f "$out/results.xlsx" ]; then
+    open "$out/results.xlsx" || true
+  fi
+}
+
+do_interactive() {
+  echo "BEAR $(version | sed 's/\.0$//') — eBay part pricing"
+  local raw vehicle folder
+  printf 'Drag the photo folder here and press Enter: '
+  IFS= read -r raw || { echo; exit 1; }
+  folder="$(clean_path "$raw")"
+  printf 'Vehicle (e.g. HYUNDAI I40 MK1 SEDAN 2015 1.7 DIESEL): '
+  IFS= read -r vehicle || { echo; exit 1; }
+  vehicle="$(printf '%s' "$vehicle" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  do_run "$folder" "$vehicle"
+}
+
+case "${1:-}" in
+  "") do_interactive ;;
+  check) do_check ;;
+  update) do_update ;;
+  version|--version|-V) echo "BEAR $(version)" ;;
+  help|-h|--help) usage ;;
+  __clean-path) clean_path "${2:-}"; echo ;;
+  *)
+    if [ "$#" -ne 2 ]; then
+      usage >&2; exit 2
+    fi
+    do_run "$(clean_path "$1")" "$(printf '%s' "$2" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    ;;
+esac

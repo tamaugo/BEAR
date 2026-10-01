@@ -38,13 +38,14 @@ def total_spend():
     return sum(json.loads(l).get("cost") or 0 for l in LEDGER.read_text().splitlines() if l.strip())
 
 
-SPEND_CAP_USD = 4.00  # hard stop well under the operator's GBP 5 cap
+_SPEND_AT_IMPORT = total_spend()  # per-run cap: only spend since this process started counts
 
 
 def _check_cap():
-    s = total_spend()
-    if s >= SPEND_CAP_USD:
-        raise RuntimeError(f"spend cap reached: ${s:.4f}")
+    cap = float(os.environ.get("BEAR_RUN_CAP_USD", "1.00"))
+    s = total_spend() - _SPEND_AT_IMPORT
+    if s >= cap:
+        raise RuntimeError(f"spend cap reached: ${s:.4f} this run (cap ${cap:.2f})")
 
 
 # ---------------- eBay ----------------
