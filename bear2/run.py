@@ -7,7 +7,7 @@ usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cache
 import json, sys, time, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble
+import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble, image_hints
 
 FAIL1 = "FAILED | Agent 1 | Could Not Produce Clear Part Number"
 FAIL_NF = "FAILED | Agent 2 | No eBay Listing Found"
@@ -40,6 +40,17 @@ def process(name, s1, vehicle, make, photo_path=None):
         tr["rescued"] = [{"text": v["text"], "n": len(v["listings"]), "from": v["cand"].get("read_as"),
                           "how": v["cand"].get("rescue")} for v in rescued]
         live = s3.drop_substring_readings(live + rescued)
+    raw_reads = [x.get("text") for x in s1.get("candidates") or [] if x.get("role") in ("primary", "unclear")] + \
+                [a for x in s1.get("candidates") or [] if x.get("role") in ("primary", "unclear") for a in x.get("alt_readings") or []]
+    raw_reads = [r for r in raw_reads if r]
+    if not live and photo_path and raw_reads:
+        st, tok = image_hints.corroborate(photo_path, "", raw_reads)
+        tr["image_corroboration"] = (st, tok)
+        if st == "better":
+            items, err = s2.ebay_for(tok)
+            if items:
+                live = [{"text": tok, "cand": {"role": "primary", "rescue": "image-corroborated"},
+                         "listings": items, "make_hits": 0}]
     if not live:
         return f"{name} | {no_match_fail(s1)}", tr
     chosen, info = s3.choose_number(s1, live, vehicle)
@@ -49,6 +60,18 @@ def process(name, s1, vehicle, make, photo_path=None):
         prim = [v for v in live if v["cand"].get("role") == "primary" and not v["cand"].get("rescue")]
         if not (len(prim) == 1 and prim[0] is chosen):
             weak = True  # low confidence: must pass the component gate
+    if weak and photo_path:
+        st, tok = image_hints.corroborate(photo_path, chosen["text"], raw_reads)
+        tr["image_corroboration"] = (st, tok)
+        if st == "better" and c.norm(tok) not in {c.norm(v["text"]) for v in live}:
+            items, err = s2.ebay_for(tok)
+            if items:
+                alt = {"text": tok, "cand": {"role": "primary", "rescue": "image-corroborated"},
+                       "listings": items, "make_hits": 0}
+                live = [alt] + live
+                chosen = alt
+                info = {"method": "image-corroborated", "probs": {"R1": 1.0}}
+                tr["choose"] = {"text": tok, **info}
     if weak:
         ranked = sorted(live, key=lambda v: -(info.get("probs") or {}).get(f"R{live.index(v)+1}", 1 if v is chosen else 0))
         tr["gate"] = {"tried": []}
@@ -111,6 +134,12 @@ def main():
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
     print(assemble.main(out_dir, vehicle))
+    try:
+        hints = image_hints.main(out_dir, photo_dir, vehicle)
+        if hints:
+            print(f"Possible matches for unpriced photos (check by eye): {hints}")
+    except Exception as e:  # hints are a convenience; never fail the run over them
+        print(f"(image hints skipped: {type(e).__name__})")
     cost = c.total_spend() - spend0
     print(f"\nrun cost ${cost:.4f} for {len(photos)} parts (${cost/max(1,len(photos)):.5f}/part); total spend ${c.total_spend():.4f}")
 

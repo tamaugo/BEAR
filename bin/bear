@@ -29,6 +29,7 @@ Usage:
   bear help | -h | --help    this help
 
 Results are written to <folder>/bear-results-YYYYmmdd-HHMMSS/results.xlsx
+(plus possible_matches.xlsx: eBay image-search suggestions for photos BEAR could not price)
 Per-run spend cap: BEAR_RUN_CAP_USD (default 1.00)
 EOF
 }
@@ -177,6 +178,9 @@ do_run() {
   fi
   echo ""
   echo "Results: $out/results.xlsx"
+  if [ -f "$out/possible_matches.xlsx" ]; then
+    echo "Possible matches for unpriced photos (check by eye): $out/possible_matches.xlsx"
+  fi
   if command -v open >/dev/null 2>&1 && [ -f "$out/results.xlsx" ]; then
     open "$out/results.xlsx" || true
   fi
