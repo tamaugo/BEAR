@@ -94,6 +94,12 @@ STYLE_DEFAULT = 0
 STYLE_BOLD = 1
 STYLE_NUMBER = 2   # 0.00
 STYLE_LINK = 3     # blue + underlined
+STYLE_HINT = 4     # possible-match rows: italic grey on light yellow
+STYLE_HINT_LINK = 5
+
+# Rows whose part info starts with this are eBay image-search suggestions placed
+# directly under the unpriced photo they belong to (BEAR 0.2). Not BEAR prices.
+HINT_PREFIX = "\u21b3 POSSIBLE MATCH"
 
 # XML namespaces. Spelled out once here rather than inline, because a typo
 # in one of these produces a file that opens as empty rather than one that
@@ -292,22 +298,26 @@ def styles_xml() -> str:
         f"{XML_DECL}"
         f'<styleSheet xmlns="{NS_MAIN}">'
         '<numFmts count="1"><numFmt numFmtId="164" formatCode="0.00"/></numFmts>'
-        '<fonts count="3">'
+        '<fonts count="4">'
         '<font><sz val="11"/><color rgb="FF000000"/><name val="Calibri"/><family val="2"/></font>'
         '<font><b/><sz val="11"/><color rgb="FF000000"/><name val="Calibri"/><family val="2"/></font>'
         '<font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="Calibri"/><family val="2"/></font>'
+        '<font><i/><sz val="11"/><color rgb="FF595959"/><name val="Calibri"/><family val="2"/></font>'
         "</fonts>"
-        '<fills count="2">'
+        '<fills count="3">'
         '<fill><patternFill patternType="none"/></fill>'
         '<fill><patternFill patternType="gray125"/></fill>'
+        '<fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill>'
         "</fills>"
         '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
         '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-        '<cellXfs count="4">'
+        '<cellXfs count="6">'
         '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
         '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
         '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
         '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        '<xf numFmtId="0" fontId="3" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
+        '<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
         "</cellXfs>"
         '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
         "</styleSheet>"
@@ -399,6 +409,22 @@ def build_sheet(rows: list):
         part_info, price, url, image = fields
 
         parts.append(f'<row r="{row_number}">')
+
+        if part_info.startswith(HINT_PREFIX):
+            # Suggestion row: every cell shaded, price shown as text ("listed at"),
+            # never as a BEAR sell price.
+            parts.append(text_cell(f"A{row_number}", part_info, STYLE_HINT))
+            parts.append(text_cell(f"B{row_number}", price, STYLE_HINT))
+            if is_http_url(url):
+                ref = f"C{row_number}"
+                rel_id = f"rId{len(hyperlinks) + 1}"
+                hyperlinks.append((ref, rel_id, url))
+                parts.append(text_cell(ref, url, STYLE_HINT_LINK))
+            else:
+                parts.append(text_cell(f"C{row_number}", url, STYLE_HINT))
+            parts.append(text_cell(f"D{row_number}", image, STYLE_HINT))
+            parts.append("</row>")
+            continue
 
         # Column A — part info, or the MALFORMED marker plus the raw line.
         if part_info:

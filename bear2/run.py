@@ -135,9 +135,9 @@ def main():
     (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
     print(assemble.main(out_dir, vehicle))
     try:
-        hints = image_hints.main(out_dir, photo_dir, vehicle)
-        if hints:
-            print(f"Possible matches for unpriced photos (check by eye): {hints}")
+        n = image_hints.main(out_dir, photo_dir, vehicle)
+        if n:
+            print(f"Added {n} possible-match rows (shaded, check by eye) under unpriced photos in results.xlsx")
     except Exception as e:  # hints are a convenience; never fail the run over them
         print(f"(image hints skipped: {type(e).__name__})")
     cost = c.total_spend() - spend0

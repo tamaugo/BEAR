@@ -26,7 +26,7 @@
 
 
 ### Image matching (0.2)
-- **Unpriced photos** (FAILED / NO PART NUMBER) get eBay search-by-image suggestions in a separate `possible_matches.xlsx` (top 3 per photo, ranked toward the job's car). Never written into `results.xlsx`, never priced by BEAR. Check by eye.
+- **Unpriced photos** (FAILED / NO PART NUMBER) get up to 3 eBay search-by-image suggestions as shaded rows directly under their row in `results.xlsx` (scanned order kept; ranked toward the job's car). Shown as \"listed £x\", never a BEAR price. Check by eye.
 - **Weak or failed reads**: if a visually similar listing carries a part number within 1-2 characters of what was read off the part, that number is tried and must still pass the photo-vs-listings check. Example: cast bracket read `3M51-6030-BA` (no listings) -> image search found `6M51-6030-BA`.
 - Free (eBay API only). Measured: right part in the image-search top 50 for 5/9 known photos, so it is a hint, not a verdict.
 

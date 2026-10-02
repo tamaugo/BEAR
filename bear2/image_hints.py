@@ -2,9 +2,8 @@
 
 eBay's search-by-image returns listings that LOOK like the photo. Measured 2026-10-01:
 right part in the top 50 for 5/9 photos with known answers, and a vision "same part?"
-check on listing photos said SAME for 3/4 wrong parts. So hints are never written into
-results.xlsx and never carry a BEAR price: they go to a separate possible_matches.xlsx
-for the operator to eyeball (one click instead of a Google image search).
+check on listing photos said SAME for 3/4 wrong parts. So hints never carry a BEAR price:
+they sit as shaded rows ("listed £x") directly under the unpriced photo's row in results.xlsx for the operator to eyeball (one click instead of a Google search).
 
 Ranking: the parts in one job come off one car, so listings whose titles share words with
 the vehicle string and with the titles of this job's successfully matched parts (make,
@@ -77,30 +76,38 @@ def rank(items, ctx):
 
 
 def main(run_dir, photo_dir, vehicle):
+    """Rebuilds results.xlsx with up to 3 possible-match rows directly under each unpriced
+    photo (FAILED / NO PART NUMBER), keeping the scanned order. The validated
+    agent3_results.txt is left untouched; the merged sheet text is results_sheet.txt."""
     run, photo_dir = Path(run_dir), Path(photo_dir)
-    a3 = [l.split("|") for l in (run / "agent3_results.txt").read_text().splitlines() if l.strip()]
-    need = [f[3].strip() for f in a3 if len(f) == 4 and f[0].strip().startswith(("FAILED", "NO PART NUMBER"))]
+    a3 = [l for l in (run / "agent3_results.txt").read_text().splitlines() if l.strip()]
     a2 = [l.split("|") for l in (run / "agent2_results.md").read_text().splitlines() if l.strip()]
     matched = [f[2] for f in a2 if len(f) >= 5 and f[1].strip() != "FAILED"]
     ctx = job_context(vehicle, matched)
-    rows, trace = [], {}
-    for img in need:
-        items = search_by_image(photo_dir / img)
-        top = rank(items, ctx)[:PER_PHOTO]
+    out, trace, n_hints = [], {}, 0
+    for line in a3:
+        out.append(line)
+        f = line.split("|")
+        if not (len(f) == 4 and f[0].strip().startswith(("FAILED", "NO PART NUMBER"))):
+            continue
+        img = f[3].strip()
+        top = rank(search_by_image(photo_dir / img), ctx)[:PER_PHOTO]
         trace[img] = [(it.get("title"), it["price"]["value"]) for it in top]
         if not top:
-            rows.append(f"NO VISUAL MATCH FOUND | | | {img}")
+            out.append(f"\u21b3 POSSIBLE MATCH - none found by image search | | | {img}")
         for k, it in enumerate(top, 1):
             s = c.summarize(it)
             title = (s["title"] or "").replace("|", " ")
-            rows.append(f"POSSIBLE MATCH {k} (check by eye) - {title} | {it['price']['value']} | {s['url']} | {img}")
+            price = f"listed \u00a3{float(it['price']['value']):.2f}"
+            out.append(f"\u21b3 POSSIBLE MATCH {k} (check by eye) - {title} | {price} | {s['url']} | {img}")
+            n_hints += 1
     (run / "image_hints.json").write_text(json.dumps({"context": ctx.most_common(15), "hints": trace}, indent=1))
-    if not rows:
-        return None
-    (run / "possible_matches.txt").write_text("\n".join(rows) + "\n")
-    subprocess.run([sys.executable, str(c.ROOT / "harness/make_xlsx.py"), str(run / "possible_matches.txt"),
-                    str(run / "possible_matches.xlsx")], capture_output=True, text=True, check=True)
-    return run / "possible_matches.xlsx"
+    if not trace:
+        return 0
+    (run / "results_sheet.txt").write_text("\n".join(out) + "\n")
+    subprocess.run([sys.executable, str(c.ROOT / "harness/make_xlsx.py"), str(run / "results_sheet.txt"),
+                    str(run / "results.xlsx")], capture_output=True, text=True, check=True)
+    return n_hints
 
 
 if __name__ == "__main__":
