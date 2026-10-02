@@ -73,21 +73,58 @@ export function parseEnvFile(text: string): Record<string, string> {
 	return values;
 }
 
+/** Where a resolved API key came from -- surfaced in 401 errors so a bad key is easy to trace. */
+export type ApiKeySource = "shell environment (overrides .env)" | `.env file at ${string}`;
+
+export interface ResolvedApiKey {
+	key: string;
+	source: ApiKeySource;
+}
+
 /**
  * Real shell env wins; .env is just a fallback for local runs -- never mutate
  * process.env with it, so the key's origin stays visible to anyone inspecting env.
+ * Same precedence as resolveApiKey(), but also reports which of the two it used --
+ * needed to build a self-diagnosing 401 message (see callDecisions below).
  */
-export function resolveApiKey(env: NodeJS.ProcessEnv = process.env): string {
-	const key = env.OPENROUTER_API_KEY;
-	if (key) return key;
+export function resolveApiKeyDetailed(env: NodeJS.ProcessEnv = process.env): ResolvedApiKey {
+	const envKey = env.OPENROUTER_API_KEY;
+	if (envKey) return { key: envKey, source: "shell environment (overrides .env)" };
 	if (existsSync(ENV_FILE)) {
 		const fileKey = parseEnvFile(readFileSync(ENV_FILE, "utf-8")).OPENROUTER_API_KEY;
-		if (fileKey) return fileKey;
+		if (fileKey) return { key: fileKey, source: `.env file at ${ENV_FILE}` };
 	}
 	throw new Error(
 		"OPENROUTER_API_KEY not found in the environment or in .env at " +
 			`${ENV_FILE}. Copy .env.example to .env and fill it in, or export the ` +
 			"variable in your shell.",
+	);
+}
+
+/** Back-compat wrapper -- jev-decisions.ts and tests only need the key string. */
+export function resolveApiKey(env: NodeJS.ProcessEnv = process.env): string {
+	return resolveApiKeyDetailed(env).key;
+}
+
+/**
+ * Builds the checklist appended to a 401 JevAuthError. Never includes more than the
+ * first 7 characters of the key -- enough to eyeball "is this the .env.example
+ * placeholder" without logging anything a real secret manager would care about.
+ */
+function describeKeyForAuthError(apiKey: string, source: string): string {
+	const preview = apiKey.slice(0, 7);
+	const isPlaceholder = /^sk-or-\.\.\.$/.test(apiKey) || apiKey.length < 20;
+	return (
+		`The key used came from ${source} (starts "${preview}", ${apiKey.length} chars). ` +
+		(isPlaceholder
+			? `That looks like the .env.example PLACEHOLDER, not a real key: copy your real ` +
+				`key into ${ENV_FILE}. `
+			: `If that starts with "sk-or-..." or "sk-or-v1" followed by three dots it is the ` +
+				`.env.example PLACEHOLDER, not a real key: copy your real key into ${ENV_FILE}. ` +
+				`If it is a real-looking key, it may be stale/revoked: regenerate at ` +
+				`openrouter.ai/settings/keys. `) +
+		"NOTE: a shell export of OPENROUTER_API_KEY overrides the .env file -- check: " +
+		'echo ${OPENROUTER_API_KEY:+SET (shadows .env)}'
 	);
 }
 
@@ -146,7 +183,18 @@ export async function callDecisions(
 	questions: Record<string, unknown>,
 	options: { apiKey?: string; timeoutMs?: number; maxAttempts?: number; signal?: AbortSignal } = {},
 ): Promise<unknown> {
-	const apiKey = options.apiKey ?? resolveApiKey();
+	// Track where the key came from (not just its value) so a 401 can name the
+	// exact place to fix -- caller-supplied keys have no .env/shell provenance to report.
+	let apiKey: string;
+	let keySource: string;
+	if (options.apiKey) {
+		apiKey = options.apiKey;
+		keySource = "an explicit apiKey option (not resolved from .env or the shell)";
+	} else {
+		const resolved = resolveApiKeyDetailed();
+		apiKey = resolved.key;
+		keySource = resolved.source;
+	}
 	const maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
 	const timeoutMs = options.timeoutMs ?? 60_000;
 	const request = buildRequest(model, state, questions, apiKey);
@@ -175,7 +223,10 @@ export async function callDecisions(
 			const message = errorMessage(bodyText, response.status);
 
 			if (response.status === 401) {
-				throw new JevAuthError(`Decisions API rejected the API key (401): ${message}`);
+				throw new JevAuthError(
+					`Decisions API rejected the API key (401): ${message}. ` +
+						describeKeyForAuthError(apiKey, keySource),
+				);
 			}
 			if (response.status === 402) {
 				throw new JevPaymentError(`OpenRouter account is out of credits (402): ${message}`);
@@ -225,3 +276,9 @@ export function extractAnswers(response: unknown): {
 	const cost = typeof usage?.cost === "number" ? usage.cost : null;
 	return { answers, cost };
 }
+
+// pi auto-loads every .ts in .pi/extensions/ and requires a default-exported
+// factory. This file is a helper library (imported by jev-decisions.ts), not an
+// extension, so register nothing -- without this stub pi refuses to load the
+// file at all ("Extension does not export a valid factory function").
+export default function (): void {}

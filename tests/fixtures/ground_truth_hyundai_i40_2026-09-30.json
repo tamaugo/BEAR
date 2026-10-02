@@ -1,0 +1,141 @@
+{
+ "_source": "Operator-corrected results PDF 'BEAR_results - Parts-2.pdf' (2026-09-30). Photos: harness/photos-base/ (gitignored, operator data). Scoring rule (operator): 100% = the part-info line per part is right. Many eBay listings can be correct for one part; the line (name + part number) and a sensible price are what matter.",
+ "vehicle": "HYUNDAI I40 MK1 SEDAN 2015 1.7 DIESEL",
+ "_vehicle_note": "Operator sheet writes '140' (i40 as typed); keep the operator's vehicle string verbatim in output.",
+ "parts": [
+  {
+   "image": "IMG_4700.JPEG",
+   "name": "Air Vent Trim Dashboard Centre",
+   "part_number": "974203Z000",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/267787609629"
+  },
+  {
+   "image": "IMG_4706.JPEG",
+   "name": "Accelerator Throttle Pedal",
+   "part_number": "327272T900",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/117418656089"
+  },
+  {
+   "image": "IMG_4720.JPEG",
+   "name": "Steering Wheel Trim & Switches",
+   "part_number": "39R293-1200",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/166865176347",
+   "_note": "Operator CONFIRMED 2026-09-30: 39R293-1200 is the correct number (printed on the part). The operator's sheet URL (166865176347) is a listing for trim assembly 96790-3Z080RY, so exact-listing match does not apply; any 39R293-1200 steering-wheel switch listing is acceptable.",
+   "url_exact_applies": false
+  },
+  {
+   "image": "IMG_4736.JPEG",
+   "name": "Fuse Box Cover Trim Panel",
+   "part_number": "919503Z733",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/227321680642"
+  },
+  {
+   "image": "IMG_4740.JPEG",
+   "name": "Air Srs Bag Control Module Unit",
+   "part_number": "959103Z30",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/267793729117",
+   "_note": "operator wrote 959103Z30 (possibly truncated 959103Z300) - accept either"
+  },
+  {
+   "image": "IMG_4754-OSF.JPEG",
+   "name": "Headlamp Bulb Dust Cap Cover",
+   "part_number": "LP 1061 KFA04",
+   "price": 24.99,
+   "url": "https://www.ebay.co.uk/itm/178296820788",
+   "_note": "operator: 'name something like Headlamp Bulb Dust Cap Cover'; OSF location code in filename"
+  },
+  {
+   "image": "IMG_4764.JPEG",
+   "name": "Rear Interior Courtesy Roof Dome Light",
+   "part_number": "928503Z000",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/267762626402"
+  },
+  {
+   "image": "IMG_4768.JPEG",
+   "name": "Airbag Crash Impact Sensor",
+   "part_number": "959200U000",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/327281871352",
+   "_note": "operator: pipeline got the part number right but chose the WRONG name and listing ('Air Srs Bag Crash Impact Sensors Pair X2', 267788820982). Photo shows ONE sensor. Correct listing 327281871352 = '2013 Hyundai i40 Airbag Crash Impact Sensor 959200U000' @12.50 -> 19.99 after floor. Name must be single sensor, NOT 'pair x2'."
+  },
+  {
+   "image": "IMG_4784.JPEG",
+   "name": "Parking Brake P Button Switch",
+   "part_number": "937663Z540",
+   "price": 39.99,
+   "url": "https://www.ebay.co.uk/itm/307069400736"
+  },
+  {
+   "image": "IMG_4794.JPEG",
+   "name": "Front Roof Light & Motion Sensor",
+   "part_number": "957253Z100",
+   "price": 23.99,
+   "url": "https://www.ebay.co.uk/itm/146683239562"
+  },
+  {
+   "image": "IMG_4798.JPEG",
+   "name": "Aerial Antenna Amplifier Module",
+   "part_number": "962703Z000",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/267773294380"
+  },
+  {
+   "image": "IMG_4810.JPEG",
+   "name": "Cable",
+   "part_number": "918603Z210",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/285951229778"
+  },
+  {
+   "image": "IMG_4811.JPEG",
+   "name": null,
+   "part_number": null,
+   "price": null,
+   "url": null,
+   "expect_fail": true,
+   "_note": "fuel filler cap, no part number - must ALWAYS fail (FAILED | Could Not Produce Clear Part Number). Keep for testing."
+  },
+  {
+   "image": "IMG_4824.JPEG",
+   "name": "Wiper Indicator Stalks With Squib Ring",
+   "part_number": "934103Z001",
+   "price": 24.99,
+   "url": "https://www.ebay.co.uk/itm/166787053268"
+  },
+  {
+   "image": "IMG_4835.JPEG",
+   "name": "Interior Trim",
+   "part_number": "846923Z000",
+   "price": 20.99,
+   "url": "https://www.ebay.co.uk/itm/197855186071"
+  },
+  {
+   "image": "IMG_4845.JPEG",
+   "name": "Ldc Control Module",
+   "part_number": "953003Z100",
+   "price": 19.99,
+   "url": "https://www.ebay.co.uk/itm/267788498030"
+  },
+  {
+   "image": "IMG_4858.JPEG",
+   "name": "Sound Audio Amplifier",
+   "part_number": "963703Z150",
+   "price": 139.99,
+   "url": "https://www.ebay.co.uk/itm/257525380072"
+  },
+  {
+   "image": "IMG_4866.JPEG",
+   "name": "Rear Parking Sensors & Wiring Loom",
+   "part_number": "918903Z370",
+   "price": 39.99,
+   "url": "https://www.ebay.co.uk/itm/168608222153"
+  }
+ ],
+ "_price_rule": "Operator sheet: smallest x.99 >= price - 0.01, then floor 19.99 (25.00->24.99, 24.98->24.99, 23.57->23.99, 20.42->20.99, 12.49->19.99)."
+}
