@@ -4,7 +4,7 @@ validator + make_xlsx.py chain is unchanged downstream, plus a JSON trace.
 
 usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cached_stage1.json]
 """
-import json, sys, time, concurrent.futures as cf
+import json, sys, threading, time, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble, image_hints
@@ -103,6 +103,18 @@ def process(name, s1, vehicle, make, photo_path=None):
     return f"{name} | {out_number} | {title} | {price} | {s['url']}", tr
 
 
+def progress(label, total):
+    """Thread-safe `label n/total` counter on stderr, so long jobs visibly move."""
+    lock, done = threading.Lock(), [0]
+
+    def tick(*_):
+        with lock:
+            done[0] += 1
+            end = "\n" if done[0] >= total else ""
+            print(f"\r{label} {done[0]}/{total}", end=end, file=sys.stderr, flush=True)
+    return tick
+
+
 def main():
     photo_dir, vehicle, out_dir = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     make = vehicle.split()[0]
@@ -112,15 +124,27 @@ def main():
     photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
     nulls = [p.name for p in photos if "NULL" in p.stem.upper().replace("-", " ").replace("_", " ").split()]
     photos = [p for p in photos if p.name not in nulls]
+    print(f"{len(photos)} photos to price ({len(nulls)} NULL). This takes a few minutes for a big job.",
+          file=sys.stderr, flush=True)
     if s1_cache:
         S1 = json.loads(Path(s1_cache).read_text())
     else:
+        tick = progress("Reading part numbers", len(photos))
+
+        def read(p):
+            try:
+                return s1m.read_photo_robust(p, vehicle)
+            finally:
+                tick()
         with cf.ThreadPoolExecutor(6) as ex:
-            S1 = dict(zip([p.name for p in photos], ex.map(lambda p: s1m.read_photo_robust(p, vehicle), photos)))
+            S1 = dict(zip([p.name for p in photos], ex.map(read, photos)))
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
     lines, trace = {}, {}
     with cf.ThreadPoolExecutor(6) as ex:
         futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make, p): p.name for p in photos}
+        tick = progress("Pricing on eBay", len(photos))
+        for f in futs:
+            f.add_done_callback(tick)
         for f in futs:
             try:
                 lines[futs[f]], trace[futs[f]] = f.result()
@@ -133,7 +157,9 @@ def main():
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
+    print("Building results.xlsx ...", file=sys.stderr, flush=True)
     print(assemble.main(out_dir, vehicle))
+    print("Looking for possible matches for unpriced photos ...", file=sys.stderr, flush=True)
     try:
         n = image_hints.main(out_dir, photo_dir, vehicle)
         if n:
