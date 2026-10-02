@@ -1,6 +1,7 @@
 ## BEAR 0.2 — quick start (Mac)
 
-1. Get the code: `git clone <repo-url> BEAR && cd BEAR && git checkout bear2` (already cloned? `git pull`).
+1. Get the code into `~/Desktop/bear` (the one BEAR folder on the Mac): `git clone https://github.com/tamaugo/BEAR.git ~/Desktop/bear && cd ~/Desktop/bear` (already cloned? `cd ~/Desktop/bear && git pull`).
+   Keep only this copy; delete older BEAR folders once `bear` works (never `~/Desktop/ebay-jobs/`, that is customer data).
 2. Install the command: `./install.sh` — links `bear` into `~/.local/bin` and adds it to your PATH (open a new Terminal afterwards).
 3. Store the three keys once in the macOS Keychain (each command prompts silently for the value):
    ```
