@@ -141,6 +141,19 @@ def summarize(it):
 
 
 # ---------------- OpenRouter chat ----------------
+# Upstream rate limits (HTTP 429, e.g. "qwen3.8-flash is temporarily rate-limited upstream")
+# outlast a few seconds of backoff: give it ~1 minute (2+4+8+16+30s, or Retry-After) before failing.
+CHAT_ATTEMPTS = 6
+
+
+def _retry_wait(err, attempt):
+    try:
+        ra = float(err.headers.get("Retry-After") or 0)
+    except (TypeError, ValueError, AttributeError):
+        ra = 0
+    return min(30, max(ra, 2 ** (attempt + 1)))
+
+
 def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=None, extra=None, tag=""):
     _check_cap()
     body = {"model": model, "messages": messages, "temperature": temperature,
@@ -150,7 +163,7 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
     if extra:
         body.update(extra)
     last = None
-    for attempt in range(3):
+    for attempt in range(CHAT_ATTEMPTS):
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                      data=json.dumps(body).encode(), method="POST")
         req.add_header("Authorization", f"Bearer {jev_client.resolve_api_key()}")
@@ -166,10 +179,12 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
             last = RuntimeError(f"OpenRouter HTTP {e.code}: {msg}")
             if e.code in (401, 402, 400):
                 raise last from None
-            time.sleep(2 ** attempt)
+            if attempt + 1 < CHAT_ATTEMPTS:
+                time.sleep(_retry_wait(e, attempt))
         except Exception as e:  # network
             last = e
-            time.sleep(2 ** attempt)
+            if attempt + 1 < CHAT_ATTEMPTS:
+                time.sleep(2 ** attempt)
     raise last
 
 
