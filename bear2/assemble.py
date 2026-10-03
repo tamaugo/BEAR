@@ -59,9 +59,16 @@ def clean_names(titles):
     if not titles:
         return {}
     user = EXAMPLES + "\nItems:\n" + json.dumps(titles, indent=0)
-    out, raw = c.chat(MODEL, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
-                      max_tokens=3000, response_format={"type": "json_object"},
-                      extra={"reasoning": {"effort": "none", "exclude": True}}, tag="clean_names")
+    try:
+        out, raw = c.chat(MODEL, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
+                          max_tokens=3000, response_format={"type": "json_object"},
+                          extra={"reasoning": {"effort": "none", "exclude": True}}, tag="clean_names")
+    except Exception as e:
+        # Names are cosmetic: a rate limit / outage here must not throw away a finished, paid-for
+        # run. safe_name falls back to a mechanical clean of each eBay title.
+        print(f"(part-name cleaning unavailable, using plain eBay titles: {str(e)[:120]})",
+              file=sys.stderr, flush=True)
+        return {}
     m = re.search(r"\{.*\}", out, re.S)
     try:
         return json.loads(m.group(0)).get("names", {}) if m else {}
