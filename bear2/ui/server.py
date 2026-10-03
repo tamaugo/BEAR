@@ -10,7 +10,7 @@ straight through to the pipeline. Nothing here prints or returns them.
 
 usage: python3 bear2/ui/server.py [--port N] [--no-browser]
 """
-import json, os, re, shutil, subprocess, sys, threading, time, urllib.parse, uuid, webbrowser
+import json, os, re, shutil, socket, subprocess, sys, threading, time, urllib.parse, uuid, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -30,6 +30,17 @@ STEPS = ["Starting up", "Scanning photos", "Looking up on eBay", "Formatting tex
 STEP_MARKERS = [(1, "photos to price"), (1, "Reading part numbers"), (2, "Pricing on eBay"),
                 (3, "Cleaning part names"), (4, "Writing results.xlsx")]
 COUNTER = re.compile(r"^(Reading part numbers|Pricing on eBay) (\d+)/(\d+)$")
+
+# Windows (bin/bear.cmd). Every Windows-only change below is behind this flag so the Mac
+# behaves exactly as before.
+WINDOWS = sys.platform == "win32"
+WIN_BAD_NAME = re.compile(r'[<>:"|?*\x00-\x1f]')
+WIN_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"{d}{i}" for d in ("COM", "LPT") for i in range(1, 10)}
+
+
+def win_name_ok(name):
+    """Windows refuses these file names (or treats CON/NUL... as devices)."""
+    return not WIN_BAD_NAME.search(name) and name.split(".")[0].strip().upper() not in WIN_RESERVED
 
 
 # Models each agent uses, read from the pipeline source so the page always matches the code.
@@ -83,6 +94,10 @@ JOB = Job()
 
 def new_job(name):
     name = re.sub(r"[^\w .-]", "_", name).strip(" .") or "photos"
+    if WINDOWS:  # keep paths under Windows' 260-character limit; avoid CON/NUL...
+        name = name[:60].strip(" .") or "photos"
+        if not win_name_ok(name):
+            name = f"{name}_"
     folder = JOBS / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}"
     folder.mkdir(parents=True, exist_ok=True)
     with LOCK:
@@ -168,7 +183,7 @@ def status(since):
         return {"version": version(), "job": JOB.id, "folder": JOB.name, "state": JOB.state,
                 "step": JOB.step, "detail": JOB.detail, "steps": STEPS,
                 "log": JOB.log[since:], "logLength": len(JOB.log), "results": res,
-                "canOpen": bool(shutil.which("open")), "models": agent_models()}
+                "canOpen": WINDOWS or bool(shutil.which("open")), "models": agent_models()}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -223,7 +238,10 @@ class Handler(BaseHTTPRequestHandler):
         f = (STATIC / path).resolve()
         if STATIC not in f.parents or not f.is_file():
             return self.fail(404, "not found")
-        return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
+        body = f.read_bytes()
+        if WINDOWS and f.name == "index.html":
+            body = body.replace(b"Show in Finder", b"Show in Explorer")
+        return self.send(200, body, TYPES.get(f.suffix, "application/octet-stream"))
 
     def do_PUT(self):
         # /api/upload/<job id>/<photo file name>, raw image bytes as the body
@@ -236,6 +254,8 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         if not name or name.startswith(".") or Path(name).suffix.lower() not in PHOTO_EXT:
             return self.fail(400, "Only .jpg, .jpeg and .png photos.")
+        if WINDOWS and not win_name_ok(name):
+            return self.fail(400, f"Windows can't save a photo named {name}. Rename it and add the folder again.")
         if n > MAX_PHOTO_BYTES:
             return self.fail(413, "Photo too large.")
         with LOCK:
@@ -281,6 +301,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reveal":
             with LOCK:
                 p = JOB.out / "results.xlsx" if JOB.state == "done" and JOB.out else None
+            if WINDOWS:
+                if not p or not p.exists():
+                    return self.fail(404, "No results to show.")
+                subprocess.Popen(["explorer", f"/select,{p}"])  # explorer exits 1 even on success
+                return self.send(200, {"ok": True})
             if not p or not p.exists() or not shutil.which("open"):
                 return self.fail(404, "No results to show.")
             subprocess.Popen(["open", "-R", str(p)])
@@ -288,13 +313,33 @@ class Handler(BaseHTTPRequestHandler):
         return self.fail(404, "not found")
 
 
+class WinServer(ThreadingHTTPServer):
+    # On Windows SO_REUSEADDR lets a second `bear ui` share a busy port silently, so the
+    # busy-port fallback below would never fire. Take the port exclusively instead.
+    allow_reuse_address = False
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def stop_run(proc):
+    """Windows: the venv's python.exe is a launcher that starts the real interpreter as a
+    child, so terminate() alone would leave the run going (and spending). Kill the tree."""
+    if WINDOWS:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        proc.terminate()
+
+
 def main():
     args = sys.argv[1:]
     port = int(args[args.index("--port") + 1]) if "--port" in args else 8642
+    server = WinServer if WINDOWS else ThreadingHTTPServer
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        srv = server(("127.0.0.1", port), Handler)
     except OSError:
-        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)  # port busy: take any free one
+        srv = server(("127.0.0.1", 0), Handler)  # port busy: take any free one
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
     print(f"BEAR {version()} UI running at {url}", flush=True)
     print("Keep this window open while you use it. Press Ctrl+C to stop.", flush=True)
@@ -306,7 +351,7 @@ def main():
         print("\nStopping BEAR UI.")
         with LOCK:
             if JOB.proc and JOB.proc.poll() is None:
-                JOB.proc.terminate()
+                stop_run(JOB.proc)
     finally:
         srv.server_close()
 

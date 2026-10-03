@@ -1,0 +1,33 @@
+# Builds two DRAFT releases - "BEAR <version> for Mac" (from main) and "BEAR <version> for Windows"
+# (from this branch) - when a tag like release-v0.2.0 is pushed on the `windows` branch.
+# Drafts are only visible to the owner, who reviews them and clicks Publish on GitHub.
+name: Draft releases
+on:
+  push:
+    tags: ["release-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  drafts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build the Mac and Windows zips and create draft releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME#release-v}"
+          MAC_SHA="$(git rev-parse origin/main)"
+          git archive --format=zip --prefix=bear/ -o "BEAR-$V-mac.zip" "$MAC_SHA"
+          git archive --format=zip --prefix=bear/ -o "BEAR-$V-windows.zip" "$GITHUB_SHA"
+          sed "s/{V}/$V/g" .github/release-notes/mac.md > mac-notes.md
+          sed "s/{V}/$V/g" .github/release-notes/windows.md > windows-notes.md
+          gh release create "v$V-mac" "BEAR-$V-mac.zip" --draft --target "$MAC_SHA" \
+            --title "BEAR $V for Mac" --notes-file mac-notes.md
+          gh release create "v$V-windows" "BEAR-$V-windows.zip" --draft --target "$GITHUB_SHA" \
+            --title "BEAR $V for Windows" --notes-file windows-notes.md

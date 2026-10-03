@@ -1,0 +1,76 @@
+# Checks BEAR on real Windows machines (Windows Server 2022 ~ Windows 10, 2025 ~ Windows 11)
+# every time the `windows` branch changes. The Mac job proves the Mac side still works as before.
+name: Windows checks
+on:
+  push:
+    branches: [windows]
+  pull_request:
+    branches: [windows]
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install with install.cmd (as a user would)
+        shell: cmd
+        run: install.cmd
+      - name: Desktop shortcut and PATH were set up
+        shell: pwsh
+        run: |
+          $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'BEAR.lnk'
+          if (!(Test-Path $lnk)) { throw "no shortcut at $lnk" }
+          $t = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+          if ($t -notlike '*\bin\start-bear.cmd') { throw "shortcut points to $t" }
+          $p = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ($p -notlike '*\bin*') { throw "bin not on user PATH: $p" }
+      - name: bear.cmd from cmd
+        shell: cmd
+        run: |
+          call bin\bear.cmd version || exit /b 1
+          call bin\bear.cmd help || exit /b 1
+      - name: bear.cmd from PowerShell, keys from a .env file
+        shell: pwsh
+        run: |
+          ./bin/bear.cmd version; if ($LASTEXITCODE) { exit 1 }
+          "OPENROUTER_API_KEY=x`nEBAY_APP_ID=x`nEBAY_CERT_ID=PRD-x" | Set-Content -Encoding utf8 .env
+          ./bin/bear.cmd check; if ($LASTEXITCODE) { exit 1 }
+          Remove-Item .env
+      - name: Launcher tests
+        run: ./.venv/Scripts/python.exe tests/test_windows_launcher.py
+      - name: Offline pipeline run with awkward characters (UTF-8 mode, as bear.cmd runs it)
+        env:
+          PYTHONUTF8: "1"
+        run: ./.venv/Scripts/python.exe tests/test_pipeline_offline.py
+      - name: Web page server
+        run: ./.venv/Scripts/python.exe tests/test_ui_server.py
+      - name: Validator tests
+        run: ./.venv/Scripts/python.exe tools/test_agent3_validator.py
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Mac bear command unchanged and working
+        run: |
+          git fetch -q --depth 1 origin main
+          git diff --exit-code FETCH_HEAD -- bin/bear install.sh
+          bin/bear version
+          test "$(bin/bear __clean-path '/Users/x/My\ Photos ')" = "/Users/x/My Photos"
+      - name: Tests
+        run: |
+          python -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+          .venv/bin/python tests/test_pipeline_offline.py
+          .venv/bin/python tests/test_ui_server.py
+          .venv/bin/python tools/test_agent3_validator.py

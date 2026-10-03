@@ -1,3 +1,5 @@
+> **On Windows 10/11?** See [WINDOWS.md](WINDOWS.md). Everything below is the Mac setup.
+
 ## BEAR 0.2 — quick start (Mac)
 
 1. Get the code into `~/Desktop/bear` (the one BEAR folder on the Mac): `git clone https://github.com/tamaugo/BEAR.git ~/Desktop/bear && cd ~/Desktop/bear` (already cloned? `cd ~/Desktop/bear && git pull`).

@@ -1,0 +1,3 @@
+# Windows batch files must keep CRLF line endings (cmd misreads labels and blocks with LF).
+*.cmd text eol=crlf
+*.ico binary
