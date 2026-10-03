@@ -89,6 +89,7 @@ def main(run_dir, vehicle):
             rows.append(f)
     nulls = [n for n in (run / "null_files.txt").read_text().split("\n") if n.strip()] if (run / "null_files.txt").exists() else []
     titles = {f"i{k}": {"title": f[2], "locationcode": bool(location(f[0]))} for k, f in enumerate(rows) if f[1] != "FAILED"}
+    print("Cleaning part names ...", file=sys.stderr, flush=True)
     names = clean_names(titles)
     out = []
     for k, f in enumerate(rows):
@@ -110,6 +111,7 @@ def main(run_dir, vehicle):
     out.sort(key=lambda x: x[0])                      # stable: same number keeps arrival order
     text = "\n".join(l for _, l in out) + "\n"
     (run / "agent3_results.txt").write_text(text)
+    print("Writing results.xlsx ...", file=sys.stderr, flush=True)
     v = subprocess.run([sys.executable, str(c.ROOT / "tools/agent3_validator.py"), str(run / "agent3_results.txt"),
                         str(run / "agent2_results.md")], capture_output=True, text=True)
     x = subprocess.run([sys.executable, str(c.ROOT / "harness/make_xlsx.py"), str(run / "agent3_results.txt"),

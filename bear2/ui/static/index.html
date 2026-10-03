@@ -17,6 +17,9 @@ section{display:flex;flex-direction:column;gap:16px}
 .btn{width:200px;height:56px;box-sizing:border-box;background:#9f3434;color:#ffffff;border:0;border-radius:2px;font-family:'Quicksand',system-ui,sans-serif;font-size:14px;line-height:20px;font-weight:700;cursor:pointer}
 .btn:disabled{background:#0d0d0d;color:#666666;cursor:not-allowed}
 .btn.off{border:1px solid #333333}
+.agent{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 16px;text-align:left}
+.agent span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent .model{font-size:12px;line-height:16px;font-weight:500;color:#4d4d4d}
 .muted{font-size:16px;line-height:24px;color:#a6a6a6}
 .panel{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:24px;background:#0d0d0d;border-radius:4px}
 .error{font-size:14px;line-height:20px;color:#ff8a80}
@@ -59,9 +62,9 @@ section{display:flex;flex-direction:column;gap:16px}
 <section aria-labelledby="h-models">
 <h2 id="h-models">2. Models</h2>
 <div style="display: flex; flex-wrap: wrap; gap: 16px">
-<button type="button" class="btn off" disabled title="Choosing models is coming later">Agent 1</button>
-<button type="button" class="btn off" disabled title="Choosing models is coming later">Agent 2</button>
-<button type="button" class="btn off" disabled title="Choosing models is coming later">Agent 3</button>
+<button type="button" class="btn off agent" disabled aria-haspopup="listbox" title="Choosing models is coming later"><span style="min-width: 0"><span>Agent 1</span><span class="model" data-agent="0">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true" style="flex: none"><path d="M1 1.5l5 5 5-5" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+<button type="button" class="btn off agent" disabled aria-haspopup="listbox" title="Choosing models is coming later"><span style="min-width: 0"><span>Agent 2</span><span class="model" data-agent="1">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true" style="flex: none"><path d="M1 1.5l5 5 5-5" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+<button type="button" class="btn off agent" disabled aria-haspopup="listbox" title="Choosing models is coming later"><span style="min-width: 0"><span>Agent 3</span><span class="model" data-agent="2">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true" style="flex: none"><path d="M1 1.5l5 5 5-5" stroke="#4d4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
 </div>
 </section>
 

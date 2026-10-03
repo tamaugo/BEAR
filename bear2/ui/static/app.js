@@ -61,7 +61,7 @@
     $('dlXlsx').disabled = !done;
     ['openXlsx', 'reveal'].forEach(function (id) { $(id).hidden = !st.canOpen; $(id).disabled = !done; });
     if (done) {
-      var parts = [r.photos + ' photos: ' + r.priced + ' priced, ' + r.failed + ' not priced'];
+      var parts = [r.photos + (r.photos === 1 ? ' photo: ' : ' photos: ') + r.priced + ' priced, ' + r.failed + ' not priced'];
       if (r.nulls) parts.push(r.nulls + ' NULL skipped');
       if (r.cost != null) parts.push('cost $' + r.cost.toFixed(4));
       $('resLabel').textContent = 'results.xlsx is ready. ' + parts.join(', ') + '.';
@@ -74,6 +74,10 @@
 
   function poll() {
     api('GET', '/api/status?since=' + st.logLength).then(function (d) {
+      (d.models || []).forEach(function (m, i) {
+        var el = document.querySelector('.model[data-agent="' + i + '"]');
+        if (el) { el.textContent = m.split('/').pop(); el.parentNode.parentNode.title = 'Agent ' + (i + 1) + ' uses ' + m + '. Choosing models is coming later.'; }
+      });
       if (d.version) $('version').textContent = 'Version ' + d.version.replace(/\.0$/, '');
       if (d.log.length) addLog(d.log);
       st.logLength = d.logLength;

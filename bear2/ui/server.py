@@ -26,10 +26,27 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
          ".woff2": "font/woff2", ".png": "image/png"}
 
 # Progress steps shown in the page, and the run.py output line that starts each one.
-STEPS = ["Loading cache", "Scanning photos", "Looking up on eBay", "Formatting text", "Creating your xlsx file"]
+STEPS = ["Starting up", "Scanning photos", "Looking up on eBay", "Formatting text", "Creating your xlsx file"]
 STEP_MARKERS = [(1, "photos to price"), (1, "Reading part numbers"), (2, "Pricing on eBay"),
-                (3, "Building results.xlsx"), (4, "Looking for possible matches")]
+                (3, "Cleaning part names"), (4, "Writing results.xlsx")]
 COUNTER = re.compile(r"^(Reading part numbers|Pricing on eBay) (\d+)/(\d+)$")
+
+
+# Models each agent uses, read from the pipeline source so the page always matches the code.
+# (file, constant): Agent 1 reads part numbers, Agent 2 decides the eBay match (Jev),
+# Agent 3 cleans eBay titles into part names.
+AGENT_MODELS = [("stage1_read.py", "MODEL"), ("common.py", "JEV_MODEL"), ("assemble.py", "MODEL")]
+
+
+def agent_models():
+    out = []
+    for fname, const in AGENT_MODELS:
+        try:
+            m = re.search(rf'^{const} = "([^"]+)"', (HERE.parent / fname).read_text(), re.M)
+            out.append(m.group(1) if m else "unknown")
+        except OSError:
+            out.append("unknown")
+    return out
 
 
 def version():
@@ -148,7 +165,7 @@ def status(since):
         return {"version": version(), "job": JOB.id, "folder": JOB.name, "state": JOB.state,
                 "step": JOB.step, "detail": JOB.detail, "steps": STEPS,
                 "log": JOB.log[since:], "logLength": len(JOB.log), "results": res,
-                "canOpen": bool(shutil.which("open"))}
+                "canOpen": bool(shutil.which("open")), "models": agent_models()}
 
 
 class Handler(BaseHTTPRequestHandler):

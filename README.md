@@ -22,9 +22,9 @@
 `bear ui` opens the BEAR page in your browser (it runs only on your Mac, at `http://127.0.0.1:8642`; keep the Terminal window open, Ctrl+C stops it).
 
 1. **Photos**: *Add folder* uploads the `.jpg/.jpeg/.png` photos directly inside the folder into `~/Documents/BEAR/<folder>-<time>/` (change with `BEAR_UI_JOBS_DIR`).
-2. **Models**: Agent 1/2/3 are greyed out for now, a placeholder for choosing models later.
+2. **Models**: shows the model each agent uses (read from the pipeline code). The drop-down arrows are greyed out: choosing models comes later.
 3. **Car**: type the vehicle, press **GO**. This runs the same pipeline as the `bear` command.
-4. **Progress**: live steps (loading cache, scanning photos, eBay lookup, formatting, xlsx).
+4. **Progress**: live steps (starting up, scanning photos, eBay lookup, formatting text = cleaning part names, creating the xlsx).
 5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet*, *Show in Finder*.
 6. **Log**: the run's messages, with *Download log* (`bear-log.txt`).
 
