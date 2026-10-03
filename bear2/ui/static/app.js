@@ -19,10 +19,21 @@
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.statusText); return d; }); });
   }
 
-  function setPct(p) {
+  function setPct(p, filesDone, filesTotal) {
     $('bar').setAttribute('aria-valuenow', p);
     $('barFill').style.width = p + '%';
     $('pct').textContent = 'Upload ' + p + '%';
+    $('pctFiles').textContent = filesTotal ? filesDone + ' of ' + filesTotal + ' photos' : '';
+  }
+
+  function setTag(id, text, kind) {
+    var el = $(id);
+    el.textContent = text;
+    el.className = 'tag' + (kind ? ' ' + kind : '');
+  }
+
+  function setCard(id, kind) {  // kind: '' | 'is-active' | 'is-done'
+    $(id).className = 'card' + (kind ? ' ' + kind : '');
   }
 
   // Errors appear in the section they belong to: photoError (upload), goError (run), resError (results).
@@ -48,16 +59,23 @@
     stepsKey = key;
     $('steps').innerHTML = st.steps.map(function (label, i) {
       var kind = i < st.step ? 'done' : (i === st.step && running ? 'active' : (i === st.step && failed ? 'failed' : 'pending'));
-      var text = esc(label) + (kind === 'active' && st.detail ? ' (' + esc(st.detail) + ')' : '');
+      var text = esc(label) + (kind === 'active' && st.detail ? ' <span class="count">' + esc(st.detail) + '</span>' : '');
+      var count = kind === 'active' && /^(\d+)\/(\d+)$/.exec(st.detail || '');
+      var bar = count ? '<div class="bar" aria-hidden="true"><div style="width:' + Math.round(100 * count[1] / count[2]) + '%"></div></div>' : '';
       return '<li class="step ' + kind + '">' +
         '<span class="step-icon">' + ICONS[kind](esc(label + ': ' + WORDS[kind])) + '</span>' +
-        '<span class="step-text">' + text + '</span></li>';
+        '<span class="step-main"><span class="step-text">' + text + '</span>' + bar + '</span></li>';
     }).join('');
+  }
+
+  function stat(value, label, cls) {
+    return '<div class="stat' + (cls ? ' ' + cls : '') + '"><b>' + esc(value) + '</b><span>' + esc(label) + '</span></div>';
   }
 
   function render() {
     var running = st.state === 'running';
-    var canGo = st.uploaded && !st.uploading && !running && $('car').value.trim() !== '';
+    var hasCar = $('car').value.trim() !== '';
+    var canGo = st.uploaded && !st.uploading && !running && hasCar;
     $('go').disabled = !canGo;
     $('pick').disabled = st.uploading || running;
     renderSteps();
@@ -66,16 +84,44 @@
     $('openXlsx').disabled = !done;
     $('reveal').hidden = !st.canOpen;
     $('reveal').disabled = !done;
+    $('drop').classList.toggle('has', st.uploaded);
+    $('bar').classList.toggle('busy', st.uploading);
+    $('bar').classList.toggle('full', st.uploaded && !st.uploading);
     if (done) {
       var parts = [r.photos + (r.photos === 1 ? ' photo: ' : ' photos: ') + r.priced + ' priced, ' + r.failed + ' not priced'];
       if (r.nulls) parts.push(r.nulls + ' NULL skipped');
       if (r.cost != null) parts.push('cost $' + r.cost.toFixed(4));
-      $('resLabel').textContent = 'results.xlsx is ready. ' + parts.join(', ') + '.';
+      $('resLabel').textContent = 'results.xlsx is ready.';
+      $('stats').setAttribute('aria-label', parts.join(', '));
+      $('stats').innerHTML = stat(r.photos, r.photos === 1 ? 'Photo' : 'Photos') + stat(r.priced, 'Priced', 'good') +
+        stat(r.failed, 'Not priced', r.failed ? 'warn' : '') + (r.nulls ? stat(r.nulls, 'NULL skipped') : '') +
+        (r.cost != null ? stat('$' + r.cost.toFixed(4), 'Cost') : '');
     } else if (st.state === 'failed') {
       $('resLabel').textContent = 'The run failed. Check the BEAR server output for details.';
     } else {
       $('resLabel').textContent = running ? 'Working on it...' : 'Available when the run finishes';
     }
+    $('stats').hidden = !done;
+
+    // Where the user is: tick finished cards, highlight the next thing to do.
+    var finished = st.state === 'done';
+    setCard('c-photos', st.uploaded ? 'is-done' : 'is-active');
+    setCard('c-models', st.uploaded ? 'is-done' : '');
+    setCard('c-car', running || finished || st.state === 'failed' ? 'is-done' : (st.uploaded ? 'is-active' : ''));
+    setCard('c-progress', finished ? 'is-done' : (running || st.state === 'failed' ? 'is-active' : ''));
+    setCard('c-results', finished ? 'is-done' : '');
+    if (st.uploading) setTag('photoTag', 'Uploading', 'live');
+    else if (st.uploaded) setTag('photoTag', 'Ready', 'ok');
+    else setTag('photoTag', 'No folder');
+    if (running) setTag('runTag', 'Step ' + Math.min(st.step + 1, st.steps.length) + ' of ' + st.steps.length, 'live');
+    else if (finished) setTag('runTag', 'Finished', 'ok');
+    else if (st.state === 'failed') setTag('runTag', 'Failed', 'bad');
+    else setTag('runTag', 'Not started');
+    $('goHint').textContent = running ? 'Running. You can watch the steps below.'
+      : !st.uploaded ? 'Add a folder of photos first.'
+      : !hasCar ? 'Type the car, then press GO (or Enter).'
+      : 'Ready. Press GO (or Enter) to start.';
+    document.title = (running ? '(' + Math.min(st.step + 1, st.steps.length) + '/' + st.steps.length + ') ' : finished ? '\u2713 ' : '') + 'BEAR Parts Pipeline';
   }
 
   function poll() {
@@ -111,16 +157,34 @@
     });
   }
 
-  function upload(files) {
-    // Same rule as the bear command: photos directly inside the chosen folder only.
+  // Same rule as the bear command: photos directly inside the chosen folder only.
+  function pickedFolder(files) {
     var all = Array.prototype.slice.call(files);
     var name = all.length ? (all[0].webkitRelativePath || '').split('/')[0] : '';
-    var photos = all.filter(function (f) { return PHOTO.test(f.name) && (f.webkitRelativePath || '').split('/').length === 2; });
+    upload(name, all.filter(function (f) { return PHOTO.test(f.name) && (f.webkitRelativePath || '').split('/').length === 2; }));
+  }
+
+  // A folder dragged onto the drop zone: read its top level only (readEntries returns batches).
+  function droppedFolder(entry) {
+    var reader = entry.createReader(), entries = [];
+    (function more() {
+      reader.readEntries(function (batch) {
+        if (batch.length) { entries = entries.concat(batch); return more(); }
+        var files = entries.filter(function (e) { return e.isFile && PHOTO.test(e.name); });
+        Promise.all(files.map(function (e) { return new Promise(function (ok, bad) { e.file(ok, bad); }); }))
+          .then(function (photos) { upload(entry.name, photos); })
+          .catch(function () { showError('Could not read that folder. Try Add folder instead.', 'photoError'); });
+      }, function () { showError('Could not read that folder. Try Add folder instead.', 'photoError'); });
+    })();
+  }
+
+  function upload(name, photos) {
     if (!photos.length) { showError('No .jpg/.jpeg/.png photos found directly inside that folder.', 'photoError'); return; }
     showError('', 'photoError');
     var total = photos.reduce(function (a, f) { return a + f.size; }, 0) || 1;
     var loaded = photos.map(function () { return 0; });
-    st.uploading = true; st.uploaded = false; setPct(0);
+    var filesDone = 0;
+    st.uploading = true; st.uploaded = false; setPct(0, 0, photos.length);
     $('folderLabel').textContent = 'Uploading ' + name;
     render();
     api('POST', '/api/folder', { name: name }).then(function (d) {
@@ -131,12 +195,12 @@
         var i = next++;
         return putFile(d.job, photos[i], function (n) {
           loaded[i] = n;
-          setPct(Math.floor(100 * loaded.reduce(function (a, b) { return a + b; }, 0) / total));
-        }).then(worker);
+          setPct(Math.floor(100 * loaded.reduce(function (a, b) { return a + b; }, 0) / total), filesDone, photos.length);
+        }).then(function () { filesDone++; setPct(Math.floor(100 * loaded.reduce(function (a, b) { return a + b; }, 0) / total), filesDone, photos.length); return worker(); });
       }
       return Promise.all([worker(), worker(), worker()]).then(function () { return api('POST', '/api/uploaded', { job: d.job }); });
     }).then(function () {
-      setPct(100);
+      setPct(100, photos.length, photos.length);
       st.uploaded = true;
       $('folderLabel').textContent = name + ' uploaded (' + photos.length + ' photos)';
     }).catch(function (e) {
@@ -152,7 +216,24 @@
   }
 
   $('pick').addEventListener('click', function () { $('folder').value = ''; $('folder').click(); });
-  $('folder').addEventListener('change', function (e) { if (e.target.files.length) upload(e.target.files); });
+  $('folder').addEventListener('change', function (e) { if (e.target.files.length) pickedFolder(e.target.files); });
+  var drop = $('drop'), canDrop = function () { return !$('pick').disabled; };
+  ['dragenter', 'dragover'].forEach(function (t) {
+    drop.addEventListener(t, function (e) { e.preventDefault(); e.dataTransfer.dropEffect = canDrop() ? 'copy' : 'none'; drop.classList.toggle('over', canDrop()); });
+  });
+  drop.addEventListener('dragleave', function (e) { if (!drop.contains(e.relatedTarget)) drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) {
+    e.preventDefault(); drop.classList.remove('over');
+    if (!canDrop()) return;
+    var item = e.dataTransfer.items && e.dataTransfer.items[0];
+    var entry = item && item.webkitGetAsEntry && item.webkitGetAsEntry();
+    if (entry && entry.isDirectory) droppedFolder(entry);
+    else showError('Drop a folder of photos, not single files.', 'photoError');
+  });
+  // Dropping a folder anywhere else must not make the browser open it and leave the page.
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('drop', function (e) { e.preventDefault(); });
+  window.addEventListener('beforeunload', function (e) { if (st.uploading) { e.preventDefault(); e.returnValue = ''; } });
   $('car').addEventListener('input', render);
   $('car').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('go').disabled) $('go').click(); });
   $('go').addEventListener('click', function () {
