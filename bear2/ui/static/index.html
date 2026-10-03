@@ -71,6 +71,9 @@ h2{margin:0;font-size:14px;line-height:20px;font-weight:700;letter-spacing:.08em
 label{font-size:16px;line-height:24px}
 .version,.small{font-size:14px;line-height:20px;color:var(--ink-muted)}
 .version{font-weight:700}
+.repo{color:var(--ink-muted);text-decoration:underline;text-underline-offset:3px}
+.repo:hover{color:var(--ink)}
+.repo-note{font-weight:500}
 .muted{font-size:16px;line-height:24px;color:var(--ink-muted)}
 .error{font-size:14px;line-height:20px;color:var(--error)}
 
@@ -78,6 +81,8 @@ label{font-size:16px;line-height:24px}
 .btn{width:200px;height:56px;background:var(--brand);color:var(--ink);border:0;border-radius:var(--radius-sm);font-family:var(--font-text);font-size:14px;line-height:20px;font-weight:700;cursor:pointer}
 .btn:disabled{background:var(--surface-raised);color:var(--ink-disabled);cursor:not-allowed}
 .btn.off{border:1px solid var(--hairline)}
+.btn.two-line{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.btn .sub{font-size:11px;line-height:14px;font-weight:500;opacity:.8}
 .agent{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 16px;text-align:left}
 .agent>span:first-child{min-width:0}
 .agent span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -125,7 +130,7 @@ label{font-size:16px;line-height:24px}
 
       <div class="titlebar">
         <h1>BEAR</h1>
-        <span id="version" class="version">Version 0.2</span>
+        <a class="version repo" href="https://github.com/tamaugo/BEAR" target="_blank" rel="noopener"><span id="version">Version 0.2</span> <span class="repo-note">(github repo)</span></a>
       </div>
 
       <section aria-labelledby="h-folder">
@@ -141,6 +146,7 @@ label{font-size:16px;line-height:24px}
           </div>
           <span id="pct" class="small">Upload 0%</span>
         </div>
+        <span id="photoError" class="error" role="alert" hidden></span>
       </section>
 
       <section aria-labelledby="h-models">
@@ -171,9 +177,10 @@ label{font-size:16px;line-height:24px}
           <span id="resLabel" class="muted" role="status">Available when the run finishes</span>
           <button type="button" id="dlXlsx" class="btn big" disabled>Download results.xlsx</button>
           <div class="row">
-            <button type="button" id="openXlsx" class="btn" disabled hidden>Open spreadsheet</button>
+            <button type="button" id="openXlsx" class="btn two-line" disabled title="Opens Google Sheets in a new tab. Download results.xlsx first, then use File > Import > Upload.">Open spreadsheet<span class="sub">(import to google sheets)</span></button>
             <button type="button" id="reveal" class="btn" disabled hidden>Show in Finder</button>
           </div>
+          <span id="resError" class="error" role="alert" hidden></span>
         </div>
       </section>
 

@@ -25,7 +25,9 @@
 2. **Models**: shows the model each agent uses (read from the pipeline code). The drop-down arrows are greyed out: choosing models comes later.
 3. **Car**: type the vehicle, press **GO**. This runs the same pipeline as the `bear` command.
 4. **Progress**: live steps (starting up, scanning photos, eBay lookup, formatting text = cleaning part names, creating the xlsx).
-5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet*, *Show in Finder*.
+5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet (import to google sheets)* (opens Google Sheets in a new tab: File > Import > Upload the downloaded file), *Show in Finder*.
+
+The version number in the top corner links to this GitHub repo.
 
 The run's messages (and any error) appear in the Terminal window running `bear ui`.
 

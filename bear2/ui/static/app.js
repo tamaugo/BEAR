@@ -3,6 +3,7 @@
   'use strict';
 
   var PHOTO = /\.(jpe?g|png)$/i;
+  var SHEETS_URL = 'https://docs.google.com/spreadsheets/u/0/';
   var $ = function (id) { return document.getElementById(id); };
   var st = { job: null, uploading: false, uploaded: false, state: 'idle', step: 0, detail: '', steps: [], logLength: 0, results: null, canOpen: false };
   var stepsKey = '';  // last rendered progress list, so the spinner is not restarted by unrelated updates
@@ -24,9 +25,11 @@
     $('pct').textContent = 'Upload ' + p + '%';
   }
 
-  function showError(msg) {
-    $('goError').textContent = msg || '';
-    $('goError').hidden = !msg;
+  // Errors appear in the section they belong to: photoError (upload), goError (run), resError (results).
+  function showError(msg, where) {
+    var el = $(where || 'goError');
+    el.textContent = msg || '';
+    el.hidden = !msg;
   }
 
   // Step icons. Colours come from the stylesheet (.ok green, .bad red); every icon carries alt text.
@@ -60,7 +63,9 @@
     renderSteps();
     var r = st.results, done = st.state === 'done' && r;
     $('dlXlsx').disabled = !done;
-    ['openXlsx', 'reveal'].forEach(function (id) { $(id).hidden = !st.canOpen; $(id).disabled = !done; });
+    $('openXlsx').disabled = !done;
+    $('reveal').hidden = !st.canOpen;
+    $('reveal').disabled = !done;
     if (done) {
       var parts = [r.photos + (r.photos === 1 ? ' photo: ' : ' photos: ') + r.priced + ' priced, ' + r.failed + ' not priced'];
       if (r.nulls) parts.push(r.nulls + ' NULL skipped');
@@ -111,8 +116,8 @@
     var all = Array.prototype.slice.call(files);
     var name = all.length ? (all[0].webkitRelativePath || '').split('/')[0] : '';
     var photos = all.filter(function (f) { return PHOTO.test(f.name) && (f.webkitRelativePath || '').split('/').length === 2; });
-    if (!photos.length) { showError('No .jpg/.jpeg/.png photos found directly inside that folder.'); return; }
-    showError('');
+    if (!photos.length) { showError('No .jpg/.jpeg/.png photos found directly inside that folder.', 'photoError'); return; }
+    showError('', 'photoError');
     var total = photos.reduce(function (a, f) { return a + f.size; }, 0) || 1;
     var loaded = photos.map(function () { return 0; });
     st.uploading = true; st.uploaded = false; setPct(0);
@@ -136,7 +141,7 @@
       $('folderLabel').textContent = name + ' uploaded (' + photos.length + ' photos)';
     }).catch(function (e) {
       $('folderLabel').textContent = 'Upload failed';
-      showError(e.message);
+      showError(e.message, 'photoError');
     }).then(function () { st.uploading = false; render(); });
   }
 
@@ -157,8 +162,8 @@
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
   });
   $('dlXlsx').addEventListener('click', function () { download('/api/results.xlsx'); });
-  $('openXlsx').addEventListener('click', function () { api('POST', '/api/open').catch(function (e) { showError(e.message); }); });
-  $('reveal').addEventListener('click', function () { api('POST', '/api/reveal').catch(function (e) { showError(e.message); }); });
+  $('openXlsx').addEventListener('click', function () { window.open(SHEETS_URL, '_blank', 'noopener'); });
+  $('reveal').addEventListener('click', function () { showError('', 'resError'); api('POST', '/api/reveal').catch(function (e) { showError(e.message, 'resError'); }); });
 
   poll();
 })();

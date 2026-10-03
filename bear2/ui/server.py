@@ -278,12 +278,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail(400, "Type the car first.")
             run_pipeline(vehicle)
             return self.send(200, {"ok": True})
-        if path in ("/api/open", "/api/reveal"):
+        if path == "/api/reveal":
             with LOCK:
                 p = JOB.out / "results.xlsx" if JOB.state == "done" and JOB.out else None
             if not p or not p.exists() or not shutil.which("open"):
-                return self.fail(404, "No results to open.")
-            subprocess.Popen(["open", str(p)] if path == "/api/open" else ["open", "-R", str(p)])
+                return self.fail(404, "No results to show.")
+            subprocess.Popen(["open", "-R", str(p)])
             return self.send(200, {"ok": True})
         return self.fail(404, "not found")
 
