@@ -254,8 +254,10 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         if not name or name.startswith(".") or Path(name).suffix.lower() not in PHOTO_EXT:
             return self.fail(400, "Only .jpg, .jpeg and .png photos.")
-        if WINDOWS and not win_name_ok(name):
-            return self.fail(400, f"Windows can't save a photo named {name}. Rename it and add the folder again.")
+        # Check the name as sent: Windows would read "a:b.jpg" as drive a: and keep only "b.jpg".
+        sent = re.split(r"[\\/]", urllib.parse.unquote(m.group(2)))[-1]
+        if WINDOWS and not win_name_ok(sent):
+            return self.fail(400, f"Windows can't save a photo named {sent}. Rename it and add the folder again.")
         if n > MAX_PHOTO_BYTES:
             return self.fail(413, "Photo too large.")
         with LOCK:
