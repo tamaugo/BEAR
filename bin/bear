@@ -23,6 +23,7 @@ BEAR $(version) — eBay part pricing
 Usage:
   bear                       interactive: asks for photo folder + vehicle
   bear <folder> "<vehicle>"  non-interactive run
+  bear ui                    open the BEAR page in your browser
   bear check                 check python, Pillow and credentials
   bear update                git pull --ff-only and refresh dependencies
   bear version | --version   show version
@@ -183,6 +184,12 @@ do_run() {
   fi
 }
 
+do_ui() {
+  ensure_env
+  require_creds
+  exec "$VPY" "$REPO/bear2/ui/server.py" "$@"
+}
+
 do_interactive() {
   echo "BEAR $(version | sed 's/\.0$//') — eBay part pricing"
   local raw vehicle folder
@@ -198,6 +205,7 @@ do_interactive() {
 case "${1:-}" in
   "") do_interactive ;;
   check) do_check ;;
+  ui) shift; do_ui "$@" ;;
   update) do_update ;;
   version|--version|-V) echo "BEAR $(version)" ;;
   help|-h|--help) usage ;;
