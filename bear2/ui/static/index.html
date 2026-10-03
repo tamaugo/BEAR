@@ -58,16 +58,28 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
   mask-image:linear-gradient(to bottom,rgba(0,0,0,0) 0,rgba(0,0,0,1) 380px);
 }
 
-/* Layout */
-main{position:relative;z-index:1;display:flex;flex-direction:column;gap:40px;width:100%;max-width:720px;margin:0 auto;padding:32px 24px 64px}
-section{display:flex;flex-direction:column;gap:16px}
+/* Layout: numbered step cards joined by a rail on the left */
+main{position:relative;z-index:1;display:flex;flex-direction:column;gap:40px;width:100%;max-width:760px;margin:0 auto;padding:32px 24px 80px}
+.flow{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.card{position:relative;display:grid;grid-template-columns:40px 1fr;column-gap:20px;padding-bottom:32px}
+.card:last-child{padding-bottom:0}
+.card::before{content:"";position:absolute;left:19px;top:44px;bottom:4px;width:2px;background:var(--hairline);transition:background .3s}
+.card:last-child::before{display:none}
+.card.is-done::before{background:linear-gradient(to bottom,var(--ok) 0,var(--hairline) 100%)}
+.num{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border:2px solid var(--hairline);border-radius:50%;background:var(--surface);font-family:var(--font-display);font-size:14px;color:var(--ink-muted);transition:border-color .3s,color .3s,background .3s}
+.card.is-active .num{border-color:var(--brand);color:var(--ink);box-shadow:0 0 0 4px rgba(159,52,52,.18)}
+.card.is-done .num{border-color:var(--ok);background:var(--ok-dim);color:var(--ok);font-size:0}
+.card.is-done .num::after{content:"";width:12px;height:7px;border:solid var(--ok);border-width:0 0 2.5px 2.5px;transform:translateY(-2px) rotate(-45deg)}
+.card-body{display:flex;flex-direction:column;gap:16px;min-width:0;padding:20px 24px 24px;background:rgba(13,13,13,.82);border:1px solid var(--hairline);border-radius:var(--radius-md);backdrop-filter:blur(2px);transition:border-color .3s}
+.card.is-active .card-body{border-color:#4d4d4d}
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:40px;margin-top:-10px}
 .row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .titlebar{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
 .stack{display:flex;flex-direction:column;gap:8px}
 
 /* Type */
 h1{margin:0;font-family:var(--font-display);font-size:28px;line-height:32px;font-weight:400}
-h2{margin:0;font-size:14px;line-height:20px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-muted)}
+h2{margin:0;font-size:14px;line-height:20px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
 label{font-size:16px;line-height:24px}
 .version,.small{font-size:14px;line-height:20px;color:var(--ink-muted)}
 .version{font-weight:700}
@@ -75,41 +87,105 @@ label{font-size:16px;line-height:24px}
 .repo:hover{color:var(--ink)}
 .repo-note{font-weight:500}
 .muted{font-size:16px;line-height:24px;color:var(--ink-muted)}
-.error{font-size:14px;line-height:20px;color:var(--error)}
+.hint{font-size:13px;line-height:18px;color:var(--ink-disabled)}
+.tag{padding:2px 10px;border:1px solid var(--hairline);border-radius:999px;font-size:12px;line-height:18px;font-weight:700;color:var(--ink-muted);white-space:nowrap}
+.tag.ok{border-color:var(--ok-dim);background:var(--ok-dim)}
+.tag.bad{border-color:#4a1f1f;background:#2a1212}
+.tag.live{border-color:var(--brand);color:var(--ink)}
+.error{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;background:#2a1212;border:1px solid #4a1f1f;border-radius:var(--radius-sm);font-size:14px;line-height:20px;color:var(--error)}
+.error[hidden]{display:none}
+.error::before{content:"!";flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;margin-top:1px;border-radius:50%;background:var(--error);color:#000;font-size:12px;font-weight:700}
 
 /* Buttons */
-.btn{width:200px;height:56px;background:var(--brand);color:var(--ink);border:0;border-radius:var(--radius-sm);font-family:var(--font-text);font-size:14px;line-height:20px;font-weight:700;cursor:pointer}
-.btn:disabled{background:var(--surface-raised);color:var(--ink-disabled);cursor:not-allowed}
+.btn{width:200px;height:56px;background:var(--brand);color:var(--ink);border:0;border-radius:var(--radius-sm);font-family:var(--font-text);font-size:14px;line-height:20px;font-weight:700;cursor:pointer;transition:background .15s,transform .05s,box-shadow .15s}
+.btn:not(:disabled):hover{background:#b53d3d;box-shadow:0 4px 18px rgba(159,52,52,.35)}
+.btn:not(:disabled):active{transform:translateY(1px)}
+.btn:disabled{background:var(--surface-raised);color:var(--ink-disabled);border:1px solid var(--hairline);cursor:not-allowed}
+.btn.ghost{background:transparent;border:1px solid var(--control-border)}
+.btn.ghost:not(:disabled):hover{background:rgba(255,255,255,.06);box-shadow:none}
+.btn.ghost:disabled{border-color:var(--hairline);background:transparent}
 .btn.off{border:1px solid var(--hairline)}
 .btn.two-line{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .btn .sub{font-size:11px;line-height:14px;font-weight:500;opacity:.8}
-.agent{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 16px;text-align:left}
+.agents{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.agent{display:flex;align-items:center;justify-content:space-between;gap:8px;width:auto;height:auto;min-height:72px;padding:12px 16px;text-align:left}
 .agent>span:first-child{min-width:0}
 .agent span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent .role{font-size:12px;line-height:16px;font-weight:500;color:var(--ink-muted)}
 .agent .model{font-size:12px;line-height:16px;font-weight:500;color:var(--ink-disabled)}
 .agent svg{flex:none}
 
+/* Photos drop zone */
+.drop{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:20px;border:2px dashed var(--hairline);border-radius:var(--radius-md);transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--brand);background:rgba(159,52,52,.08)}
+.drop.has{border-style:solid}
+.drop .stack{flex:1;min-width:180px;gap:2px}
+.drop .muted{color:var(--ink);font-weight:700;overflow-wrap:anywhere}
+
 /* Form and progress */
-.input{width:100%;height:56px;padding:0 16px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--control-border);border-radius:var(--radius-sm);font-family:var(--font-text);font-size:16px}
-.bar{width:100%;height:8px;background:var(--hairline);border-radius:var(--radius-sm);overflow:hidden}
-.bar>div{width:0%;height:100%;background:var(--ink)}
-.steps{display:flex;flex-direction:column;gap:16px;margin:0;padding:0;list-style:none}
-.step{display:flex;align-items:center;gap:16px;min-height:32px}
+.input{width:100%;height:56px;padding:0 16px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--control-border);border-radius:var(--radius-sm);font-family:var(--font-text);font-size:16px;transition:border-color .15s}
+.input:hover{border-color:#b3b3b3}
+.input:focus{border-color:var(--ink)}
+.input::placeholder{color:var(--ink-disabled)}
+.car-row{display:flex;gap:12px}
+.car-row .input{flex:1;min-width:0}
+.car-row .btn{flex:none;width:160px;font-family:var(--font-display);font-weight:400;font-size:16px;letter-spacing:.1em}
+.bar{width:100%;height:8px;background:var(--hairline);border-radius:999px;overflow:hidden}
+.bar>div{width:0%;height:100%;background:var(--ink);border-radius:999px;transition:width .2s}
+.bar.busy>div{background:repeating-linear-gradient(-45deg,var(--brand) 0 10px,#b53d3d 10px 20px);background-size:28px 28px;animation:barmove .6s linear infinite}
+.bar.full>div{background:var(--ok)}
+@keyframes barmove{to{background-position:28px 0}}
+.pct-row{display:flex;justify-content:space-between;gap:12px}
+.steps{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
+.step{position:relative;display:flex;align-items:flex-start;gap:16px;padding-bottom:16px}
+.step:last-child{padding-bottom:0}
+.step::before{content:"";position:absolute;left:13px;top:32px;bottom:2px;width:2px;background:var(--hairline)}
+.step.done::before{background:var(--ok-dim)}
+.step:last-child::before{display:none}
 .step-icon{display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none}
+.step-main{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;padding-top:2px}
 .step-text{font-size:16px;line-height:24px;color:var(--ink)}
+.step.active .step-text{font-weight:700}
 .step.pending .step-text{color:var(--ink-muted)}
+.step .count{font-weight:500;color:var(--ink-muted)}
+.step .bar{height:4px;max-width:320px}
+.step .bar>div{background:var(--ok)}
 .ok{color:var(--ok)}
 .bad{color:var(--error)}
 .spin{display:block;width:22px;height:22px;border:3px solid var(--ok-dim);border-top-color:var(--ok);border-radius:50%;animation:bearspin .8s linear infinite}
-.dot{display:block;width:22px;height:22px;border:2px solid var(--hairline);border-radius:50%}
+.dot{display:block;width:22px;height:22px;border:2px solid var(--hairline);border-radius:50%;background:var(--surface)}
 
-/* Panels */
-.panel{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:24px;background:var(--surface-raised);border-radius:var(--radius-md)}
-.panel.col{flex-direction:column;align-items:flex-start}
-.panel.big{gap:24px;padding:40px 32px;border:1px solid var(--hairline)}
-.panel.big .muted{font-size:18px;line-height:28px;color:var(--ink)}
-.btn.big{width:100%;height:96px;font-size:18px;line-height:24px}
+/* Results */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px}
+.stats[hidden]{display:none}
+.stat{display:flex;flex-direction:column;gap:4px;padding:12px 12px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius-md)}
+.stat b{font-size:22px;line-height:28px;font-weight:700;white-space:nowrap}
+.stat span{font-size:11px;line-height:16px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-muted)}
+.stat.good b{color:var(--ok)}
+.stat.warn b{color:var(--error)}
+#resLabel{font-size:18px;line-height:28px}
+.card.is-done #resLabel{color:var(--ink)}
+.btn.big{width:100%;height:80px;font-size:18px;line-height:24px;display:flex;align-items:center;justify-content:center;gap:12px}
 .btn.big:disabled{border:1px solid var(--hairline)}
+.btn.big svg{flex:none}
+.res-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.res-actions .btn{width:100%}
+.res-actions .btn[hidden]{display:none}
+.res-actions:has(.btn[hidden]){grid-template-columns:1fr}
+
+@media (max-width:640px){
+  main{padding:24px 16px 64px}
+  .card{grid-template-columns:32px 1fr;column-gap:12px}
+  .num{width:32px;height:32px;font-size:12px}
+  .card::before{left:15px;top:36px}
+  .card-head{margin-top:-6px;min-height:32px}
+  .card-body{padding:16px}
+  .agents,.res-actions{grid-template-columns:1fr}
+  .car-row{flex-direction:column}
+  .car-row .input{flex:none}
+  .car-row .btn,.drop .btn{width:100%}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:0s!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -133,56 +209,70 @@ label{font-size:16px;line-height:24px}
         <a class="version repo" href="https://github.com/tamaugo/BEAR" target="_blank" rel="noopener"><span id="version">Version 0.2</span> <span class="repo-note">(github repo)</span></a>
       </div>
 
-      <section aria-labelledby="h-folder">
-        <h2 id="h-folder">1. Photos</h2>
-        <div class="row">
+      <ol class="flow">
+
+      <li class="card is-active" id="c-photos"><span class="num" aria-hidden="true">1</span>
+      <section class="card-body" aria-labelledby="h-folder">
+        <div class="card-head"><h2 id="h-folder">Photos</h2><span id="photoTag" class="tag">No folder</span></div>
+        <div id="drop" class="drop">
           <button type="button" id="pick" class="btn">Add folder</button>
           <input type="file" id="folder" webkitdirectory directory multiple hidden>
-          <span id="folderLabel" class="muted">No folder chosen</span>
+          <div class="stack">
+            <span id="folderLabel" class="muted">No folder chosen</span>
+            <span class="hint">Or drag a folder here. Only .jpg, .jpeg and .png photos directly inside it are used.</span>
+          </div>
         </div>
         <div class="stack">
           <div id="bar" class="bar" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <div id="barFill" style="width:0%"></div>
           </div>
-          <span id="pct" class="small">Upload 0%</span>
+          <div class="pct-row"><span id="pct" class="small">Upload 0%</span><span id="pctFiles" class="small"></span></div>
         </div>
         <span id="photoError" class="error" role="alert" hidden></span>
-      </section>
+      </section></li>
 
-      <section aria-labelledby="h-models">
-        <h2 id="h-models">2. Models</h2>
-        <div class="row">
-          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 1</span><span class="model" data-agent="0">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 2</span><span class="model" data-agent="1">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 3</span><span class="model" data-agent="2">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <li class="card" id="c-models"><span class="num" aria-hidden="true">2</span>
+      <section class="card-body" aria-labelledby="h-models">
+        <div class="card-head"><h2 id="h-models">Models</h2><span class="tag">Fixed for now</span></div>
+        <div class="agents">
+          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 1</span><span class="role">Reads part numbers</span><span class="model" data-agent="0">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 2</span><span class="role">Matches on eBay</span><span class="model" data-agent="1">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 3</span><span class="role">Cleans part names</span><span class="model" data-agent="2">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
-      </section>
+      </section></li>
 
-      <section aria-labelledby="h-car">
-        <h2 id="h-car">3. Car</h2>
+      <li class="card" id="c-car"><span class="num" aria-hidden="true">3</span>
+      <section class="card-body" aria-labelledby="h-car">
+        <div class="card-head"><h2 id="h-car">Car</h2></div>
         <label for="car">Car name</label>
-        <input id="car" class="input" type="text" placeholder="Make, model and year" autocomplete="off">
-        <button type="button" id="go" class="btn" disabled>GO</button>
-        <span id="goError" class="error" role="alert" hidden></span>
-      </section>
-
-      <section aria-labelledby="h-progress">
-        <h2 id="h-progress">4. Progress</h2>
-        <ol id="steps" class="steps"></ol>
-      </section>
-
-      <section aria-labelledby="h-results">
-        <h2 id="h-results">5. Results</h2>
-        <div class="panel col big">
-          <span id="resLabel" class="muted" role="status">Available when the run finishes</span>
-          <button type="button" id="dlXlsx" class="btn big" disabled>Download results.xlsx</button>
-          <div class="row">
-            <button type="button" id="openXlsx" class="btn two-line" disabled title="Opens Google Sheets in a new tab. Download results.xlsx first, then use File > Import > Upload.">Open spreadsheet<span class="sub">(import to google sheets)</span></button>
-            <button type="button" id="reveal" class="btn" disabled hidden>Show in Finder</button>
-          </div>
-          <span id="resError" class="error" role="alert" hidden></span>
+        <div class="car-row">
+          <input id="car" class="input" type="text" placeholder="Make, model and year" autocomplete="off">
+          <button type="button" id="go" class="btn" disabled>GO</button>
         </div>
-      </section>
+        <span id="goHint" class="hint">Add a folder of photos and type the car, then press GO (or Enter).</span>
+        <span id="goError" class="error" role="alert" hidden></span>
+      </section></li>
+
+      <li class="card" id="c-progress"><span class="num" aria-hidden="true">4</span>
+      <section class="card-body" aria-labelledby="h-progress">
+        <div class="card-head"><h2 id="h-progress">Progress</h2><span id="runTag" class="tag">Not started</span></div>
+        <ol id="steps" class="steps"></ol>
+      </section></li>
+
+      <li class="card" id="c-results"><span class="num" aria-hidden="true">5</span>
+      <section class="card-body" aria-labelledby="h-results">
+        <div class="card-head"><h2 id="h-results">Results</h2></div>
+        <span id="resLabel" class="muted" role="status">Available when the run finishes</span>
+        <div id="stats" class="stats" role="group" hidden></div>
+        <button type="button" id="dlXlsx" class="btn big" disabled><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download results.xlsx</button>
+        <div class="res-actions">
+          <button type="button" id="openXlsx" class="btn ghost two-line" disabled title="Opens Google Sheets in a new tab. Download results.xlsx first, then use File > Import > Upload.">Open spreadsheet<span class="sub">(import to google sheets)</span></button>
+          <button type="button" id="reveal" class="btn ghost" disabled hidden>Show in Finder</button>
+        </div>
+        <span id="resError" class="error" role="alert" hidden></span>
+      </section></li>
+
+      </ol>
 
     </main>
   </div>
