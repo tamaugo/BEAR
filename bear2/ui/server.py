@@ -3,7 +3,7 @@
 The browser uploads the chosen photo folder (one PUT per photo) into a job folder under
 ~/Documents/BEAR (override with BEAR_UI_JOBS_DIR), then GO runs the same pipeline as the
 `bear` command (bear2/run.py) as a subprocess. Its output drives the progress steps and
-the log; results.xlsx lands in <job folder>/bear-results-YYYYmmdd-HHMMSS/ as usual.
+is echoed to the Terminal running `bear ui`; results.xlsx lands in <job folder>/bear-results-YYYYmmdd-HHMMSS/ as usual.
 
 Credentials come from the environment `bin/bear` sets up (Keychain / .env) and are passed
 straight through to the pipeline. Nothing here prints or returns them.
@@ -72,7 +72,9 @@ class Job:
         self.proc = None
 
     def add(self, line):
+        # The page no longer shows the log, so the Terminal running `bear ui` is where it is read.
         self.log.append(line)
+        print(line, flush=True)
 
 
 LOCK = threading.Lock()
@@ -88,7 +90,8 @@ def new_job(name):
             raise RuntimeError("A run is in progress.")
         JOB.__init__()
         JOB.id, JOB.folder, JOB.name = uuid.uuid4().hex, folder, name
-        JOB.log = [f"Folder selected: {name}", f"Saving photos to {folder}"]
+        JOB.add(f"Folder selected: {name}")
+        JOB.add(f"Saving photos to {folder}")
     return JOB.id
 
 
@@ -207,11 +210,6 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/api/status":
             return self.send(200, status(int((q.get("since") or ["0"])[0] or 0)))
-        if url.path == "/api/log":
-            with LOCK:
-                text = "\n".join(JOB.log) + "\n"
-            return self.send(200, text, "text/plain; charset=utf-8",
-                             {"Content-Disposition": 'attachment; filename="bear-log.txt"'})
         if url.path == "/api/results.xlsx":
             with LOCK:
                 p = JOB.out / "results.xlsx" if JOB.state == "done" and JOB.out else None

@@ -1,23 +1,21 @@
 // BEAR UI: uploads the photo folder, starts the run, then polls /api/status for progress.
 (function () {
+  'use strict';
+
   var PHOTO = /\.(jpe?g|png)$/i;
   var $ = function (id) { return document.getElementById(id); };
   var st = { job: null, uploading: false, uploaded: false, state: 'idle', step: 0, detail: '', steps: [], logLength: 0, results: null, canOpen: false };
+  var stepsKey = '';  // last rendered progress list, so the spinner is not restarted by unrelated updates
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
 
   function api(method, url, body) {
     return fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || r.statusText); return d; }); });
-  }
-
-  function addLog(lines) {
-    var box = $('log');
-    lines.forEach(function (text) {
-      var s = document.createElement('span');
-      s.style.cssText = 'font-size: 12px; line-height: 16px; color: #a6a6a6; white-space: pre-wrap';
-      s.textContent = text;
-      box.appendChild(s);
-    });
-    box.scrollTop = box.scrollHeight;
   }
 
   function setPct(p) {
@@ -31,23 +29,26 @@
     $('goError').hidden = !msg;
   }
 
+  // Step icons. Colours come from the stylesheet (.ok green, .bad red); every icon carries alt text.
   var ICONS = {
-    done: function (alt) { return '<svg width="28" height="28" viewBox="0 0 28 28" fill="none" role="img" aria-label="' + alt + '"><circle cx="14" cy="14" r="13" stroke="#3ddc84" stroke-width="2"></circle><path d="M8 14.5l4 4 8-9" stroke="#3ddc84" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>'; },
-    active: function (alt) { return '<span role="img" aria-label="' + alt + '" style="display: block; width: 22px; height: 22px; box-sizing: border-box; border: 3px solid #1f3d2b; border-top-color: #3ddc84; border-radius: 50%; animation: bearspin 0.8s linear infinite"></span>'; },
-    failed: function (alt) { return '<svg width="28" height="28" viewBox="0 0 28 28" fill="none" role="img" aria-label="' + alt + '"><circle cx="14" cy="14" r="13" stroke="#ff8a80" stroke-width="2"></circle><path d="M9.5 9.5l9 9M18.5 9.5l-9 9" stroke="#ff8a80" stroke-width="2.5" stroke-linecap="round"></path></svg>'; },
-    pending: function (alt) { return '<span role="img" aria-label="' + alt + '" style="display: block; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid #333333; border-radius: 50%"></span>'; }
+    done: function (alt) { return '<svg class="ok" width="28" height="28" viewBox="0 0 28 28" fill="none" role="img" aria-label="' + alt + '"><circle cx="14" cy="14" r="13" stroke="currentColor" stroke-width="2"></circle><path d="M8 14.5l4 4 8-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>'; },
+    active: function (alt) { return '<span class="spin" role="img" aria-label="' + alt + '"></span>'; },
+    failed: function (alt) { return '<svg class="bad" width="28" height="28" viewBox="0 0 28 28" fill="none" role="img" aria-label="' + alt + '"><circle cx="14" cy="14" r="13" stroke="currentColor" stroke-width="2"></circle><path d="M9.5 9.5l9 9M18.5 9.5l-9 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"></path></svg>'; },
+    pending: function (alt) { return '<span class="dot" role="img" aria-label="' + alt + '"></span>'; }
   };
+  var WORDS = { done: 'done', active: 'in progress', failed: 'failed', pending: 'waiting' };
 
   function renderSteps() {
     var running = st.state === 'running', failed = st.state === 'failed';
+    var key = [st.state, st.step, st.detail, st.steps.join('|')].join('~');
+    if (key === stepsKey) return;
+    stepsKey = key;
     $('steps').innerHTML = st.steps.map(function (label, i) {
       var kind = i < st.step ? 'done' : (i === st.step && running ? 'active' : (i === st.step && failed ? 'failed' : 'pending'));
-      var word = { done: 'done', active: 'in progress', failed: 'failed', pending: 'waiting' }[kind];
-      var text = label + (kind === 'active' && st.detail ? ' (' + st.detail + ')' : '');
-      var ink = kind === 'pending' ? '#a6a6a6' : '#ffffff';
-      return '<li style="display: flex; align-items: center; gap: 16px; min-height: 32px">' +
-        '<span style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none">' + ICONS[kind](label + ': ' + word) + '</span>' +
-        '<span style="font-size: 16px; line-height: 24px; color: ' + ink + '">' + text + '</span></li>';
+      var text = esc(label) + (kind === 'active' && st.detail ? ' (' + esc(st.detail) + ')' : '');
+      return '<li class="step ' + kind + '">' +
+        '<span class="step-icon">' + ICONS[kind](esc(label + ': ' + WORDS[kind])) + '</span>' +
+        '<span class="step-text">' + text + '</span></li>';
     }).join('');
   }
 
@@ -66,7 +67,7 @@
       if (r.cost != null) parts.push('cost $' + r.cost.toFixed(4));
       $('resLabel').textContent = 'results.xlsx is ready. ' + parts.join(', ') + '.';
     } else if (st.state === 'failed') {
-      $('resLabel').textContent = 'The run failed. See the log below.';
+      $('resLabel').textContent = 'The run failed. Check the BEAR server output for details.';
     } else {
       $('resLabel').textContent = running ? 'Working on it...' : 'Available when the run finishes';
     }
@@ -79,8 +80,7 @@
         if (el) { el.textContent = m.split('/').pop(); el.parentNode.parentNode.title = 'Agent ' + (i + 1) + ' uses ' + m + '. Choosing models is coming later.'; }
       });
       if (d.version) $('version').textContent = 'Version ' + d.version.replace(/\.0$/, '');
-      if (d.log.length) addLog(d.log);
-      st.logLength = d.logLength;
+      st.logLength = d.logLength;  // tells the server how much log we have already seen; the page no longer shows it
       st.state = d.state; st.step = d.step; st.detail = d.detail; st.steps = d.steps;
       st.results = d.results; st.canOpen = d.canOpen;
       if (d.job && d.job !== st.job && !st.uploading) {  // page reloaded: pick the server's folder back up
@@ -152,12 +152,11 @@
   $('car').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('go').disabled) $('go').click(); });
   $('go').addEventListener('click', function () {
     showError('');
-    st.state = 'running'; st.step = 0; st.results = null; render();
+    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; render();
     api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim() })
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
   });
   $('dlXlsx').addEventListener('click', function () { download('/api/results.xlsx'); });
-  $('dlLog').addEventListener('click', function () { download('/api/log'); });
   $('openXlsx').addEventListener('click', function () { api('POST', '/api/open').catch(function (e) { showError(e.message); }); });
   $('reveal').addEventListener('click', function () { api('POST', '/api/reveal').catch(function (e) { showError(e.message); }); });
 
