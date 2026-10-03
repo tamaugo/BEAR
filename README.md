@@ -10,11 +10,25 @@
    security add-generic-password -a "$USER" -s ebay-cert-id -w
    ```
 4. Run `bear`, drag the photo folder into Terminal, press Enter, then type the vehicle. Or non-interactively: `bear <folder> "HYUNDAI I40 MK1 SEDAN 2015 1.7 DIESEL"`.
+   Prefer a page to click through? Run `bear ui` (see below).
 5. `bear check` verifies Python, Pillow and that all keys are present. `bear update` pulls the latest version and refreshes dependencies.
 
 **Results** go to `<photo folder>/bear-results-YYYYmmdd-HHMMSS/` (`results.xlsx`, `agent2_results.md`, `agent3_results.txt`, `trace.json`); the spreadsheet opens automatically on a Mac.
 
 **Cost:** about 0.2p per part (measured). Each run has a spend cap of $1.00; change it with the `BEAR_RUN_CAP_USD` environment variable, e.g. `BEAR_RUN_CAP_USD=2 bear`.
+
+### Web page (`bear ui`)
+
+`bear ui` opens the BEAR page in your browser (it runs only on your Mac, at `http://127.0.0.1:8642`; keep the Terminal window open, Ctrl+C stops it).
+
+1. **Photos**: *Add folder* uploads the `.jpg/.jpeg/.png` photos directly inside the folder into `~/Documents/BEAR/<folder>-<time>/` (change with `BEAR_UI_JOBS_DIR`).
+2. **Models**: Agent 1/2/3 are greyed out for now, a placeholder for choosing models later.
+3. **Car**: type the vehicle, press **GO**. This runs the same pipeline as the `bear` command.
+4. **Progress**: live steps (loading cache, scanning photos, eBay lookup, formatting, xlsx).
+5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet*, *Show in Finder*.
+6. **Log**: the run's messages, with *Download log* (`bear-log.txt`).
+
+The look follows the mockup attached to issue #7 and will be restyled later.
 
 ### How 0.2 works
 

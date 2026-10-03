@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEAR Parts Pipeline</title>
+<style>
+@font-face{font-family:'Michroma';font-style:normal;font-weight:400;font-display:swap;src:url("assets/michroma-latin.woff2") format('woff2')}
+@font-face{font-family:'Quicksand';font-style:normal;font-weight:500 700;font-display:swap;src:url("assets/quicksand-latin.woff2") format('woff2')}
+body{margin:0;background:#000000;color:#ffffff;font-family:"Quicksand",system-ui,sans-serif}
+a{text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid #ffffff;outline-offset:3px}
+.plate{background-image:url("assets/plate.svg");background-size:cover;background-position:top center;background-repeat:no-repeat}
+@keyframes bearspin{to{transform:rotate(360deg)}}
+h2{margin:0;font-size:14px;line-height:20px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#a6a6a6}
+section{display:flex;flex-direction:column;gap:16px}
+.btn{width:200px;height:56px;box-sizing:border-box;background:#9f3434;color:#ffffff;border:0;border-radius:2px;font-family:'Quicksand',system-ui,sans-serif;font-size:14px;line-height:20px;font-weight:700;cursor:pointer}
+.btn:disabled{background:#0d0d0d;color:#666666;cursor:not-allowed}
+.btn.off{border:1px solid #333333}
+.muted{font-size:16px;line-height:24px;color:#a6a6a6}
+.panel{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:24px;background:#0d0d0d;border-radius:4px}
+.error{font-size:14px;line-height:20px;color:#ff8a80}
+</style>
+</head>
+<body>
+<div style="width: 100%; max-width: 1440px; margin: 0 auto; background: #000000; box-sizing: border-box; position: relative; overflow: hidden">
+<header style="display: block; position: relative; z-index: 1">
+<img src="assets/header.webp" alt="Zlompol Ltd - parts online" style="display: block; width: 100%; height: auto">
+<div aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 45%; background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.6) 55%, #000000 100%)"></div>
+<div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; height: 65%; background: linear-gradient(to bottom, #000000 0%, #000000 12%, rgba(0,0,0,0.8) 45%, rgba(0,0,0,0.35) 75%, rgba(0,0,0,0) 100%)"></div>
+<div aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 0; width: 6%; background: linear-gradient(to right, #000000, rgba(0,0,0,0))"></div>
+</header>
+
+<div style="position: relative">
+<div aria-hidden="true" class="plate" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; pointer-events: none; opacity: 0.07; -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,1) 380px, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%); mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,1) 380px, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)"></div>
+<div aria-hidden="true" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at 70% 35%, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 60%); -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,1) 380px); mask-image: linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,1) 380px)"></div>
+<main style="position: relative; z-index: 1; width: 100%; max-width: 720px; margin: 0 auto; padding: 32px 24px 64px; box-sizing: border-box; display: flex; flex-direction: column; gap: 40px">
+
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 16px">
+<h1 style="margin: 0; font-family: 'Michroma', 'Arial Black', sans-serif; font-size: 28px; line-height: 32px; font-weight: 400">BEAR</h1>
+<span id="version" style="font-size: 14px; line-height: 20px; font-weight: 700; color: #a6a6a6">Version 0.2</span>
+</div>
+
+<section aria-labelledby="h-folder">
+<h2 id="h-folder">1. Photos</h2>
+<div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+<button type="button" id="pick" class="btn">Add folder</button>
+<input type="file" id="folder" webkitdirectory directory multiple hidden>
+<span id="folderLabel" class="muted">No folder chosen</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div id="bar" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width: 100%; height: 8px; background: #333333; border-radius: 2px; overflow: hidden">
+<div id="barFill" style="width: 0%; height: 100%; background: #ffffff"></div>
+</div>
+<span id="pct" style="font-size: 14px; line-height: 20px; color: #a6a6a6">Upload 0%</span>
+</div>
+</section>
+
+<section aria-labelledby="h-models">
+<h2 id="h-models">2. Models</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 16px">
+<button type="button" class="btn off" disabled title="Choosing models is coming later">Agent 1</button>
+<button type="button" class="btn off" disabled title="Choosing models is coming later">Agent 2</button>
+<button type="button" class="btn off" disabled title="Choosing models is coming later">Agent 3</button>
+</div>
+</section>
+
+<section aria-labelledby="h-car">
+<h2 id="h-car">3. Car</h2>
+<label for="car" style="font-size: 16px; line-height: 24px">Car name</label>
+<input id="car" type="text" placeholder="Make, model and year" autocomplete="off" style="width: 100%; height: 56px; box-sizing: border-box; padding: 0 16px; background: #0d0d0d; color: #ffffff; border: 1px solid #8c8c8c; border-radius: 2px; font-family: 'Quicksand', system-ui, sans-serif; font-size: 16px">
+<button type="button" id="go" class="btn" disabled>GO</button>
+<span id="goError" class="error" role="alert" hidden></span>
+</section>
+
+<section aria-labelledby="h-progress">
+<h2 id="h-progress">4. Progress</h2>
+<ol id="steps" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 16px"></ol>
+</section>
+
+<section aria-labelledby="h-results">
+<h2 id="h-results">5. Results</h2>
+<div class="panel" style="flex-direction: column; align-items: flex-start">
+<span id="resLabel" class="muted">Available when the run finishes</span>
+<div style="display: flex; gap: 16px; flex-wrap: wrap">
+<button type="button" id="dlXlsx" class="btn" disabled>Download results.xlsx</button>
+<button type="button" id="openXlsx" class="btn" disabled hidden>Open spreadsheet</button>
+<button type="button" id="reveal" class="btn" disabled hidden>Show in Finder</button>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="h-log">
+<h2 id="h-log">6. Log</h2>
+<div class="panel">
+<button type="button" id="dlLog" class="btn">Download log</button>
+<span class="muted">bear-log.txt</span>
+</div>
+<div id="log" role="log" aria-live="polite" aria-label="Log" style="height: 64px; overflow-y: auto; box-sizing: border-box; padding: 8px 12px; background: #0d0d0d; border: 1px solid #333333; border-radius: 2px; display: flex; flex-direction: column; gap: 2px"></div>
+</section>
+
+</main>
+</div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
