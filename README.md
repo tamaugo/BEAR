@@ -1,4 +1,4 @@
-## BEAR 0.2 — quick start (Mac)
+## BEAR 0.3 — quick start (Mac)
 
 1. Get the code into `~/Desktop/bear` (the one BEAR folder on the Mac): `git clone https://github.com/tamaugo/BEAR.git ~/Desktop/bear && cd ~/Desktop/bear` (already cloned? `cd ~/Desktop/bear && git pull`).
    Keep only this copy; delete older BEAR folders once `bear` works (never `~/Desktop/ebay-jobs/`, that is customer data).
@@ -22,18 +22,18 @@
 `bear ui` opens the BEAR page in your browser (it runs only on your Mac, at `http://127.0.0.1:8642`; keep the Terminal window open, Ctrl+C stops it).
 
 1. **Photos**: *Add folder* uploads the `.jpg/.jpeg/.png` photos directly inside the folder into `~/Documents/BEAR/<folder>-<time>/` (change with `BEAR_UI_JOBS_DIR`).
-2. **Models**: shows the model each agent uses (read from the pipeline code). The drop-down arrows are greyed out: choosing models comes later.
+2. **Model setup**: pick a whole setup from the drop-down: *Default*, *Beta* (cheaper photo check) or *Experimental* (Claude Haiku 5.5). The models each setup uses are listed underneath.
 3. **Car**: type the vehicle, press **GO**. This runs the same pipeline as the `bear` command.
 4. **Progress**: live steps (starting up, scanning photos, eBay lookup, formatting text = cleaning part names, creating the xlsx).
 5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet (import to google sheets)* (opens Google Sheets in a new tab: File > Import > Upload the downloaded file), *Show in Finder*.
 
-The version number in the top corner links to this GitHub repo.
+The version number in the top corner links to this GitHub repo. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 The run's messages (and any error) appear in the Terminal window running `bear ui`.
 
 The look follows the mockup attached to issue #7 and will be restyled later.
 
-### How 0.2 works
+### How 0.3 works
 
 1. **Read** — a vision model reads every candidate part number (plus alternates), describes the part and counts items; if no number is found it re-reads the photo rotated 90/180/270.
 2. **Numbers** — each reading is searched on eBay UK (exact match, several normalised forms). No UK listing means it is not a sellable number.
@@ -43,7 +43,7 @@ The look follows the mockup attached to issue #7 and will be restyled later.
 ---
 
 
-### Image matching (0.2)
+### Image matching (0.3)
 - **Unpriced photos** (FAILED / NO PART NUMBER) get up to 3 eBay search-by-image suggestions as shaded rows directly under their row in `results.xlsx` (scanned order kept; ranked toward the job's car). Shown as \"listed £x\", never a BEAR price. Check by eye.
 - **Weak or failed reads**: if a visually similar listing carries a part number within 1-2 characters of what was read off the part, that number is tried and must still pass the photo-vs-listings check. Example: cast bracket read `3M51-6030-BA` (no listings) -> image search found `6M51-6030-BA`.
 - Free (eBay API only). Measured: right part in the image-search top 50 for 5/9 known photos, so it is a hint, not a verdict.

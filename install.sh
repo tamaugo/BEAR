@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# BEAR 0.2 installer: puts `bear` on your PATH. Safe to re-run.
+# BEAR 0.3 installer: puts `bear` on your PATH. Safe to re-run.
 set -euo pipefail
 
 SOURCE="${BASH_SOURCE[0]}"
@@ -44,7 +44,7 @@ esac
 
 OTHER="$(command -v bear 2>/dev/null || true)"
 if [ -n "$OTHER" ] && [ "$OTHER" != "$LINK" ]; then
-  echo "WARNING: 'bear' currently resolves to $OTHER, which will run instead of BEAR 0.2." >&2
+  echo "WARNING: 'bear' currently resolves to $OTHER, which will run instead of BEAR 0.3." >&2
   echo "         Remove it or put $BIN_DIR earlier on your PATH." >&2
 fi
 
