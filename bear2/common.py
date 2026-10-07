@@ -205,7 +205,12 @@ JEV_MODEL = "typesafe/jev-1.13"
 
 
 def jev(state, questions, tag=""):
+    return decide(JEV_MODEL, state, questions, tag)
+
+
+def decide(model, state, questions, tag=""):
+    """One Decisions API call (Jev, or openai/gpt-6-luna-decisions, which also takes photos)."""
     _check_cap()
-    r = jev_client.call_decisions(JEV_MODEL, state, questions)
-    log_spend("jev", JEV_MODEL, jev_client.get_cost(r), {"tag": tag})
+    r = jev_client.call_decisions(model, state, questions)
+    log_spend("decisions", model, jev_client.get_cost(r), {"tag": tag})
     return r
