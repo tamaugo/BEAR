@@ -12,7 +12,7 @@ matched a gold watch before the category filter).
 import itertools, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c
+import common as c, configs
 import jev_client as j
 import stage2_numbers as s2
 
@@ -72,7 +72,7 @@ def rescue(s1, make):
     return found
 
 
-GATE_MODEL = "openai/gpt-6-luna-decisions"
+GATE_MODEL = configs.active()["check"]   # None (default setup) = gemini gate only; beta: openai/gpt-6-luna-decisions
 GATE_FALLBACK_MODEL = "google/gemini-3.5-flash"
 GATE_SURE = (0.2, 0.8)   # Luna below/above these is a clear NO/YES; in between asks the fallback
 
@@ -94,6 +94,8 @@ def visual_gate(photo_path, reading):
     answers were 0.84-1.00 on true pairs and 0.00-0.03 on swapped ones. Anything less clear-cut,
     or any Decisions API error, is decided by the old gemini gate, so the gate is never worse
     than before. Used only for weak/rescued/low-confidence reads."""
+    if not GATE_MODEL:
+        return visual_gate_chat(photo_path, reading)
     instructions, titles = gate_question(reading)
     try:
         r = c.decide(GATE_MODEL, [

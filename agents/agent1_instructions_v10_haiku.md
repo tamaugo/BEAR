@@ -3,7 +3,7 @@
 Stage-1 vision prompt for BEAR 0.2 (`bear2/stage1_read.py`), written for
 `anthropic/claude-haiku-5.5`. It does not replace the built-in prompt in
 `stage1_read.py`; that stays the default for `google/gemini-3.1-flash-lite`.
-Use this one with `BEAR_S1_PROMPT=agents/agent1_instructions_v10_haiku.md`.
+It is used by the "experimental" setup in `bear2/configs.py` (`BEAR_CONFIG=experimental`).
 
 Why a separate version: on the i40 test set (2026-10-07) Haiku 5.5 with the
 flash-lite prompt (a) split Hyundai numbers into two halves (`91860` + `3Z210`),

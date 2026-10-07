@@ -7,6 +7,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var st = { job: null, uploading: false, uploaded: false, state: 'idle', step: 0, detail: '', steps: [], logLength: 0, results: null, canOpen: false };
   var stepsKey = '';  // last rendered progress list, so the spinner is not restarted by unrelated updates
+  var configs = {}, configsKey = '';  // model setups from the server, by id; the page always opens on the first (default)
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -55,8 +56,37 @@
     }).join('');
   }
 
+  // Model setups: one drop-down of whole setups (bear2/configs.py), never one model per agent.
+  function renderConfigs(list, current) {
+    var key = JSON.stringify(list);
+    if (key !== configsKey) {
+      configsKey = key;
+      configs = {};
+      list.forEach(function (c) { configs[c.id] = c; });
+      var keep = $('config').value;
+      $('config').innerHTML = list.map(function (c) {
+        return '<option value="' + esc(c.id) + '">' + esc(c.label) + ' (' + esc(c.tag) + ')</option>';
+      }).join('');
+      $('config').value = configs[keep] ? keep : list[0].id;
+    }
+    if (st.state === 'running' && configs[current]) $('config').value = current;  // show what the run is using
+    showConfig();
+  }
+
+  function showConfig() {
+    var c = configs[$('config').value];
+    if (!c) return;
+    $('configTag').textContent = c.tag;
+    $('configTag').className = 'tag ' + c.tag.toLowerCase();
+    $('configAbout').textContent = c.about;
+    $('configModels').innerHTML = c.models.map(function (m) {
+      return '<dt>' + esc(m[0]) + '</dt><dd>' + esc(m[1]) + '</dd>';
+    }).join('');
+  }
+
   function render() {
     var running = st.state === 'running';
+    $('config').disabled = running;
     var canGo = st.uploaded && !st.uploading && !running && $('car').value.trim() !== '';
     $('go').disabled = !canGo;
     $('pick').disabled = st.uploading || running;
@@ -80,14 +110,11 @@
 
   function poll() {
     api('GET', '/api/status?since=' + st.logLength).then(function (d) {
-      (d.models || []).forEach(function (m, i) {
-        var el = document.querySelector('.model[data-agent="' + i + '"]');
-        if (el) { el.textContent = m.split('/').pop(); el.parentNode.parentNode.title = 'Agent ' + (i + 1) + ' uses ' + m + '. Choosing models is coming later.'; }
-      });
       if (d.version) $('version').textContent = 'Version ' + d.version.replace(/\.0$/, '');
       st.logLength = d.logLength;  // tells the server how much log we have already seen; the page no longer shows it
       st.state = d.state; st.step = d.step; st.detail = d.detail; st.steps = d.steps;
       st.results = d.results; st.canOpen = d.canOpen;
+      if (d.configs && d.configs.length) renderConfigs(d.configs, d.config);
       if (d.job && d.job !== st.job && !st.uploading) {  // page reloaded: pick the server's folder back up
         st.job = d.job; st.uploaded = true; setPct(100);
         $('folderLabel').textContent = d.folder + ' uploaded';
@@ -154,11 +181,12 @@
   $('pick').addEventListener('click', function () { $('folder').value = ''; $('folder').click(); });
   $('folder').addEventListener('change', function (e) { if (e.target.files.length) upload(e.target.files); });
   $('car').addEventListener('input', render);
+  $('config').addEventListener('change', showConfig);
   $('car').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('go').disabled) $('go').click(); });
   $('go').addEventListener('click', function () {
     showError('');
     st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; render();
-    api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim() })
+    api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim(), config: $('config').value })
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
   });
   $('dlXlsx').addEventListener('click', function () { download('/api/results.xlsx'); });
