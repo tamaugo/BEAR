@@ -31,7 +31,7 @@
 /* Base */
 *{box-sizing:border-box}
 body{margin:0;background:var(--surface);color:var(--ink);font-family:var(--font-text)}
-a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
 @keyframes bearspin{to{transform:rotate(360deg)}}
 
 /* Page frame and header banner */
@@ -83,11 +83,20 @@ label{font-size:16px;line-height:24px}
 .btn.off{border:1px solid var(--hairline)}
 .btn.two-line{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .btn .sub{font-size:11px;line-height:14px;font-weight:500;opacity:.8}
-.agent{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 16px;text-align:left}
-.agent>span:first-child{min-width:0}
-.agent span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.agent .model{font-size:12px;line-height:16px;font-weight:500;color:var(--ink-disabled)}
-.agent svg{flex:none}
+
+/* Model setup drop-down: whole setups only, never one model per agent */
+.select{appearance:none;-webkit-appearance:none;padding-right:48px;cursor:pointer;
+  background:var(--surface-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%23a6a6a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") right 20px center no-repeat}
+.select:disabled{color:var(--ink-disabled);cursor:not-allowed}
+.select:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.panel.setup{gap:12px;padding:16px 20px}
+.row.tight{gap:8px;flex-wrap:nowrap;align-items:baseline}
+.tag{flex:none;padding:2px 8px;border-radius:var(--radius-sm);font-size:12px;line-height:16px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--hairline);color:var(--ink-muted)}
+.tag.beta{border-color:var(--ok);color:var(--ok)}
+.tag.experimental{border-color:var(--error);color:var(--error)}
+.models{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0;font-size:14px;line-height:20px}
+.models dt{color:var(--ink-muted)}
+.models dd{margin:0;overflow-wrap:anywhere}
 
 /* Form and progress */
 .input{width:100%;height:56px;padding:0 16px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--control-border);border-radius:var(--radius-sm);font-family:var(--font-text);font-size:16px}
@@ -151,10 +160,11 @@ label{font-size:16px;line-height:24px}
 
       <section aria-labelledby="h-models">
         <h2 id="h-models">2. Models</h2>
-        <div class="row">
-          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 1</span><span class="model" data-agent="0">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 2</span><span class="model" data-agent="1">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          <button type="button" class="btn off agent" disabled title="Choosing models is coming later"><span><span>Agent 3</span><span class="model" data-agent="2">&nbsp;</span></span><svg width="12" height="8" viewBox="0 0 12 8" fill="none" aria-hidden="true"><path d="M1 1.5l5 5 5-5" stroke="#666666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <label for="config">Model setup</label>
+        <select id="config" class="input select"></select>
+        <div class="panel col setup">
+          <span class="row tight"><span id="configTag" class="tag"></span><span id="configAbout" class="small"></span></span>
+          <dl id="configModels" class="models"></dl>
         </div>
       </section>
 

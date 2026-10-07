@@ -9,9 +9,10 @@ Output per photo (JSON): {has_any_text, part_description, item_count, candidates
 import json, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c
+import common as c, configs
 
-MODEL = "google/gemini-3.1-flash-lite"
+CONFIG = configs.active()
+MODEL = CONFIG["read"]   # default setup: google/gemini-3.1-flash-lite (configs.py)
 
 PROMPT = """You are reading a photo of ONE used car part taken at a breaker's yard. Car: {vehicle}.
 
@@ -37,6 +38,16 @@ If there is no number at all, candidates = [].
 """
 
 
+def prompt_for(vehicle):
+    """Built-in PROMPT, or the `## Prompt` section of the setup's md file
+    (e.g. agents/agent1_instructions_v10_haiku.md, written for claude-haiku-5.5)."""
+    f = CONFIG["read_prompt"]
+    if not f:
+        return PROMPT.format(vehicle=vehicle)
+    p = Path(f) if Path(f).is_absolute() else Path(__file__).resolve().parent.parent / f
+    return p.read_text().split("\n## Prompt\n", 1)[1].strip().replace("{vehicle}", vehicle)
+
+
 def parse_json(s):
     s = s.strip()
     m = re.search(r"\{.*\}", s, re.S)
@@ -45,7 +56,7 @@ def parse_json(s):
 
 def read_photo(path, vehicle, model=MODEL, max_side=1600, rotate=0):
     msgs = [{"role": "user", "content": [
-        {"type": "text", "text": PROMPT.format(vehicle=vehicle)},
+        {"type": "text", "text": prompt_for(vehicle)},
         {"type": "image_url", "image_url": {"url": c.img_data_uri(path, max_side, rotate)}}]}]
     cost = 0
     for attempt in range(2):

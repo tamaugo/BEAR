@@ -32,20 +32,35 @@ STEP_MARKERS = [(1, "photos to price"), (1, "Reading part numbers"), (2, "Pricin
 COUNTER = re.compile(r"^(Reading part numbers|Pricing on eBay) (\d+)/(\d+)$")
 
 
-# Models each agent uses, read from the pipeline source so the page always matches the code.
-# (file, constant): Agent 1 reads part numbers, Agent 2 decides the eBay match (Jev),
-# Agent 3 cleans eBay titles into part names.
-AGENT_MODELS = [("stage1_read.py", "MODEL"), ("common.py", "JEV_MODEL"), ("assemble.py", "MODEL")]
+# The fixed model setups (bear2/configs.py). The page offers one drop-down of whole setups;
+# models are never chosen per agent.
+sys.path.insert(0, str(HERE.parent))
+import configs  # noqa: E402
+
+# Models every setup shares, read from the pipeline source so the page always matches the code.
+# Agent 2 decides the eBay match (Jev), Agent 3 cleans eBay titles into part names.
+SHARED_MODELS = [("common.py", "JEV_MODEL"), ("assemble.py", "MODEL"),
+                 ("stage2b_rescue.py", "GATE_FALLBACK_MODEL")]
 
 
-def agent_models():
+def source_model(fname, const):
+    try:
+        m = re.search(rf'^{const} = "([^"]+)"', (HERE.parent / fname).read_text(), re.M)
+        return m.group(1) if m else "unknown"
+    except OSError:
+        return "unknown"
+
+
+def config_list():
+    jev, names, gemini = (source_model(f, k) for f, k in SHARED_MODELS)
     out = []
-    for fname, const in AGENT_MODELS:
-        try:
-            m = re.search(rf'^{const} = "([^"]+)"', (HERE.parent / fname).read_text(), re.M)
-            out.append(m.group(1) if m else "unknown")
-        except OSError:
-            out.append("unknown")
+    for key, cfg in configs.CONFIGS.items():
+        check = f"{cfg['check']} (backup {gemini})" if cfg["check"] else gemini
+        out.append({"id": key, "label": cfg["label"], "tag": cfg["tag"], "about": cfg["about"],
+                    "models": [["Agent 1 reads part numbers", cfg["read"]],
+                               ["Photo check", check],
+                               ["Agent 2 matches on eBay", jev],
+                               ["Agent 3 cleans part names", names]]})
     return out
 
 
@@ -70,6 +85,7 @@ class Job:
         self.out = None
         self.cost = None
         self.proc = None
+        self.config = configs.DEFAULT   # setup of the current/last run
 
     def add(self, line):
         # The page no longer shows the log, so the Terminal running `bear ui` is where it is read.
@@ -95,14 +111,16 @@ def new_job(name):
     return JOB.id
 
 
-def run_pipeline(vehicle):
+def run_pipeline(vehicle, config):
     with LOCK:
         out = JOB.folder / f"bear-results-{time.strftime('%Y%m%d-%H%M%S')}"
         JOB.state, JOB.step, JOB.detail, JOB.out, JOB.cost = "running", 0, "", out, None
-        JOB.add(f"Started: {vehicle}")
+        JOB.config = config
+        JOB.add(f"Started: {vehicle} (models: {configs.CONFIGS[config]['label']})")
         JOB.proc = subprocess.Popen(
             [sys.executable, "-u", str(RUN_PY), str(JOB.folder), vehicle, str(out)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO))
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO),
+            env={**os.environ, "BEAR_CONFIG": config})
         proc = JOB.proc
     threading.Thread(target=watch, args=(proc, out), daemon=True).start()
 
@@ -168,7 +186,7 @@ def status(since):
         return {"version": version(), "job": JOB.id, "folder": JOB.name, "state": JOB.state,
                 "step": JOB.step, "detail": JOB.detail, "steps": STEPS,
                 "log": JOB.log[since:], "logLength": len(JOB.log), "results": res,
-                "canOpen": bool(shutil.which("open")), "models": agent_models()}
+                "canOpen": bool(shutil.which("open")), "configs": config_list(), "config": JOB.config}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -266,6 +284,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
         if path == "/api/run":
             vehicle = " ".join(str(data.get("vehicle") or "").split())
+            config = str(data.get("config") or configs.DEFAULT)
+            if config not in configs.CONFIGS:
+                return self.fail(400, "Unknown model setup.")
             with LOCK:
                 if data.get("job") != JOB.id or not JOB.folder:
                     return self.fail(409, "Add a folder of photos first.")
@@ -276,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail(400, "No .jpg/.jpeg/.png photos in that folder.")
             if not vehicle:
                 return self.fail(400, "Type the car first.")
-            run_pipeline(vehicle)
+            run_pipeline(vehicle, config)
             return self.send(200, {"ok": True})
         if path == "/api/reveal":
             with LOCK:
