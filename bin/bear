@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bear — BEAR 0.2 launcher (eBay part pricing). bash 3.2 safe (macOS) and Linux.
+# bear — BEAR 0.3 launcher (eBay part pricing). bash 3.2 safe (macOS) and Linux.
 set -euo pipefail
 
 # ---- locate repo root (resolve symlinks portably; macOS has no readlink -f) ----
