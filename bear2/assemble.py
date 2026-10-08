@@ -8,10 +8,11 @@ into the link) and dropped the image field. URL and image are copy-through field
 has no business touching them.
 
 Name models never fall back silently (issue 19): if the name model is unavailable or gives an
-unusable answer, BEAR stops and asks (or, with no one to ask, stops) instead of writing
-mechanical names. Before a full run the operator approves one finished line (`verify`) and
-can switch between the NAME_MODELS. Questions go through an `ask(text, choices)` function:
-`terminal_ask` in the Terminal; the web page can supply its own later. ask=None = stop.
+unusable answer, BEAR stops and asks (or, with no one to ask, stops). The old mechanical
+cleaner that wrote the messy names now lives in legacy/ and is not used. Before a full run
+the operator approves one finished line (`verify`) and can switch between the NAME_MODELS.
+Questions go through an `ask(text, choices)` function: `terminal_ask` in the Terminal; the
+web page can supply its own later. ask=None = stop.
 
 usage: python3 bear2/assemble.py <run_dir> "<VEHICLE STRING>"
 Writes <run_dir>/agent3_results.txt (4-field contract) and results.xlsx. Re-running it on a
@@ -81,11 +82,12 @@ def label(model):
     return NAME_MODELS.get(model, model)
 
 
-def clean_names(titles, model=MODEL, attempts=c.CHAT_ATTEMPTS):
-    """{id: {title, locationcode}} -> {id: name} for every id, or NamesFailed. Never partial."""
-    if not titles:
+def clean_names(rows, model=MODEL, attempts=c.CHAT_ATTEMPTS):
+    """{id: agent2 row fields} -> {id: tidy name} for every row, or NamesFailed. Never partial,
+    never a mechanical stand-in: a name that can't be used stops the run like an outage does."""
+    if not rows:
         return {}
-    user = EXAMPLES + "\nItems:\n" + json.dumps(titles, indent=0)
+    user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f) for k, f in rows.items()}, indent=0)
     try:
         out, raw = c.chat(model, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
                           max_tokens=3000, response_format={"type": "json_object"},
@@ -98,20 +100,27 @@ def clean_names(titles, model=MODEL, attempts=c.CHAT_ATTEMPTS):
         names = json.loads(m.group(0)).get("names")
     except Exception:
         names = None
-    if not isinstance(names, dict) or not all(isinstance(names.get(k), str) and names[k].strip() for k in titles):
-        raise NamesFailed(f"{label(model)} gave an unusable answer (names missing or not text)")
-    return {k: names[k] for k in titles}
+    if not isinstance(names, dict):
+        raise NamesFailed(f"{label(model)} gave an unusable answer (no names)")
+    tidy = {}
+    for k, f in rows.items():
+        tidy[k] = tidy_name(names.get(k), f[1])
+        if not tidy[k]:
+            raise NamesFailed(f"{label(model)} gave a name BEAR can't use for {f[0]}: {names.get(k)!r}")
+    return tidy
 
 
-def safe_name(name, title, pn):
-    """Guard rails on the model's one job. Falls back to a mechanical clean if violated."""
-    bad = (not name or "|" in name or len(name) > 90 or c.norm(pn) in c.norm(name)
-           or re.search(r"\d{4,}", name))
-    if not bad:
-        return " ".join(w[:1].upper() + w[1:].lower() for w in name.split())
-    t = re.sub(r"\b[\w-]*\d[\w-]*\b", " ", title)            # drop anything with a digit
-    t = re.sub(r"(?i)\b(hyundai|i40|genuine|oem|mk\d|crdi|diesel|petrol)\b", " ", t)
-    return " ".join(w[:1].upper() + w[1:].lower() for w in t.replace("|", " ").split())
+def tidy_name(name, pn):
+    """The model's part name in the approved layout ("Fog Light"), or None if it can't be used.
+    The code adds the part number after the name, so a copy the model left in is removed."""
+    if not isinstance(name, str):
+        return None
+    pnn = c.norm(pn)
+    words = [w for w in name.replace("|", " ").split() if not (len(c.norm(w)) >= 4 and c.norm(w) in pnn)]
+    name = " ".join(w[:1].upper() + w[1:].lower() for w in words)
+    if not name or len(name) > 90 or re.search(r"\d{4,}", name) or (pnn and pnn in c.norm(name)):
+        return None
+    return name
 
 
 def parse_row(line):
@@ -126,9 +135,8 @@ def title_item(f):
 
 def part_line(vehicle, f, name):
     """The finished results line for a priced row, exactly as it is written to the results."""
-    img, pn, title, price, url = f[0], f[1], f[2], f[-2], f[-1]
+    img, pn, price, url = f[0], f[1], f[-2], f[-1]
     loc = location(img)
-    name = safe_name(name, title, pn)
     if loc:  # never repeat the operator's location words
         for w in loc.split():
             name = re.sub(rf"(?i)^{w}\b\s*", "", name) if w in ("Front", "Rear") else name
@@ -168,7 +176,7 @@ def verify(vehicle, f, ask, model=MODEL):
     bad, stopped = set(), "Stopped at the first-line check."
     while True:
         try:
-            name = clean_names({"i0": title_item(f)}, model, attempts=CHECK_ATTEMPTS)["i0"]
+            name = clean_names({"i0": f}, model, attempts=CHECK_ATTEMPTS)["i0"]
         except NamesFailed as e:
             a = ask(str(e), [("r", "Try again"), ("m", "Pick another name model"), ("q", "Stop")])
             if a == "q":
@@ -199,11 +207,11 @@ def main(run_dir, vehicle, ask=None):
     check = json.loads((run / CHECK_FILE).read_text()) if (run / CHECK_FILE).exists() else {}
     model = check.get("model") or MODEL
     priced = {f"i{k}": f for k, f in enumerate(rows) if f[1] != "FAILED"}
-    titles = {k: title_item(f) for k, f in priced.items() if f[0] != check.get("image")}
+    todo = {k: f for k, f in priced.items() if f[0] != check.get("image")}
     print(f"Cleaning part names ({label(model)}) ...", file=sys.stderr, flush=True)
     while True:
         try:
-            names = clean_names(titles, model)
+            names = clean_names(todo, model)
             break
         except NamesFailed as e:
             if not ask:
@@ -219,7 +227,7 @@ def main(run_dir, vehicle, ask=None):
                     model, name = verify(vehicle, f, ask, new)
                     check = {"image": f[0], "model": model, "name": name}
                     (run / CHECK_FILE).write_text(json.dumps(check))
-                    titles = {k: title_item(f) for k, f in priced.items() if f[0] != check["image"]}
+                    todo = {k: f for k, f in priced.items() if f[0] != check["image"]}
     if check.get("image"):
         names.update({k: check["name"] for k, f in priced.items() if f[0] == check["image"]})
     out = []
