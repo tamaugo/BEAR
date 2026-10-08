@@ -154,7 +154,8 @@ def _retry_wait(err, attempt):
     return min(30, max(ra, 2 ** (attempt + 1)))
 
 
-def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=None, extra=None, tag=""):
+def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=None, extra=None, tag="",
+         attempts=CHAT_ATTEMPTS):
     _check_cap()
     body = {"model": model, "messages": messages, "temperature": temperature,
             "max_tokens": max_tokens, "usage": {"include": True}}
@@ -163,7 +164,7 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
     if extra:
         body.update(extra)
     last = None
-    for attempt in range(CHAT_ATTEMPTS):
+    for attempt in range(attempts):
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                      data=json.dumps(body).encode(), method="POST")
         req.add_header("Authorization", f"Bearer {jev_client.resolve_api_key()}")
@@ -179,11 +180,11 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
             last = RuntimeError(f"OpenRouter HTTP {e.code}: {msg}")
             if e.code in (401, 402, 400):
                 raise last from None
-            if attempt + 1 < CHAT_ATTEMPTS:
+            if attempt + 1 < attempts:
                 time.sleep(_retry_wait(e, attempt))
         except Exception as e:  # network
             last = e
-            if attempt + 1 < CHAT_ATTEMPTS:
+            if attempt + 1 < attempts:
                 time.sleep(2 ** attempt)
     raise last
 
