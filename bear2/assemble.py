@@ -17,6 +17,10 @@ import common as c
 
 LOC = {"NSF": "Near Side Front", "NSR": "Near Side Rear", "OSF": "Off Side Front", "OSR": "Off Side Rear"}
 MODEL = "qwen/qwen3.8-flash"
+# Live run 2026-10-08 (Shogun): OpenRouter returned 429 "qwen3.8-flash is temporarily rate-limited
+# upstream" through all retries and every name fell to the mechanical clean. The backup is the
+# model that already reads the photos, so no new provider.
+BACKUP_MODEL = "google/gemini-3.1-flash-lite"
 
 CLEAN_PROMPT = """You clean eBay listing titles into short part names for a UK car breaker's spreadsheet.
 For each item, return ONLY the words that say what the component is. Remove:
@@ -59,32 +63,62 @@ def clean_names(titles):
     if not titles:
         return {}
     user = EXAMPLES + "\nItems:\n" + json.dumps(titles, indent=0)
-    try:
-        out, raw = c.chat(MODEL, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
-                          max_tokens=3000, response_format={"type": "json_object"},
-                          extra={"reasoning": {"effort": "none", "exclude": True}}, tag="clean_names")
-    except Exception as e:
-        # Names are cosmetic: a rate limit / outage here must not throw away a finished, paid-for
-        # run. safe_name falls back to a mechanical clean of each eBay title.
-        print(f"(part-name cleaning unavailable, using plain eBay titles: {str(e)[:120]})",
-              file=sys.stderr, flush=True)
-        return {}
-    m = re.search(r"\{.*\}", out, re.S)
-    try:
-        return json.loads(m.group(0)).get("names", {}) if m else {}
-    except Exception:
-        return {}  # safe_name falls back to a mechanical clean per row
+    msgs = [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}]
+    for model, extra in ((MODEL, {"reasoning": {"effort": "none", "exclude": True}}), (BACKUP_MODEL, None)):
+        try:
+            out, raw = c.chat(model, msgs, max_tokens=3000, response_format={"type": "json_object"},
+                              extra=extra, tag="clean_names")
+            m = re.search(r"\{.*\}", out, re.S)
+            names = json.loads(m.group(0)).get("names", {}) if m else {}
+            if names:
+                return names
+            print(f"(part-name cleaning: {model} returned no names)", file=sys.stderr, flush=True)
+        except Exception as e:
+            # Names are cosmetic: a rate limit / outage here must not throw away a finished, paid-for
+            # run. Try the backup model, then safe_name falls back to a mechanical clean per row.
+            print(f"(part-name cleaning: {model} unavailable: {str(e)[:120]})", file=sys.stderr, flush=True)
+    print("(part-name cleaning unavailable, using a plain clean of the eBay titles)", file=sys.stderr, flush=True)
+    return {}
 
 
-def safe_name(name, title, pn):
+MAKES = ("alfa romeo audi bmw chevrolet chrysler citroen dacia daewoo daihatsu dodge fiat ford honda "
+         "hyundai infiniti isuzu jaguar jeep kia lancia land rover range lexus mazda mercedes benz mini "
+         "mitsubishi nissan peugeot porsche proton renault rover saab skoda ssangyong subaru "
+         "suzuki toyota vauxhall opel volkswagen vw volvo").split()
+VEHICLE_WORDS = ("mk facelift fl pre lwb swb gls glx gsr se sx sxi lx gl gt td tdi tdci crdi dci hdi "
+                 "di-d did cdti cdi vtec bhp ps kw diesel petrol hybrid turbo manual auto automatic "
+                 "estate saloon hatchback coupe convertible van").split()
+NOISE = ("genuine oem original used new free post postage p&p quick delivery uk seller fits fit for to "
+         "from with in x").split()
+SIDE = ("left right lh rh l/h r/h n/s o/s ns os nsf nsr osf osr n/s/f n/s/r o/s/f o/s/r near off side "
+        "driver drivers driver's passenger passengers passenger's").split()
+
+
+def mechanical_name(title, vehicle=""):
+    """Last-resort clean when no model is available: drop vehicle words (the job's own vehicle
+    string plus common makes / trims), anything with a digit (part numbers, years, 2.8, 4M40),
+    side words, seller noise and punctuation-only leftovers. Words keep their eBay order."""
+    drop = set(MAKES + VEHICLE_WORDS + NOISE + SIDE)
+    drop |= {w.lower() for w in re.split(r"[^\w-]+", vehicle) if w}
+    seen, keep = set(), []
+    for w in re.sub(r"[()\[\],;:|*#!+]", " ", title).split():
+        w = w.strip(".-/&'")
+        lw = w.lower()
+        if not w or not re.search(r"[A-Za-z]", w) or re.search(r"\d", w) or lw in drop \
+                or re.sub(r"\d+$", "", lw) in ("mk",) or lw in seen:
+            continue
+        seen.add(lw)
+        keep.append(w[:1].upper() + w[1:].lower())
+    return " ".join(keep)
+
+
+def safe_name(name, title, pn, vehicle=""):
     """Guard rails on the model's one job. Falls back to a mechanical clean if violated."""
     bad = (not name or "|" in name or len(name) > 90 or c.norm(pn) in c.norm(name)
            or re.search(r"\d{4,}", name))
     if not bad:
         return " ".join(w[:1].upper() + w[1:].lower() for w in name.split())
-    t = re.sub(r"\b[\w-]*\d[\w-]*\b", " ", title)            # drop anything with a digit
-    t = re.sub(r"(?i)\b(hyundai|i40|genuine|oem|mk\d|crdi|diesel|petrol)\b", " ", t)
-    return " ".join(w[:1].upper() + w[1:].lower() for w in t.replace("|", " ").split())
+    return mechanical_name(title, vehicle)
 
 
 def main(run_dir, vehicle):
@@ -106,7 +140,7 @@ def main(run_dir, vehicle):
             out.append((image_no(img), f"FAILED - {f[2]} - {f[3]} | | | {img}"))
             continue
         pn, title, price, url = f[1], f[2], f[-2], f[-1]
-        name = safe_name(names.get(f"i{k}"), title, pn)
+        name = safe_name(names.get(f"i{k}"), title, pn, vehicle)
         if loc:  # never repeat the operator's location words
             for w in loc.split():
                 name = re.sub(rf"(?i)^{w}\b\s*", "", name) if w in ("Front", "Rear") else name
