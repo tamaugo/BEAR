@@ -103,6 +103,29 @@ def process(name, s1, vehicle, make, photo_path=None):
     return f"{name} | {out_number} | {title} | {price} | {s['url']}", tr
 
 
+def first_line_check(photos, vehicle, make, read, ask, out_dir):
+    """Before the full run: top to bottom until a photo gets a listing, then the operator
+    approves its finished line (assemble.verify) and the approved name model is saved to
+    names_check.json. Every photo processed here is returned so the full run never redoes it."""
+    print("Checking the first part before the full run ...", file=sys.stderr, flush=True)
+    done = {}
+    for p in photos:
+        s1 = read(p)
+        try:
+            line, tr = process(p.name, s1, vehicle, make, p)
+        except Exception as e:
+            line, tr = f"{p.name} | {FAIL_UN}", {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+        done[p.name] = (s1, line, tr)
+        f = assemble.parse_row(line)
+        if f[1] == "FAILED":
+            print(f"{p.name}: no listing, trying the next photo", file=sys.stderr, flush=True)
+            continue
+        model, name = assemble.verify(vehicle, f, ask)
+        (out_dir / assemble.CHECK_FILE).write_text(json.dumps({"image": p.name, "model": model, "name": name}))
+        break
+    return done
+
+
 def progress(label, total):
     """Thread-safe `label n/total` counter on stderr, so long jobs visibly move."""
     lock, done = threading.Lock(), [0]
@@ -126,10 +149,20 @@ def main():
     photos = [p for p in photos if p.name not in nulls]
     print(f"{len(photos)} photos to price ({len(nulls)} NULL). This takes a few minutes for a big job.",
           file=sys.stderr, flush=True)
-    if s1_cache:
-        S1 = json.loads(Path(s1_cache).read_text())
-    else:
-        tick = progress("Reading part numbers", len(photos))
+    S1 = json.loads(Path(s1_cache).read_text()) if s1_cache else {}
+    # Terminal runs ask questions; the web page (stdout piped) has no one to ask yet.
+    ask = assemble.terminal_ask if sys.stdin.isatty() and sys.stdout.isatty() else None
+    done = {}
+    if ask:
+        read1 = (lambda p: S1.get(p.name)) if s1_cache else (lambda p: s1m.read_photo_robust(p, vehicle))
+        try:
+            done = first_line_check(photos, vehicle, make, read1, ask, out_dir)
+        except assemble.Stop as e:
+            sys.exit(f"\n{e}")
+    rest = [p for p in photos if p.name not in done]
+    S1.update({k: v[0] for k, v in done.items()})
+    if not s1_cache:
+        tick = progress("Reading part numbers", len(rest))
 
         def read(p):
             try:
@@ -137,12 +170,13 @@ def main():
             finally:
                 tick()
         with cf.ThreadPoolExecutor(6) as ex:
-            S1 = dict(zip([p.name for p in photos], ex.map(read, photos)))
+            S1.update(zip([p.name for p in rest], ex.map(read, rest)))
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
-    lines, trace = {}, {}
+    lines = {k: v[1] for k, v in done.items()}
+    trace = {k: v[2] for k, v in done.items()}
     with cf.ThreadPoolExecutor(6) as ex:
-        futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make, p): p.name for p in photos}
-        tick = progress("Pricing on eBay", len(photos))
+        futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make, p): p.name for p in rest}
+        tick = progress("Pricing on eBay", len(rest))
         for f in futs:
             f.add_done_callback(tick)
         for f in futs:
@@ -158,7 +192,10 @@ def main():
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
     print("Building results.xlsx ...", file=sys.stderr, flush=True)
-    print(assemble.main(out_dir, vehicle))
+    try:
+        print(assemble.main(out_dir, vehicle, ask))
+    except assemble.Stop as e:
+        sys.exit(f"\n{e}")
     print("Looking for possible matches for unpriced photos ...", file=sys.stderr, flush=True)
     try:
         n = image_hints.main(out_dir, photo_dir, vehicle)
