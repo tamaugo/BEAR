@@ -20,3 +20,13 @@ directly. The owner reviews and merges every change.
   days while `main` showed the old version.
 - **One pull request per piece of work.** Merged branches are deleted
   automatically, so don't reuse old branches.
+
+## Consult the owner before selecting behavior changes
+
+Use [the change consultation framework](CHANGE_REVIEW_FRAMEWORK.md) for future
+BEAR behavior changes, recovery policies and model choices across every setup
+and stage. Present the verified cause and neutral alternatives before implementing
+the owner's choice. Give each option at least six information-bearing lines,
+including pros, cons and cost data for Default and Luna, with the absolute price,
+percentage change and cost multiple for the same workload. Label assumptions and
+unknowns, and do not choose or mark a recommended option for the owner.

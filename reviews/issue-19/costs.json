@@ -1,0 +1,252 @@
+{
+  "as_of": "2026-10-08",
+  "status": "consultation; no selected option",
+  "currency": "USD",
+  "photo_count": 20,
+  "baseline_origin": "Owner supplied $0.05 Default; Luna 26% cheaper. Not newly measured controlled runs.",
+  "baselines_usd": {
+    "default": 0.05,
+    "luna": 0.037
+  },
+  "assumptions": {
+    "successful_names": 20,
+    "input_tokens_including_prompt": 2000,
+    "billed_output_tokens": 300,
+    "cache_discount": false,
+    "extra_reasoning_tokens": 0,
+    "escalated_job_fraction_for_E": 0.2,
+    "replacement_credit": "B/E assume baseline includes one successful Qwen batch at modeled Q. Recovery additions give no credit for failed/unknown-billed primary.",
+    "scope": "Single-batch inference illustrations. Not total retry ceilings or measured quality/failure probabilities. Human labor and implementation are unpriced."
+  },
+  "models": {
+    "qwen": {
+      "id": "qwen/qwen3.8-flash",
+      "input_usd_per_million": 0.15,
+      "output_usd_per_million": 0.47,
+      "batch_usd": 0.000441,
+      "source": "https://openrouter.ai/qwen/qwen3.8-flash"
+    },
+    "gemini": {
+      "id": "google/gemini-3.1-flash-lite",
+      "input_usd_per_million": 0.25,
+      "output_usd_per_million": 1.5,
+      "batch_usd": 0.00095,
+      "source": "https://openrouter.ai/google/gemini-3.1-flash-lite"
+    }
+  },
+  "observed_gemini_cleanup": {
+    "usd": 0.00060125,
+    "source": "Local success ledger, 8 October",
+    "caveat": "Token volume and exactly 20-name workload not established. Not a controlled 20-photo measurement."
+  },
+  "scenarios": [
+    {
+      "id": "current",
+      "label": "Current owner reference",
+      "cost": {
+        "default": {
+          "usd": 0.05,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        },
+        "luna": {
+          "usd": 0.037,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        }
+      }
+    },
+    {
+      "id": "A",
+      "label": "Generic mechanical fallback",
+      "scenario": "No extra model call; normal and conservative degraded reference",
+      "cost": {
+        "default": {
+          "usd": 0.05,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        },
+        "luna": {
+          "usd": 0.037,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        }
+      }
+    },
+    {
+      "id": "B",
+      "label": "Gemini primary",
+      "scenario": "Replace modeled Qwen with Gemini",
+      "cost": {
+        "default": {
+          "usd": 0.050509,
+          "delta_usd": 0.000509,
+          "change_percent": 1.018,
+          "multiple": 1.01018
+        },
+        "luna": {
+          "usd": 0.037509,
+          "delta_usd": 0.000509,
+          "change_percent": 1.375676,
+          "multiple": 1.013757
+        }
+      }
+    },
+    {
+      "id": "C",
+      "label": "Application backup",
+      "scenario": "Normal",
+      "cost": {
+        "default": {
+          "usd": 0.05,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        },
+        "luna": {
+          "usd": 0.037,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        }
+      }
+    },
+    {
+      "id": "C-recovery",
+      "label": "Application backup",
+      "scenario": "One extra successful Gemini recovery; no primary credit",
+      "cost": {
+        "default": {
+          "usd": 0.05095,
+          "delta_usd": 0.00095,
+          "change_percent": 1.9,
+          "multiple": 1.019
+        },
+        "luna": {
+          "usd": 0.03795,
+          "delta_usd": 0.00095,
+          "change_percent": 2.567568,
+          "multiple": 1.025676
+        }
+      }
+    },
+    {
+      "id": "D",
+      "label": "OpenRouter model fallback",
+      "scenario": "Normal",
+      "cost": {
+        "default": {
+          "usd": 0.05,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        },
+        "luna": {
+          "usd": 0.037,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        }
+      }
+    },
+    {
+      "id": "D-recovery",
+      "label": "OpenRouter model fallback",
+      "scenario": "Conservative single Gemini recovery addition; reconcile actual returned-model billing",
+      "cost": {
+        "default": {
+          "usd": 0.05095,
+          "delta_usd": 0.00095,
+          "change_percent": 1.9,
+          "multiple": 1.019
+        },
+        "luna": {
+          "usd": 0.03795,
+          "delta_usd": 0.00095,
+          "change_percent": 2.567568,
+          "multiple": 1.025676
+        }
+      }
+    },
+    {
+      "id": "E",
+      "label": "Mechanical first",
+      "scenario": "Average assuming 20% of jobs escalate their complete batch",
+      "cost": {
+        "default": {
+          "usd": 0.049749,
+          "delta_usd": -0.000251,
+          "change_percent": -0.502,
+          "multiple": 0.99498
+        },
+        "luna": {
+          "usd": 0.036749,
+          "delta_usd": -0.000251,
+          "change_percent": -0.678378,
+          "multiple": 0.993216
+        }
+      }
+    },
+    {
+      "id": "E-all",
+      "label": "Mechanical first",
+      "scenario": "All jobs escalate once",
+      "cost": {
+        "default": {
+          "usd": 0.050509,
+          "delta_usd": 0.000509,
+          "change_percent": 1.018,
+          "multiple": 1.01018
+        },
+        "luna": {
+          "usd": 0.037509,
+          "delta_usd": 0.000509,
+          "change_percent": 1.375676,
+          "multiple": 1.013757
+        }
+      }
+    },
+    {
+      "id": "F",
+      "label": "Warning/manual review",
+      "scenario": "No extra inference; human labor unpriced",
+      "cost": {
+        "default": {
+          "usd": 0.05,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        },
+        "luna": {
+          "usd": 0.037,
+          "delta_usd": 0,
+          "change_percent": 0,
+          "multiple": 1
+        }
+      }
+    },
+    {
+      "id": "F-replay",
+      "label": "Names-only later replay",
+      "scenario": "One extra successful Qwen call; no primary credit",
+      "cost": {
+        "default": {
+          "usd": 0.050441,
+          "delta_usd": 0.000441,
+          "change_percent": 0.882,
+          "multiple": 1.00882
+        },
+        "luna": {
+          "usd": 0.037441,
+          "delta_usd": 0.000441,
+          "change_percent": 1.191892,
+          "multiple": 1.011919
+        }
+      }
+    }
+  ]
+}
