@@ -1,13 +1,17 @@
-// BEAR UI: uploads the photo folder, starts the run, then polls /api/status for progress.
+// BEAR UI: uploads the photo folder, starts the run, then polls /api/status for progress
+// and shows the run's questions (first-line check, failed name model) for the operator to answer.
 (function () {
   'use strict';
 
   var PHOTO = /\.(jpe?g|png)$/i;
   var SHEETS_URL = 'https://docs.google.com/spreadsheets/u/0/';
   var $ = function (id) { return document.getElementById(id); };
-  var st = { job: null, uploading: false, uploaded: false, state: 'idle', step: 0, detail: '', steps: [], logLength: 0, results: null, canOpen: false };
+  var st = { job: null, uploading: false, uploaded: false, state: 'idle', step: 0, detail: '', steps: [], logLength: 0, results: null, canOpen: false,
+    question: null, stop: null, canFinish: false };
   var stepsKey = '';  // last rendered progress list, so the spinner is not restarted by unrelated updates
   var configs = {}, configsKey = '';  // model setups from the server, by id; the page always opens on the first (default)
+  var namesKey = '', serverName = '';  // name model drop-down, and the server's kept model it last showed
+  var askKey = '', answered = 0;       // last rendered question, and the id of the last one answered here
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -79,18 +83,78 @@
     $('configTag').textContent = c.tag;
     $('configTag').className = 'tag ' + c.tag.toLowerCase();
     $('configAbout').textContent = c.about;
-    $('configModels').innerHTML = c.models.map(function (m) {
+    var names = $('nameModel').value ? [['Agent 3 cleans part names', $('nameModel').value]] : [];
+    $('configModels').innerHTML = c.models.concat(names).map(function (m) {
       return '<dt>' + esc(m[0]) + '</dt><dd>' + esc(m[1]) + '</dd>';
     }).join('');
+  }
+
+  // Name model (Agent 3): the server keeps the one that last worked until `bear ui` closes, so
+  // the drop-down follows it whenever it changes there (a model approved at the first-line check).
+  function renderNames(list, current) {
+    var key = JSON.stringify(list);
+    if (key !== namesKey) {
+      namesKey = key;
+      $('nameModel').innerHTML = list.map(function (m) {
+        return '<option value="' + esc(m[0]) + '">' + esc(m[1]) + '</option>';
+      }).join('');
+      serverName = '';
+    }
+    if (current !== serverName) { serverName = current; $('nameModel').value = current; }
+  }
+
+  // A question from the run. Lines after the first are the finished results line to check.
+  function renderAsk() {
+    var q = st.question && st.question.id !== answered ? st.question : null;
+    var key = q ? JSON.stringify(q) : '';
+    if (key === askKey) return;
+    askKey = key;
+    $('ask').hidden = !q;
+    if (!q) { $('ask').innerHTML = ''; return; }
+    var lines = q.ask.split('\n'), title = lines.shift();
+    var shown = lines.map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+      var f = l.split(' | ');  // info | price | url | image
+      return '<div class="listing"><span>' + esc(f[0]) + '</span>' +
+        (f.length >= 4 ? '<span class="small">£' + esc(f[1]) + ' · ' + esc(f[f.length - 1]) + '</span>' : '') + '</div>';
+    }).join('');
+    var stop = q.choices.filter(function (c) { return c[0] === 'q'; });
+    var rest = q.choices.filter(function (c) { return c[0] !== 'q'; });
+    var buttons = function (list, first) {
+      return list.map(function (c, i) {
+        return '<button type="button" class="btn' + (i || !first ? ' quiet' : '') + '" data-key="' + esc(c[0]) + '">' + esc(c[1]) + '</button>';
+      }).join('');
+    };
+    var body = q.kind === 'model'
+      ? '<select id="askModel" class="input select">' +
+          rest.map(function (c) { return '<option value="' + esc(c[0]) + '">' + esc(c[1]) + '</option>'; }).join('') +
+        '</select><div class="row"><button type="button" class="btn" data-pick="1">Check with this model</button>' + buttons(stop, false) + '</div>'
+      : '<div class="row">' + buttons(rest.concat(stop), true) + '</div>';
+    var head = q.kind === 'model' ? '<label id="askTitle" for="askModel" class="ask-title">' + esc(title) + '</label>'
+      : '<span id="askTitle" class="ask-title">' + esc(title) + '</span>';
+    $('ask').innerHTML = head + shown + body;
+    var focus = $('ask').querySelector('select, button');
+    if (focus) focus.focus();
+  }
+
+  function answer(key) {
+    var id = st.question && st.question.id;
+    answered = id;
+    renderAsk();
+    api('POST', '/api/answer', { id: id, key: key }).catch(function (e) { showError(e.message); });
   }
 
   function render() {
     var running = st.state === 'running';
     $('config').disabled = running;
+    $('nameModel').disabled = running;
     var canGo = st.uploaded && !st.uploading && !running && $('car').value.trim() !== '';
     $('go').disabled = !canGo;
     $('pick').disabled = st.uploading || running;
     renderSteps();
+    renderAsk();
+    $('stopMsg').textContent = st.state === 'failed' && st.stop ? st.stop : '';
+    $('stopMsg').hidden = !$('stopMsg').textContent;
+    $('finishNames').hidden = !st.canFinish;
     var r = st.results, done = st.state === 'done' && r;
     $('dlXlsx').disabled = !done;
     $('openXlsx').disabled = !done;
@@ -101,8 +165,10 @@
       if (r.nulls) parts.push(r.nulls + ' NULL skipped');
       if (r.cost != null) parts.push('cost $' + r.cost.toFixed(4));
       $('resLabel').textContent = 'results.xlsx is ready. ' + parts.join(', ') + '.';
+    } else if (st.canFinish) {
+      $('resLabel').textContent = 'The photo reads and eBay results are saved. Pick a name model above, then finish the names.';
     } else if (st.state === 'failed') {
-      $('resLabel').textContent = 'The run failed. Check the BEAR server output for details.';
+      $('resLabel').textContent = st.stop ? 'The run stopped.' : 'The run failed. Check the BEAR server output for details.';
     } else {
       $('resLabel').textContent = running ? 'Working on it...' : 'Available when the run finishes';
     }
@@ -114,6 +180,8 @@
       st.logLength = d.logLength;  // tells the server how much log we have already seen; the page no longer shows it
       st.state = d.state; st.step = d.step; st.detail = d.detail; st.steps = d.steps;
       st.results = d.results; st.canOpen = d.canOpen;
+      st.question = d.question; st.stop = d.stop; st.canFinish = d.canFinish;
+      if (d.nameModels && d.nameModels.length) renderNames(d.nameModels, d.nameModel);
       if (d.configs && d.configs.length) renderConfigs(d.configs, d.config);
       if (d.job && d.job !== st.job && !st.uploading) {  // page reloaded: pick the server's folder back up
         st.job = d.job; st.uploaded = true; setPct(100);
@@ -182,12 +250,23 @@
   $('folder').addEventListener('change', function (e) { if (e.target.files.length) upload(e.target.files); });
   $('car').addEventListener('input', render);
   $('config').addEventListener('change', showConfig);
+  $('nameModel').addEventListener('change', showConfig);
+  $('ask').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (b) answer(b.hasAttribute('data-pick') ? $('askModel').value : b.getAttribute('data-key'));
+  });
   $('car').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('go').disabled) $('go').click(); });
   $('go').addEventListener('click', function () {
     showError('');
-    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; render();
-    api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim(), config: $('config').value })
+    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; st.stop = null; st.canFinish = false; render();
+    api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim(), config: $('config').value, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
+  });
+  $('finishNames').addEventListener('click', function () {
+    showError('', 'resError');
+    st.state = 'running'; st.step = 0; st.detail = ''; st.stop = null; st.canFinish = false; render();
+    api('POST', '/api/finish', { job: st.job, nameModel: $('nameModel').value })
+      .catch(function (e) { st.state = 'failed'; showError(e.message, 'resError'); render(); });
   });
   $('dlXlsx').addEventListener('click', function () { download('/api/results.xlsx'); });
   $('openXlsx').addEventListener('click', function () { window.open(SHEETS_URL, '_blank', 'noopener'); });

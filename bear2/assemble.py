@@ -11,14 +11,14 @@ Name models never fall back silently (issue 19): if the name model is unavailabl
 unusable answer, BEAR stops and asks (or, with no one to ask, stops). The old mechanical
 cleaner that wrote the messy names now lives in legacy/ and is not used. Before a full run
 the operator approves one finished line (`verify`) and can switch between the NAME_MODELS.
-Questions go through an `ask(text, choices)` function: `terminal_ask` in the Terminal; the
-web page can supply its own later. ask=None = stop.
+Questions go through an `ask(text, choices)` function: `terminal_ask` in the Terminal,
+`web_ask` for the web page (bear2/ui/server.py). ask=None = stop.
 
 usage: python3 bear2/assemble.py <run_dir> "<VEHICLE STRING>"
 Writes <run_dir>/agent3_results.txt (4-field contract) and results.xlsx. Re-running it on a
 saved run redoes only the names (the photo reads and eBay results are not paid for again).
 """
-import json, re, subprocess, sys
+import json, os, re, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c
@@ -30,6 +30,8 @@ NAME_MODELS = {MODEL: "Qwen 3.8 Flash",
                "anthropic/claude-haiku-5.5": "Claude Haiku 5.5"}
 CHECK_FILE = "names_check.json"   # the approved first line: image, model, name
 CHECK_ATTEMPTS = 2                # the first-line check gives up on a busy model in seconds
+WEB = bool(os.environ.get("BEAR_WEB_ASK"))   # started by the web page, which answers on stdin
+WEB_MARK = "@@BEAR "              # web page messages: this prefix + one JSON object per stdout line
 INSTRUCTIONS_BAD = ("Every name model gave a bad line, so the problem is the cleaning instructions "
                     "(CLEAN_PROMPT in bear2/assemble.py), not the models. Stopped.")
 
@@ -159,6 +161,52 @@ def terminal_ask(text, choices):
             return a
 
 
+def web_say(**msg):
+    """Tell the web page something (a question, the approved model, why the run stopped)."""
+    if WEB:
+        print(WEB_MARK + json.dumps(msg), flush=True)
+
+
+def web_ask(text, choices):
+    """Ask on the web page: the question goes out as a marked line on stdout and the server
+    writes the chosen key back on stdin. A list of name models is shown as a drop-down."""
+    models = [lab for k, lab in choices if k != "q"]
+    kind = "model" if models and all(lab in NAME_MODELS.values() for lab in models) else "buttons"
+    web_say(ask=text, choices=choices, kind=kind)
+    keys = [k for k, _ in choices]
+    while True:
+        a = sys.stdin.readline()
+        if not a:
+            raise Stop("No answer (the web page closed). Stopped.")
+        if a.strip() in keys:
+            return a.strip()
+
+
+def asker():
+    """The ask function for this process: the web page, a real Terminal, or no one (None)."""
+    if WEB:
+        return web_ask
+    return terminal_ask if sys.stdin.isatty() and sys.stdout.isatty() else None
+
+
+def start_model():
+    """The first name model to check: the web page's kept model, else the default."""
+    m = os.environ.get("BEAR_NAME_MODEL")
+    return m if m in NAME_MODELS else MODEL
+
+
+def stop_exit(e):
+    web_say(stop=str(e))
+    sys.exit(f"\n{e}")
+
+
+def save_check(run, image, model, name):
+    check = {"image": image, "model": model, "name": name}
+    (Path(run) / CHECK_FILE).write_text(json.dumps(check))
+    web_say(model=model)
+    return check
+
+
 def pick_model(ask, exclude, stopped):
     """The operator picks the next name model; None when none is left, Stop(stopped) if they stop."""
     left = [m for m in NAME_MODELS if m not in exclude]
@@ -193,20 +241,32 @@ def verify(vehicle, f, ask, model=MODEL):
         model = pick_model(ask, bad, stopped)
 
 
+def approve(run, vehicle, priced, check, ask, model):
+    """Check one finished line with `model` (the photo approved before, else the first priced
+    one) and save the approved model. Returns the new check."""
+    print(f"Checking the first part with {label(model)} ...", file=sys.stderr, flush=True)
+    f = next((f for f in priced.values() if f[0] == check.get("image")), None) or next(iter(priced.values()))
+    model, name = verify(vehicle, f, ask, model)
+    return save_check(run, f[0], model, name)
+
+
 def resume_hint(run, vehicle):
     return (f"The photo reads and eBay results are saved in {run}.\n"
             f"To finish only the names later, run in Terminal:\n"
             f"  python3 bear2/assemble.py \"{run}\" \"{vehicle}\"")
 
 
-def main(run_dir, vehicle, ask=None):
-    """ask=None: no one to ask (the web page today), so a failed name model stops the run."""
+def main(run_dir, vehicle, ask=None, model=None):
+    """ask=None: no one to ask, so a failed name model stops the run. model: finish the names
+    with this model, checking one line with it first if it isn't the approved one."""
     run = Path(run_dir)
     rows = [f for f in map(parse_row, (run / "agent2_results.md").read_text().splitlines()) if f]
     nulls = [n for n in (run / "null_files.txt").read_text().split("\n") if n.strip()] if (run / "null_files.txt").exists() else []
     check = json.loads((run / CHECK_FILE).read_text()) if (run / CHECK_FILE).exists() else {}
-    model = check.get("model") or MODEL
     priced = {f"i{k}": f for k, f in enumerate(rows) if f[1] != "FAILED"}
+    if model and ask and priced and model != check.get("model"):
+        check = approve(run, vehicle, priced, check, ask, model)
+    model = check.get("model") or MODEL
     todo = {k: f for k, f in priced.items() if f[0] != check.get("image")}
     print(f"Cleaning part names ({label(model)}) ...", file=sys.stderr, flush=True)
     while True:
@@ -223,10 +283,8 @@ def main(run_dir, vehicle, ask=None):
             if a == "m":
                 new = pick_model(ask, {model}, resume_hint(run, vehicle))
                 if new:
-                    f = next((f for f in priced.values() if f[0] == check.get("image")), None) or next(iter(priced.values()))
-                    model, name = verify(vehicle, f, ask, new)
-                    check = {"image": f[0], "model": model, "name": name}
-                    (run / CHECK_FILE).write_text(json.dumps(check))
+                    check = approve(run, vehicle, priced, check, ask, new)
+                    model = check["model"]
                     todo = {k: f for k, f in priced.items() if f[0] != check["image"]}
     if check.get("image"):
         names.update({k: check["name"] for k, f in priced.items() if f[0] == check["image"]})
@@ -256,6 +314,6 @@ def main(run_dir, vehicle, ask=None):
 
 if __name__ == "__main__":
     try:
-        print(main(sys.argv[1], sys.argv[2], terminal_ask if sys.stdin.isatty() else None))
+        print(main(sys.argv[1], sys.argv[2], web_ask if WEB else terminal_ask if sys.stdin.isatty() else None))
     except Stop as e:
-        sys.exit(f"\n{e}")
+        stop_exit(e)
