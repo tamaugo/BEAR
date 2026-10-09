@@ -27,7 +27,12 @@
 4. **Progress**: live steps (starting up, verifying first part, scanning photos, eBay lookup, formatting text = cleaning part names, creating the xlsx). Run errors drop down in a banner at the top of the page with an error code (`BEAR-N01` name model rate limited, `N02` not responding, `N03` unusable names, `N04` every model gave a wrong line, `R01` anything else), what to do, and the full error under *Info*. If the name model fails mid-run the banner offers *Change model* (pick one in the Model name drop-down; its line is checked first), *Try again* or *Stop*.
 5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet (import to google sheets)* (opens Google Sheets in a new tab: File > Import > Upload the downloaded file), *Show in Finder*. If a run stopped at the names, *Finish names* finishes them with the chosen name model (after checking one line) without redoing the photo reads or eBay lookups.
 
-The version number in the top corner links to this GitHub repo. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+The version number in the top corner links to this GitHub repo. Next to it, **Dev mode** runs a simulated run (`bear2/simulate.py`: fake photo reads, eBay results and name models, no credits spent) of any scenario: a clean run, a wrong first line, every model wrong (`BEAR-N04`), rate limited at the check or mid-run (`BEAR-N01`), not responding (`BEAR-N02`), unusable names (`BEAR-N03`) or a crash (`BEAR-R01`). It also runs the **offline test suite** (free, no network). The same suite runs in Terminal:
+
+```
+python3 tests/test_names_offline.py      # part names and the finished line layout
+python3 tests/test_web_flow_offline.py   # every dev-mode scenario through the real web server
+``` What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 The run's messages (and any error) appear in the Terminal window running `bear ui`.
 

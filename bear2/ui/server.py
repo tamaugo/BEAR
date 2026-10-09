@@ -14,13 +14,26 @@ straight through to the pipeline. Nothing here prints or returns them.
 
 usage: python3 bear2/ui/server.py [--port N] [--no-browser]
 """
-import itertools, json, os, re, shutil, subprocess, sys, threading, time, urllib.parse, uuid, webbrowser
+import itertools, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.parse, uuid, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 RUN_PY = HERE.parent / "run.py"
+SIM_PY = HERE.parent / "simulate.py"   # dev mode: simulated runs, no credits spent
+DEV_TESTS = ["tests/test_names_offline.py", "tests/test_web_flow_offline.py"]   # offline, free
+SIM_VEHICLE = "MITSUBISHI SHOGUN 2007 3.2 DI-D"
+SIM_SCENARIOS = {  # bear2/simulate.py BEAR_SIM values, as the dev mode drop-down lists them
+    "ok": "Full run, everything works",
+    "wrong-line": "First line is wrong (reject it)",
+    "all-wrong": "Every model gives a wrong line (BEAR-N04)",
+    "check-rate-limit": "Rate limited at the first-line check",
+    "rate-limit": "Rate limited mid-run (BEAR-N01)",
+    "no-response": "Not responding mid-run (BEAR-N02)",
+    "unusable": "Unusable names mid-run (BEAR-N03)",
+    "crash": "Run crashes (BEAR-R01)",
+}
 REPO = HERE.parent.parent
 JOBS = Path(os.environ.get("BEAR_UI_JOBS_DIR") or Path.home() / "Documents" / "BEAR")
 PHOTO_EXT = (".jpg", ".jpeg", ".png")
@@ -98,6 +111,7 @@ class Job:
         self.vehicle = ""
         self.question = None      # {"id", "ask", "choices", "kind"} while the run waits for an answer
         self.stop = None          # why the run stopped, when it says
+        self.sim = None           # dev mode: the simulated scenario (bear2/simulate.py), else None
 
     def add(self, line):
         # The page no longer shows the log, so the Terminal running `bear ui` is where it is read.
@@ -125,6 +139,32 @@ def new_job(name):
     return JOB.id
 
 
+def new_sim_job(scenario):
+    """Dev mode: a job for a simulated run, in a temporary folder (no photos needed)."""
+    folder = Path(tempfile.mkdtemp(prefix="bear-sim-"))
+    with LOCK:
+        if JOB.state == "running":
+            raise RuntimeError("A run is in progress.")
+        JOB.__init__()
+        JOB.id, JOB.folder, JOB.name, JOB.sim = uuid.uuid4().hex, folder, f"Simulation ({scenario})", scenario
+        JOB.add(f"Dev mode: simulated run '{scenario}' (no credits spent)")
+    return JOB.id
+
+
+def run_tests():
+    """Dev mode: the offline test suite (no network, no credits). Returns (all passed, output)."""
+    ok, out = True, []
+    for t in DEV_TESTS:
+        try:
+            r = subprocess.run([sys.executable, str(REPO / t)], capture_output=True, text=True, cwd=str(REPO), timeout=600)
+            passed, text = r.returncode == 0, (r.stdout + r.stderr).strip()
+        except subprocess.TimeoutExpired:
+            passed, text = False, "timed out after 10 minutes"
+        ok &= passed
+        out.append(f"{'PASS' if passed else 'FAIL'}  {t}\n{text}")
+    return ok, "\n\n".join(out)
+
+
 def run_pipeline(vehicle, config, names_only=False):
     """A full run, or (names_only) finish the names of the last run that stopped."""
     with LOCK:
@@ -134,9 +174,11 @@ def run_pipeline(vehicle, config, names_only=False):
         JOB.add(f"{'Finishing names' if names_only else 'Started'}: {vehicle} "
                 f"(models: {configs.CONFIGS[config]['label']}, names: {assemble.label(NAME_MODEL)})")
         JOB.proc = subprocess.Popen(
-            [sys.executable, "-u", str(RUN_PY), str(JOB.folder), vehicle, str(out)] + (["--names-only"] if names_only else []),
+            [sys.executable, "-u", str(SIM_PY if JOB.sim else RUN_PY), str(JOB.folder), vehicle, str(out)]
+            + (["--names-only"] if names_only else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO),
-            env={**os.environ, "BEAR_CONFIG": config, "BEAR_WEB_ASK": "1", "BEAR_NAME_MODEL": NAME_MODEL})
+            env={**os.environ, "BEAR_CONFIG": config, "BEAR_WEB_ASK": "1", "BEAR_NAME_MODEL": NAME_MODEL,
+                 "BEAR_SIM": JOB.sim or ""})
         proc = JOB.proc
     threading.Thread(target=watch, args=(proc, out), daemon=True).start()
 
@@ -265,7 +307,8 @@ def status(since):
                 "log": JOB.log[since:], "logLength": len(JOB.log), "results": res,
                 "canOpen": bool(shutil.which("open")), "configs": config_list(), "config": JOB.config,
                 "nameModels": name_models(), "nameModel": NAME_MODEL,
-                "question": JOB.question, "error": run_error(stop), "canFinish": finish}
+                "question": JOB.question, "error": run_error(stop), "canFinish": finish,
+                "sim": JOB.sim, "simScenarios": list(SIM_SCENARIOS.items())}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -391,6 +434,23 @@ class Handler(BaseHTTPRequestHandler):
                 NAME_MODEL = name_model
             run_pipeline(vehicle, config)
             return self.send(200, {"ok": True})
+        if path == "/api/dev/simulate":
+            scenario = str(data.get("scenario") or "")
+            name_model = str(data.get("nameModel") or NAME_MODEL)
+            config = str(data.get("config") or configs.DEFAULT)
+            if scenario not in SIM_SCENARIOS or name_model not in assemble.NAME_MODELS or config not in configs.CONFIGS:
+                return self.fail(400, "Unknown simulation.")
+            try:
+                job = new_sim_job(scenario)
+            except RuntimeError as e:
+                return self.fail(409, str(e))
+            with LOCK:
+                NAME_MODEL = name_model
+            run_pipeline(" ".join(str(data.get("vehicle") or "").split()) or SIM_VEHICLE, config)
+            return self.send(200, {"job": job})
+        if path == "/api/dev/tests":
+            ok, output = run_tests()
+            return self.send(200, {"ok": ok, "output": output})
         if path == "/api/answer":
             key = str(data.get("key") or "")
             with LOCK:

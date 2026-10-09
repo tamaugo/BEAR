@@ -128,6 +128,11 @@ label{font-size:16px;line-height:24px}
 .ask .btn{width:auto;min-width:200px;padding:0 24px}
 .btn.quiet{background:var(--surface);border:1px solid var(--control-border)}
 
+/* Dev mode drop-down next to the version: simulated runs (bear2/simulate.py) and the offline tests */
+.meta{display:flex;align-items:center;gap:16px}
+.select.dev{width:140px;height:32px;padding:0 36px 0 12px;background-color:var(--surface-raised);background-position:right 12px center;color:var(--ink-muted);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-family:var(--font-text);font-size:14px}
+.select.dev:hover{color:var(--ink)}
+
 /* Error banner: drops down from the top of the window, with the full error under Info */
 .banner{position:fixed;top:0;left:0;right:0;z-index:10;background:var(--surface-raised);border-bottom:2px solid var(--error);transform:translateY(-110%);transition:transform .25s ease-out;visibility:hidden}
 .banner.open{transform:none;visibility:visible}
@@ -140,6 +145,9 @@ label{font-size:16px;line-height:24px}
 .close:hover{color:var(--ink)}
 .banner summary{width:max-content;font-size:14px;line-height:20px;color:var(--ink-muted);cursor:pointer}
 .banner summary:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.banner [hidden]{display:none}
+.banner.ok{border-bottom-color:var(--ok)}
+.banner.ok .tag{border-color:var(--ok);color:var(--ok)}
 .banner pre{max-height:240px;margin:8px 0 0;padding:12px;overflow:auto;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-size:12px;line-height:18px;color:var(--ink-muted);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* First-line check: the finished output line next to the name model drop-down, above GO */
@@ -178,7 +186,10 @@ label{font-size:16px;line-height:24px}
 
       <div class="titlebar">
         <h1>BEAR</h1>
-        <a class="version repo" href="https://github.com/tamaugo/BEAR" target="_blank" rel="noopener"><span id="version">Version 0.3</span> <span class="repo-note">(github repo)</span></a>
+        <div class="meta">
+          <select id="dev" class="select dev" aria-label="Dev mode"><option value="">Dev mode</option></select>
+          <a class="version repo" href="https://github.com/tamaugo/BEAR" target="_blank" rel="noopener"><span id="version">Version 0.3</span> <span class="repo-note">(github repo)</span></a>
+        </div>
       </div>
 
       <section aria-labelledby="h-folder">

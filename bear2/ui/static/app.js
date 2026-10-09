@@ -14,6 +14,7 @@
   var askKey = '', answered = 0;       // last rendered question, and the id of the last one answered here
   var names = {};                      // name model id -> label
   var bannerKey = '', closedKey = '';  // error shown in the banner, and the one the operator closed
+  var devKey = '', devNote = null;     // dev mode drop-down contents; dev mode message for the banner
   var check = { line: '', note: '', model: '', rejected: {}, pick: '' };  // first-line check shown above GO
 
   function esc(s) {
@@ -126,7 +127,7 @@
 
   // Run errors drop down from the top: a code, what to do, and the full error under Info.
   function renderBanner() {
-    var e = st.error && (!st.error.ask || failing()) ? st.error : null;
+    var e = st.error && (!st.error.ask || failing()) ? st.error : devNote;
     var key = e ? e.code + e.title + (e.ask || '') : '';
     if (key !== bannerKey) {
       bannerKey = key;
@@ -140,6 +141,7 @@
     }
     var open = !!e && key !== closedKey;
     $('banner').classList.toggle('open', open);
+    $('banner').classList.toggle('ok', !!(e && e.ok));
   }
 
   // The first-line check: the finished line shows in the output field above GO. GO approves it;
@@ -234,7 +236,7 @@
       var parts = [r.photos + (r.photos === 1 ? ' photo: ' : ' photos: ') + r.priced + ' priced, ' + r.failed + ' not priced'];
       if (r.nulls) parts.push(r.nulls + ' NULL skipped');
       if (r.cost != null) parts.push('cost $' + r.cost.toFixed(4));
-      $('resLabel').textContent = 'results.xlsx is ready. ' + parts.join(', ') + '.';
+      $('resLabel').textContent = (st.sim ? 'Simulated: ' : '') + 'results.xlsx is ready. ' + parts.join(', ') + '.';
     } else if (st.canFinish) {
       $('resLabel').textContent = 'The photo reads and eBay results are saved. Pick a name model above, then finish the names.';
     } else if (st.state === 'failed') {
@@ -242,6 +244,26 @@
     } else {
       $('resLabel').textContent = running ? 'Working on it...' : 'Available when the run finishes';
     }
+  }
+
+  // Dev mode: simulated runs of every scenario (no credits spent) and the offline test suite.
+  function renderDev(list) {
+    var key = JSON.stringify(list);
+    if (key !== devKey) {
+      devKey = key;
+      $('dev').innerHTML = '<option value="">Dev mode</option><optgroup label="Simulated run (no credits spent)">' +
+        list.map(function (s) { return '<option value="sim:' + esc(s[0]) + '">' + esc(s[1]) + '</option>'; }).join('') +
+        '</optgroup><optgroup label="Tests"><option value="tests">Run offline test suite</option></optgroup>';
+    }
+    $('dev').disabled = st.state === 'running' || st.uploading;
+  }
+
+  function startRun() {
+    showError(''); showError('', 'resError');
+    devNote = null;
+    check = { line: '', note: '', model: '', rejected: {}, pick: '' };
+    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; st.error = null; st.canFinish = false;
+    render();
   }
 
   function poll() {
@@ -253,9 +275,11 @@
       st.question = d.question; st.error = d.error; st.canFinish = d.canFinish;
       if (d.nameModels && d.nameModels.length) renderNames(d.nameModels, d.nameModel);
       if (d.configs && d.configs.length) renderConfigs(d.configs, d.config);
+      st.sim = d.sim;
+      if (d.simScenarios) renderDev(d.simScenarios);
       if (d.job && d.job !== st.job && !st.uploading) {  // page reloaded: pick the server's folder back up
         st.job = d.job; st.uploaded = true; setPct(100);
-        $('folderLabel').textContent = d.folder + ' uploaded';
+        $('folderLabel').textContent = d.sim ? d.folder + ' (no photos needed)' : d.folder + ' uploaded';
       }
       render();
     }).catch(function () { /* server restarting or stopped; keep trying */ })
@@ -335,7 +359,26 @@
     }
     showConfig();
   });
-  $('bannerClose').addEventListener('click', function () { closedKey = bannerKey; renderBanner(); });
+  $('bannerClose').addEventListener('click', function () { closedKey = bannerKey; devNote = null; renderBanner(); });
+  $('dev').addEventListener('change', function () {
+    var v = $('dev').value;
+    $('dev').value = '';
+    if (v === 'tests') {
+      devNote = { code: 'TESTS', title: 'Running the offline test suite...', detail: 'No network calls, no credits spent.', ok: true };
+      closedKey = ''; renderBanner();
+      api('POST', '/api/dev/tests').then(function (r) {
+        devNote = { code: 'TESTS', ok: r.ok, detail: r.output,
+                    title: r.ok ? 'All offline tests passed.' : 'Some offline tests failed. See Info.' };
+      }).catch(function (e) {
+        devNote = { code: 'TESTS', ok: false, title: 'The test suite could not run.', detail: e.message };
+      }).then(renderBanner);
+    } else if (v) {
+      startRun();
+      api('POST', '/api/dev/simulate', { scenario: v.slice(4), nameModel: $('nameModel').value, config: $('config').value, vehicle: $('car').value.trim() })
+        .then(function (d) { st.job = d.job; st.uploaded = true; setPct(100); $('folderLabel').textContent = 'Simulation (no photos needed)'; })
+        .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
+    }
+  });
   $('bannerRetry').addEventListener('click', function () { if (failing()) answer('r', failing().ask); render(); });
   $('bannerStop').addEventListener('click', function () { if (failing()) answer('q', failing().ask); render(); });
   $('bannerModel').addEventListener('click', function () {
@@ -352,16 +395,12 @@
   $('car').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('go').disabled) $('go').click(); });
   $('go').addEventListener('click', function () {
     if (pending('check')) { answer('y'); render(); return; }  // the line looks right
-    showError('');
-    check = { line: '', note: '', model: '', rejected: {}, pick: '' };
-    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; st.error = null; st.canFinish = false; render();
+    startRun();
     api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim(), config: $('config').value, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
   });
   $('finishNames').addEventListener('click', function () {
-    showError('', 'resError');
-    check = { line: '', note: '', model: '', rejected: {}, pick: '' };
-    st.state = 'running'; st.step = 0; st.detail = ''; st.error = null; st.canFinish = false; render();
+    startRun();
     api('POST', '/api/finish', { job: st.job, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'failed'; showError(e.message, 'resError'); render(); });
   });
