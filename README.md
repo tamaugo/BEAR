@@ -1,4 +1,4 @@
-## BEAR 0.3 — quick start (Mac)
+## BEAR 0.4 — quick start (Mac)
 
 1. Get the code into `~/Desktop/bear` (the one BEAR folder on the Mac): `git clone https://github.com/tamaugo/BEAR.git ~/Desktop/bear && cd ~/Desktop/bear` (already cloned? `cd ~/Desktop/bear && git pull`).
    Keep only this copy; delete older BEAR folders once `bear` works (never `~/Desktop/ebay-jobs/`, that is customer data).
@@ -38,17 +38,18 @@ The run's messages (and any error) appear in the Terminal window running `bear u
 
 The look follows the mockup attached to issue #7 and will be restyled later.
 
-### How 0.3 works
+### How 0.4 works
 
 1. **Read** — a vision model reads every candidate part number (plus alternates), describes the part and counts items; if no number is found it re-reads the photo rotated 90/180/270.
 2. **Numbers** — each reading is searched on eBay UK (exact match, several normalised forms). No UK listing means it is not a sellable number.
 3. **Listing** — Jev picks the number when more than one survives, vetoes listings for pairs/sets/other assemblies, prefers used items, takes the consensus price, and sets the sell price to the smallest x.99 at or above it (floor 19.99).
 4. **Assemble** — deterministic code builds the final rows (vehicle, location from filename, part number, price, URL, image, sort, FAILED/NULL rows); one cheap model call only tidies titles into names.
+5. **Check and names** — before the full run you approve the first finished line (or switch name model: Qwen, Gemini or Claude Haiku 5.5). If the name model fails, BEAR stops and asks instead of writing messy names.
 
 ---
 
 
-### Image matching (0.3)
+### Image matching (since 0.3)
 - **Unpriced photos** (FAILED / NO PART NUMBER) get up to 3 eBay search-by-image suggestions as shaded rows directly under their row in `results.xlsx` (scanned order kept; ranked toward the job's car). Shown as \"listed £x\", never a BEAR price. Check by eye.
 - **Weak or failed reads**: if a visually similar listing carries a part number within 1-2 characters of what was read off the part, that number is tried and must still pass the photo-vs-listings check. Example: cast bracket read `3M51-6030-BA` (no listings) -> image search found `6M51-6030-BA`.
 - Free (eBay API only). Measured: right part in the image-search top 50 for 5/9 known photos, so it is a hint, not a verdict.

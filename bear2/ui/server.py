@@ -1,4 +1,4 @@
-"""BEAR 0.3 local web UI. `bear ui` starts this on 127.0.0.1 and opens the browser.
+"""BEAR 0.4 local web UI. `bear ui` starts this on 127.0.0.1 and opens the browser.
 
 The browser uploads the chosen photo folder (one PUT per photo) into a job folder under
 ~/Documents/BEAR (override with BEAR_UI_JOBS_DIR), then GO runs the same pipeline as the
