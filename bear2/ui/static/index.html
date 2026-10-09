@@ -119,9 +119,56 @@ label{font-size:16px;line-height:24px}
 .panel.big .muted{font-size:18px;line-height:28px;color:var(--ink)}
 .btn.big{width:100%;height:96px;font-size:18px;line-height:24px}
 .btn.big:disabled{border:1px solid var(--hairline)}
+
+/* Questions from the run (first-line check, failed name model), answered with buttons or a drop-down */
+.panel.ask{align-items:stretch;border:1px solid var(--hairline)}
+.panel[hidden]{display:none}
+.ask-title{font-size:16px;line-height:24px}
+.listing{display:flex;flex-direction:column;gap:4px;padding:16px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-size:16px;line-height:24px;overflow-wrap:anywhere}
+.ask .btn{width:auto;min-width:200px;padding:0 24px}
+.btn.quiet{background:var(--surface);border:1px solid var(--control-border)}
+
+/* Dev mode drop-down next to the version: simulated runs (bear2/simulate.py) and the offline tests */
+.meta{display:flex;align-items:center;gap:16px}
+.select.dev{width:140px;height:32px;padding:0 36px 0 12px;background-color:var(--surface-raised);background-position:right 12px center;color:var(--ink-muted);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-family:var(--font-text);font-size:14px}
+.select.dev:hover{color:var(--ink)}
+
+/* Error banner: drops down from the top of the window, with the full error under Info */
+.banner{position:fixed;top:0;left:0;right:0;z-index:10;background:var(--surface-raised);border-bottom:2px solid var(--error);transform:translateY(-110%);transition:transform .25s ease-out;visibility:hidden}
+.banner.open{transform:none;visibility:visible}
+.banner-in{display:flex;flex-direction:column;gap:12px;max-width:720px;margin:0 auto;padding:16px 24px}
+.banner-head{display:flex;align-items:center;gap:12px}
+.banner .tag{border-color:var(--error);color:var(--error)}
+.banner-title{flex:1;font-size:16px;line-height:24px;font-weight:700}
+.banner .btn{width:auto;height:40px;padding:0 16px}
+.close{flex:none;width:32px;height:32px;padding:0;background:none;border:0;color:var(--ink-muted);font-size:24px;line-height:32px;cursor:pointer}
+.close:hover{color:var(--ink)}
+.banner summary{width:max-content;font-size:14px;line-height:20px;color:var(--ink-muted);cursor:pointer}
+.banner summary:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.banner [hidden]{display:none}
+.banner.ok{border-bottom-color:var(--ok)}
+.banner.ok .tag{border-color:var(--ok);color:var(--ok)}
+.banner pre{max-height:240px;margin:8px 0 0;padding:12px;overflow:auto;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-size:12px;line-height:18px;color:var(--ink-muted);white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* First-line check: the finished output line next to the name model drop-down, above GO */
+.verify{display:grid;grid-template-columns:1fr 240px;gap:8px;align-items:end}
+.input.output{display:flex;align-items:center;height:auto;min-height:56px;padding:12px 16px;overflow-wrap:anywhere}
+.output.placeholder{color:var(--ink-disabled)}
+.link{padding:0;background:none;border:0;color:var(--ink);font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 </style>
 </head>
 <body>
+<div id="banner" class="banner" role="alert" aria-live="assertive">
+  <div class="banner-in">
+    <div class="banner-head"><span id="bannerCode" class="tag"></span><span id="bannerTitle" class="banner-title"></span><button type="button" id="bannerClose" class="close" aria-label="Close">&times;</button></div>
+    <div id="bannerActions" class="row" hidden>
+      <button type="button" id="bannerModel" class="btn">Change model</button>
+      <button type="button" id="bannerRetry" class="btn quiet">Try again</button>
+      <button type="button" id="bannerStop" class="btn quiet">Stop</button>
+    </div>
+    <details><summary>Info</summary><pre id="bannerDetail"></pre></details>
+  </div>
+</div>
 <div class="page">
 
   <header class="hero">
@@ -139,7 +186,10 @@ label{font-size:16px;line-height:24px}
 
       <div class="titlebar">
         <h1>BEAR</h1>
-        <a class="version repo" href="https://github.com/tamaugo/BEAR" target="_blank" rel="noopener"><span id="version">Version 0.3</span> <span class="repo-note">(github repo)</span></a>
+        <div class="meta">
+          <select id="dev" class="select dev" aria-label="Dev mode"><option value="">Dev mode</option></select>
+          <a class="version repo" href="https://github.com/tamaugo/BEAR" target="_blank" rel="noopener"><span id="version">Version 0.4</span> <span class="repo-note">(github repo)</span></a>
+        </div>
       </div>
 
       <section aria-labelledby="h-folder">
@@ -172,6 +222,11 @@ label{font-size:16px;line-height:24px}
         <h2 id="h-car">3. Car</h2>
         <label for="car">Car name</label>
         <input id="car" class="input" type="text" placeholder="Make, model and year" autocomplete="off">
+        <div class="verify">
+          <div id="checkLine" class="input output" role="status" aria-label="Output name"></div>
+          <div class="stack"><label for="nameModel">Model name</label><select id="nameModel" class="input select"></select></div>
+        </div>
+        <span id="checkHint" class="small" hidden></span>
         <button type="button" id="go" class="btn" disabled>GO</button>
         <span id="goError" class="error" role="alert" hidden></span>
       </section>
@@ -179,6 +234,7 @@ label{font-size:16px;line-height:24px}
       <section aria-labelledby="h-progress">
         <h2 id="h-progress">4. Progress</h2>
         <ol id="steps" class="steps"></ol>
+        <div id="ask" class="panel col ask" role="group" aria-labelledby="askTitle" hidden></div>
       </section>
 
       <section aria-labelledby="h-results">
@@ -186,6 +242,7 @@ label{font-size:16px;line-height:24px}
         <div class="panel col big">
           <span id="resLabel" class="muted" role="status">Available when the run finishes</span>
           <button type="button" id="dlXlsx" class="btn big" disabled>Download results.xlsx</button>
+          <button type="button" id="finishNames" class="btn" hidden>Finish names</button>
           <div class="row">
             <button type="button" id="openXlsx" class="btn two-line" disabled title="Opens Google Sheets in a new tab. Download results.xlsx first, then use File > Import > Upload.">Open spreadsheet<span class="sub">(import to google sheets)</span></button>
             <button type="button" id="reveal" class="btn" disabled hidden>Show in Finder</button>

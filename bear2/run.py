@@ -3,6 +3,8 @@
 validator + make_xlsx.py chain is unchanged downstream, plus a JSON trace.
 
 usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cached_stage1.json]
+       python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> --names-only
+         (finish the names of a stopped run in out_dir; the web page's Finish names)
 """
 import json, sys, threading, time, concurrent.futures as cf
 from pathlib import Path
@@ -120,8 +122,8 @@ def first_line_check(photos, vehicle, make, read, ask, out_dir):
         if f[1] == "FAILED":
             print(f"{p.name}: no listing, trying the next photo", file=sys.stderr, flush=True)
             continue
-        model, name = assemble.verify(vehicle, f, ask)
-        (out_dir / assemble.CHECK_FILE).write_text(json.dumps({"image": p.name, "model": model, "name": name}))
+        model, name = assemble.verify(vehicle, f, ask, assemble.start_model())
+        assemble.save_check(out_dir, p.name, model, name)
         break
     return done
 
@@ -147,18 +149,20 @@ def main():
     photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
     nulls = [p.name for p in photos if "NULL" in p.stem.upper().replace("-", " ").replace("_", " ").split()]
     photos = [p for p in photos if p.name not in nulls]
+    # Terminal runs ask in the Terminal, web page runs on the page (BEAR_WEB_ASK).
+    ask = assemble.asker()
+    if "--names-only" in sys.argv:
+        return finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos), assemble.start_model() if ask else None)
     print(f"{len(photos)} photos to price ({len(nulls)} NULL). This takes a few minutes for a big job.",
           file=sys.stderr, flush=True)
     S1 = json.loads(Path(s1_cache).read_text()) if s1_cache else {}
-    # Terminal runs ask questions; the web page (stdout piped) has no one to ask yet.
-    ask = assemble.terminal_ask if sys.stdin.isatty() and sys.stdout.isatty() else None
     done = {}
     if ask:
         read1 = (lambda p: S1.get(p.name)) if s1_cache else (lambda p: s1m.read_photo_robust(p, vehicle))
         try:
             done = first_line_check(photos, vehicle, make, read1, ask, out_dir)
         except assemble.Stop as e:
-            sys.exit(f"\n{e}")
+            assemble.stop_exit(e)
     rest = [p for p in photos if p.name not in done]
     S1.update({k: v[0] for k, v in done.items()})
     if not s1_cache:
@@ -191,20 +195,25 @@ def main():
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
     (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
+    finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos))
+
+
+def finish(out_dir, photo_dir, vehicle, ask, spend0, n, model=None):
+    """Names, results.xlsx and image hints. model: see assemble.main (names-only reruns)."""
     print("Building results.xlsx ...", file=sys.stderr, flush=True)
     try:
-        print(assemble.main(out_dir, vehicle, ask))
+        print(assemble.main(out_dir, vehicle, ask, model))
     except assemble.Stop as e:
-        sys.exit(f"\n{e}")
+        assemble.stop_exit(e)
     print("Looking for possible matches for unpriced photos ...", file=sys.stderr, flush=True)
     try:
-        n = image_hints.main(out_dir, photo_dir, vehicle)
-        if n:
-            print(f"Added {n} possible-match rows (shaded, check by eye) under unpriced photos in results.xlsx")
+        added = image_hints.main(out_dir, photo_dir, vehicle)
+        if added:
+            print(f"Added {added} possible-match rows (shaded, check by eye) under unpriced photos in results.xlsx")
     except Exception as e:  # hints are a convenience; never fail the run over them
         print(f"(image hints skipped: {type(e).__name__})")
     cost = c.total_spend() - spend0
-    print(f"\nrun cost ${cost:.4f} for {len(photos)} parts (${cost/max(1,len(photos)):.5f}/part); total spend ${c.total_spend():.4f}")
+    print(f"\nrun cost ${cost:.4f} for {n} parts (${cost/max(1,n):.5f}/part); total spend ${c.total_spend():.4f}")
 
 
 if __name__ == "__main__":

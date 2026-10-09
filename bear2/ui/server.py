@@ -1,22 +1,39 @@
-"""BEAR 0.3 local web UI. `bear ui` starts this on 127.0.0.1 and opens the browser.
+"""BEAR 0.4 local web UI. `bear ui` starts this on 127.0.0.1 and opens the browser.
 
 The browser uploads the chosen photo folder (one PUT per photo) into a job folder under
 ~/Documents/BEAR (override with BEAR_UI_JOBS_DIR), then GO runs the same pipeline as the
 `bear` command (bear2/run.py) as a subprocess. Its output drives the progress steps and
 is echoed to the Terminal running `bear ui`; results.xlsx lands in <job folder>/bear-results-YYYYmmdd-HHMMSS/ as usual.
 
+Questions from the run (the first-line check, a failed name model) arrive as marked lines
+(assemble.WEB_MARK) and are shown on the page; the answer goes back on the run's stdin. The
+name model that worked is kept in memory until `bear ui` closes, so a restart uses the default.
+
 Credentials come from the environment `bin/bear` sets up (Keychain / .env) and are passed
 straight through to the pipeline. Nothing here prints or returns them.
 
 usage: python3 bear2/ui/server.py [--port N] [--no-browser]
 """
-import json, os, re, shutil, subprocess, sys, threading, time, urllib.parse, uuid, webbrowser
+import itertools, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.parse, uuid, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 RUN_PY = HERE.parent / "run.py"
+SIM_PY = HERE.parent / "simulate.py"   # dev mode: simulated runs, no credits spent
+DEV_TESTS = ["tests/test_names_offline.py", "tests/test_web_flow_offline.py"]   # offline, free
+SIM_VEHICLE = "MITSUBISHI SHOGUN 2007 3.2 DI-D"
+SIM_SCENARIOS = {  # bear2/simulate.py BEAR_SIM values, as the dev mode drop-down lists them
+    "ok": "Full run, everything works",
+    "wrong-line": "First line is wrong (reject it)",
+    "all-wrong": "Every model gives a wrong line (BEAR-N04)",
+    "check-rate-limit": "Rate limited at the first-line check",
+    "rate-limit": "Rate limited mid-run (BEAR-N01)",
+    "no-response": "Not responding mid-run (BEAR-N02)",
+    "unusable": "Unusable names mid-run (BEAR-N03)",
+    "crash": "Run crashes (BEAR-R01)",
+}
 REPO = HERE.parent.parent
 JOBS = Path(os.environ.get("BEAR_UI_JOBS_DIR") or Path.home() / "Documents" / "BEAR")
 PHOTO_EXT = (".jpg", ".jpeg", ".png")
@@ -26,21 +43,22 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
          ".woff2": "font/woff2", ".png": "image/png"}
 
 # Progress steps shown in the page, and the run.py output line that starts each one.
-STEPS = ["Starting up", "Scanning photos", "Looking up on eBay", "Formatting text", "Creating your xlsx file"]
-STEP_MARKERS = [(1, "photos to price"), (1, "Reading part numbers"), (2, "Pricing on eBay"),
-                (3, "Cleaning part names"), (4, "Writing results.xlsx")]
+STEPS = ["Starting up", "Verifying first part", "Scanning photos", "Looking up on eBay",
+         "Formatting text", "Creating your xlsx file"]
+STEP_MARKERS = [(1, "Checking the first part"), (2, "Reading part numbers"), (3, "Pricing on eBay"),
+                (4, "Cleaning part names"), (5, "Writing results.xlsx")]
+WAITING = "waiting for you"
 COUNTER = re.compile(r"^(Reading part numbers|Pricing on eBay) (\d+)/(\d+)$")
 
 
 # The fixed model setups (bear2/configs.py). The page offers one drop-down of whole setups;
 # models are never chosen per agent.
 sys.path.insert(0, str(HERE.parent))
-import configs  # noqa: E402
+import configs, assemble  # noqa: E402
 
 # Models every setup shares, read from the pipeline source so the page always matches the code.
 # Agent 2 decides the eBay match (Jev), Agent 3 cleans eBay titles into part names.
-SHARED_MODELS = [("common.py", "JEV_MODEL"), ("assemble.py", "MODEL"),
-                 ("stage2b_rescue.py", "GATE_FALLBACK_MODEL")]
+SHARED_MODELS = [("common.py", "JEV_MODEL"), ("stage2b_rescue.py", "GATE_FALLBACK_MODEL")]
 
 
 def source_model(fname, const):
@@ -52,16 +70,20 @@ def source_model(fname, const):
 
 
 def config_list():
-    jev, names, gemini = (source_model(f, k) for f, k in SHARED_MODELS)
+    jev, gemini = (source_model(f, k) for f, k in SHARED_MODELS)
     out = []
     for key, cfg in configs.CONFIGS.items():
         check = f"{cfg['check']} (backup {gemini})" if cfg["check"] else gemini
         out.append({"id": key, "label": cfg["label"], "tag": cfg["tag"], "about": cfg["about"],
                     "models": [["Agent 1 reads part numbers", cfg["read"]],
                                ["Photo check", check],
-                               ["Agent 2 matches on eBay", jev],
-                               ["Agent 3 cleans part names", names]]})
+                               ["Agent 2 matches on eBay", jev]]})
     return out
+
+
+def name_models():
+    """Agent 3's name models for the page's drop-down, default first."""
+    return [[m, lab + (" (Default)" if m == assemble.MODEL else "")] for m, lab in assemble.NAME_MODELS.items()]
 
 
 def version():
@@ -86,6 +108,10 @@ class Job:
         self.cost = None
         self.proc = None
         self.config = configs.DEFAULT   # setup of the current/last run
+        self.vehicle = ""
+        self.question = None      # {"id", "ask", "choices", "kind"} while the run waits for an answer
+        self.stop = None          # why the run stopped, when it says
+        self.sim = None           # dev mode: the simulated scenario (bear2/simulate.py), else None
 
     def add(self, line):
         # The page no longer shows the log, so the Terminal running `bear ui` is where it is read.
@@ -95,6 +121,8 @@ class Job:
 
 LOCK = threading.Lock()
 JOB = Job()
+ASKED = itertools.count(1)    # question ids, so the page never answers one twice
+NAME_MODEL = assemble.MODEL   # the name model that last worked; kept until `bear ui` closes
 
 
 def new_job(name):
@@ -111,16 +139,46 @@ def new_job(name):
     return JOB.id
 
 
-def run_pipeline(vehicle, config):
+def new_sim_job(scenario):
+    """Dev mode: a job for a simulated run, in a temporary folder (no photos needed)."""
+    folder = Path(tempfile.mkdtemp(prefix="bear-sim-"))
     with LOCK:
-        out = JOB.folder / f"bear-results-{time.strftime('%Y%m%d-%H%M%S')}"
+        if JOB.state == "running":
+            raise RuntimeError("A run is in progress.")
+        JOB.__init__()
+        JOB.id, JOB.folder, JOB.name, JOB.sim = uuid.uuid4().hex, folder, f"Simulation ({scenario})", scenario
+        JOB.add(f"Dev mode: simulated run '{scenario}' (no credits spent)")
+    return JOB.id
+
+
+def run_tests():
+    """Dev mode: the offline test suite (no network, no credits). Returns (all passed, output)."""
+    ok, out = True, []
+    for t in DEV_TESTS:
+        try:
+            r = subprocess.run([sys.executable, str(REPO / t)], capture_output=True, text=True, cwd=str(REPO), timeout=600)
+            passed, text = r.returncode == 0, (r.stdout + r.stderr).strip()
+        except subprocess.TimeoutExpired:
+            passed, text = False, "timed out after 10 minutes"
+        ok &= passed
+        out.append(f"{'PASS' if passed else 'FAIL'}  {t}\n{text}")
+    return ok, "\n\n".join(out)
+
+
+def run_pipeline(vehicle, config, names_only=False):
+    """A full run, or (names_only) finish the names of the last run that stopped."""
+    with LOCK:
+        out = JOB.out if names_only else JOB.folder / f"bear-results-{time.strftime('%Y%m%d-%H%M%S')}"
         JOB.state, JOB.step, JOB.detail, JOB.out, JOB.cost = "running", 0, "", out, None
-        JOB.config = config
-        JOB.add(f"Started: {vehicle} (models: {configs.CONFIGS[config]['label']})")
+        JOB.config, JOB.vehicle, JOB.question, JOB.stop = config, vehicle, None, None
+        JOB.add(f"{'Finishing names' if names_only else 'Started'}: {vehicle} "
+                f"(models: {configs.CONFIGS[config]['label']}, names: {assemble.label(NAME_MODEL)})")
         JOB.proc = subprocess.Popen(
-            [sys.executable, "-u", str(RUN_PY), str(JOB.folder), vehicle, str(out)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO),
-            env={**os.environ, "BEAR_CONFIG": config})
+            [sys.executable, "-u", str(SIM_PY if JOB.sim else RUN_PY), str(JOB.folder), vehicle, str(out)]
+            + (["--names-only"] if names_only else []),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(REPO),
+            env={**os.environ, "BEAR_CONFIG": config, "BEAR_WEB_ASK": "1", "BEAR_NAME_MODEL": NAME_MODEL,
+                 "BEAR_SIM": JOB.sim or ""})
         proc = JOB.proc
     threading.Thread(target=watch, args=(proc, out), daemon=True).start()
 
@@ -141,6 +199,7 @@ def watch(proc, out):
     handle_line(buf.decode("utf-8", "replace").strip())
     rc = proc.wait()
     with LOCK:
+        JOB.question = None
         if rc == 0 and (out / "results.xlsx").exists():
             JOB.state, JOB.step, JOB.detail = "done", len(STEPS), ""
             JOB.add("xlsx file created")
@@ -150,9 +209,25 @@ def watch(proc, out):
 
 
 def handle_line(line):
+    global NAME_MODEL
     if not line:
         return
     with LOCK:
+        if line.startswith(assemble.WEB_MARK.strip()):
+            try:
+                msg = json.loads(line[len(assemble.WEB_MARK):])
+            except ValueError:
+                msg = {}
+            if msg.get("ask"):
+                JOB.question = {"id": next(ASKED), **{k: msg.get(k) for k in ("ask", "choices", "kind")}}
+                JOB.detail = WAITING
+                JOB.add(f"Question: {msg['ask']}")
+            if msg.get("model") in assemble.NAME_MODELS:
+                NAME_MODEL = msg["model"]
+                JOB.add(f"Name model approved: {assemble.label(NAME_MODEL)}")
+            if msg.get("stop"):
+                JOB.stop = msg["stop"]
+            return
         for step, marker in STEP_MARKERS:
             if marker in line and step > JOB.step:
                 JOB.step, JOB.detail = step, ""
@@ -178,15 +253,62 @@ def summary(out):
             "nulls": len(lines("null_files.txt"))}
 
 
+# Error codes for the banner at the top of the page.
+#   BEAR-N01 name model rate limited      BEAR-N02 name model not responding
+#   BEAR-N03 name model gave unusable names   BEAR-N04 every name model gave a wrong line
+#   BEAR-R01 the run failed (anything else)
+NAME_FAIL = re.compile(r"^(.+?) (is unavailable|gave an unusable answer|gave a name BEAR can't use)")
+
+
+def error_info(text):
+    """{code, title, detail} for a run error: a plain-English title and the full message."""
+    m = NAME_FAIL.match(text)
+    if text.startswith("Every name model gave a bad line"):
+        code, title = "BEAR-N04", "Every name model gave a wrong line. The cleaning instructions need fixing."
+    elif m and m.group(2) == "is unavailable":
+        limited = re.search(r"HTTP 429|rate.?limit", text, re.I)
+        code = "BEAR-N01" if limited else "BEAR-N02"
+        title = f"{m.group(1)} is {'rate limited' if limited else 'not responding'}. Please change the name model."
+    elif m:
+        code, title = "BEAR-N03", f"{m.group(1)} gave part names BEAR can't use. Please change the name model."
+    else:
+        code, title = "BEAR-R01", "The BEAR run failed."
+    log = "\n".join(l for l in JOB.log[-15:] if not l.startswith("Question: "))
+    return {"code": code, "title": title, "detail": f"{text.strip()}\n\nLast messages:\n{log}"}
+
+
+def run_error(stop):
+    """The error to show in the banner, or None. A run the operator stopped is not an error."""
+    q = JOB.question
+    if q and [k for k, _ in q["choices"]] == ["r", "m", "q"]:  # the name model failed: try again / switch / stop
+        return {**error_info(q["ask"]), "ask": q["id"]}
+    if JOB.state != "failed":
+        return None
+    if JOB.stop is None:
+        return error_info("The run ended with an error.")
+    return error_info(stop) if stop and not stop.startswith(("Stopped", "No answer")) else None
+
+
+def can_finish():
+    """A stopped run whose photo reads and eBay results are saved, so only the names are left."""
+    return JOB.state == "failed" and bool(JOB.out) and (JOB.out / "agent2_results.md").exists()
+
+
 def status(since):
     with LOCK:
         res = None
         if JOB.state == "done" and JOB.out:
             res = {"path": str(JOB.out / "results.xlsx"), "cost": JOB.cost, **summary(JOB.out)}
+        stop, finish = JOB.stop, can_finish()
+        if stop and finish:  # the Results section says the work is saved and offers Finish names
+            stop = stop.split("The photo reads and eBay results are saved")[0].strip() or None
         return {"version": version(), "job": JOB.id, "folder": JOB.name, "state": JOB.state,
                 "step": JOB.step, "detail": JOB.detail, "steps": STEPS,
                 "log": JOB.log[since:], "logLength": len(JOB.log), "results": res,
-                "canOpen": bool(shutil.which("open")), "configs": config_list(), "config": JOB.config}
+                "canOpen": bool(shutil.which("open")), "configs": config_list(), "config": JOB.config,
+                "nameModels": name_models(), "nameModel": NAME_MODEL,
+                "question": JOB.question, "error": run_error(stop), "canFinish": finish,
+                "sim": JOB.sim, "simScenarios": list(SIM_SCENARIOS.items())}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -264,6 +386,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(200, {"ok": True})
 
     def do_POST(self):
+        global NAME_MODEL
         if not self.host_ok():
             return self.fail(403, "forbidden")
         path = urllib.parse.urlparse(self.path).path
@@ -282,11 +405,21 @@ class Handler(BaseHTTPRequestHandler):
                     count = sum(1 for p in JOB.folder.iterdir() if p.suffix.lower() in PHOTO_EXT)
                     JOB.add(f"Upload complete: {count} photos")
             return self.send(200, {"ok": True})
-        if path == "/api/run":
+        if path in ("/api/run", "/api/finish"):
             vehicle = " ".join(str(data.get("vehicle") or "").split())
             config = str(data.get("config") or configs.DEFAULT)
+            name_model = str(data.get("nameModel") or NAME_MODEL)
             if config not in configs.CONFIGS:
                 return self.fail(400, "Unknown model setup.")
+            if name_model not in assemble.NAME_MODELS:
+                return self.fail(400, "Unknown name model.")
+            if path == "/api/finish":
+                with LOCK:
+                    if data.get("job") != JOB.id or not can_finish():
+                        return self.fail(409, "There are no saved results to finish.")
+                    vehicle, config, NAME_MODEL = JOB.vehicle, JOB.config, name_model
+                run_pipeline(vehicle, config, names_only=True)
+                return self.send(200, {"ok": True})
             with LOCK:
                 if data.get("job") != JOB.id or not JOB.folder:
                     return self.fail(409, "Add a folder of photos first.")
@@ -297,7 +430,40 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail(400, "No .jpg/.jpeg/.png photos in that folder.")
             if not vehicle:
                 return self.fail(400, "Type the car first.")
+            with LOCK:
+                NAME_MODEL = name_model
             run_pipeline(vehicle, config)
+            return self.send(200, {"ok": True})
+        if path == "/api/dev/simulate":
+            scenario = str(data.get("scenario") or "")
+            name_model = str(data.get("nameModel") or NAME_MODEL)
+            config = str(data.get("config") or configs.DEFAULT)
+            if scenario not in SIM_SCENARIOS or name_model not in assemble.NAME_MODELS or config not in configs.CONFIGS:
+                return self.fail(400, "Unknown simulation.")
+            try:
+                job = new_sim_job(scenario)
+            except RuntimeError as e:
+                return self.fail(409, str(e))
+            with LOCK:
+                NAME_MODEL = name_model
+            run_pipeline(" ".join(str(data.get("vehicle") or "").split()) or SIM_VEHICLE, config)
+            return self.send(200, {"job": job})
+        if path == "/api/dev/tests":
+            ok, output = run_tests()
+            return self.send(200, {"ok": ok, "output": output})
+        if path == "/api/answer":
+            key = str(data.get("key") or "")
+            with LOCK:
+                q = JOB.question
+                if not q or q["id"] != data.get("id") or key not in [k for k, _ in q["choices"]]:
+                    return self.fail(409, "That question has already been answered.")
+                JOB.question, JOB.detail = None, ""
+                JOB.add(f"Answer: {dict(q['choices'])[key]}")
+                try:
+                    JOB.proc.stdin.write(f"{key}\n".encode())
+                    JOB.proc.stdin.flush()
+                except OSError:
+                    return self.fail(409, "The run has already stopped.")
             return self.send(200, {"ok": True})
         if path == "/api/reveal":
             with LOCK:
