@@ -172,6 +172,8 @@ def web_ask(text, choices):
     writes the chosen key back on stdin. A list of name models is shown as a drop-down."""
     models = [lab for k, lab in choices if k != "q"]
     kind = "model" if models and all(lab in NAME_MODELS.values() for lab in models) else "buttons"
+    if [k for k, _ in choices] == ["y", "n"]:
+        kind = "check"   # the first-line check: shown in the output field above GO
     web_say(ask=text, choices=choices, kind=kind)
     keys = [k for k, _ in choices]
     while True:

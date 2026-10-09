@@ -12,6 +12,8 @@
   var configs = {}, configsKey = '';  // model setups from the server, by id; the page always opens on the first (default)
   var namesKey = '', serverName = '';  // name model drop-down, and the server's kept model it last showed
   var askKey = '', answered = 0;       // last rendered question, and the id of the last one answered here
+  var names = {};                      // name model id -> label
+  var check = { line: '', note: '', model: '', rejected: {}, pick: '' };  // first-line check shown above GO
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -95,6 +97,8 @@
     var key = JSON.stringify(list);
     if (key !== namesKey) {
       namesKey = key;
+      names = {};
+      list.forEach(function (m) { names[m[0]] = m[1].replace(/ \(Default\)$/, ''); });
       $('nameModel').innerHTML = list.map(function (m) {
         return '<option value="' + esc(m[0]) + '">' + esc(m[1]) + '</option>';
       }).join('');
@@ -103,12 +107,49 @@
     if (current !== serverName) { serverName = current; $('nameModel').value = current; }
   }
 
+  function modelOf(label) {
+    for (var id in names) if (names[id] === label) return id;
+    return '';
+  }
+
+  function pending(kind) {
+    var q = st.question;
+    return q && q.id !== answered && q.kind === kind ? q : null;
+  }
+
+  // The first-line check: the finished line shows in the output field above GO. GO approves it;
+  // picking another model in the drop-down rejects it and checks again with that model.
+  function renderCheck() {
+    var q = pending('check');
+    if (q) {
+      var m = /names by (.+)\):/.exec(q.ask);
+      check.model = m ? modelOf(m[1]) : '';
+      check.line = (q.ask.split('\n')[1] || '').trim().split(' | ')[0];
+      check.note = '';
+    }
+    var out = $('checkLine');
+    out.textContent = check.line || check.note || 'Output name (part name, number with car name)';
+    out.className = 'input output' + (check.line ? '' : ' placeholder');
+    Array.prototype.forEach.call($('nameModel').options, function (o) { o.disabled = !!(q && check.rejected[o.value]); });
+    if (q && check.model) $('nameModel').value = check.model;
+    var left = Object.keys(names).filter(function (id) { return id !== check.model && !check.rejected[id]; });
+    $('checkHint').innerHTML = !q ? '' : left.length
+      ? 'Looks right? Press GO. Wrong? Pick another model.'
+      : 'Looks right? Press GO. Every other model has been tried. <button type="button" id="noneRight" class="link">None look right</button>';
+    $('checkHint').hidden = !q;
+  }
+
   // A question from the run. Lines after the first are the finished results line to check.
   function renderAsk() {
-    var q = st.question && st.question.id !== answered ? st.question : null;
+    var q = st.question && st.question.id !== answered && st.question.kind !== 'check' ? st.question : null;
     var key = q ? JSON.stringify(q) : '';
     if (key === askKey) return;
     askKey = key;
+    if (q && q.kind === 'model' && check.pick) {  // the model was already picked above GO
+      var c = q.choices.filter(function (c) { return c[1] === names[check.pick]; })[0];
+      check.pick = '';
+      if (c) { answer(c[0], q.id); return; }
+    }
     $('ask').hidden = !q;
     if (!q) { $('ask').innerHTML = ''; return; }
     var lines = q.ask.split('\n'), title = lines.shift();
@@ -136,22 +177,25 @@
     if (focus) focus.focus();
   }
 
-  function answer(key) {
-    var id = st.question && st.question.id;
+  function answer(key, id) {
+    id = id || (st.question && st.question.id);
     answered = id;
     renderAsk();
+    renderCheck();
     api('POST', '/api/answer', { id: id, key: key }).catch(function (e) { showError(e.message); });
   }
 
   function render() {
     var running = st.state === 'running';
     $('config').disabled = running;
-    $('nameModel').disabled = running;
-    var canGo = st.uploaded && !st.uploading && !running && $('car').value.trim() !== '';
+    var checking = !!pending('check');
+    $('nameModel').disabled = running && !checking;
+    var canGo = checking || (st.uploaded && !st.uploading && !running && $('car').value.trim() !== '');
     $('go').disabled = !canGo;
     $('pick').disabled = st.uploading || running;
     renderSteps();
     renderAsk();
+    renderCheck();
     $('stopMsg').textContent = st.state === 'failed' && st.stop ? st.stop : '';
     $('stopMsg').hidden = !$('stopMsg').textContent;
     $('finishNames').hidden = !st.canFinish;
@@ -250,20 +294,35 @@
   $('folder').addEventListener('change', function (e) { if (e.target.files.length) upload(e.target.files); });
   $('car').addEventListener('input', render);
   $('config').addEventListener('change', showConfig);
-  $('nameModel').addEventListener('change', showConfig);
+  $('nameModel').addEventListener('change', function () {
+    if (pending('check')) {  // wrong line: reject this model and check again with the one picked
+      check.rejected[check.model] = true;
+      check.pick = $('nameModel').value;
+      check.line = '';
+      check.note = 'Checking with ' + names[check.pick] + '...';
+      answer('n');
+    }
+    showConfig();
+  });
+  $('checkHint').addEventListener('click', function (e) {
+    if (e.target.id === 'noneRight') { check.rejected[check.model] = true; answer('n'); }
+  });
   $('ask').addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (b) answer(b.hasAttribute('data-pick') ? $('askModel').value : b.getAttribute('data-key'));
   });
   $('car').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !$('go').disabled) $('go').click(); });
   $('go').addEventListener('click', function () {
+    if (pending('check')) { answer('y'); render(); return; }  // the line looks right
     showError('');
+    check = { line: '', note: '', model: '', rejected: {}, pick: '' };
     st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; st.stop = null; st.canFinish = false; render();
     api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim(), config: $('config').value, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
   });
   $('finishNames').addEventListener('click', function () {
     showError('', 'resError');
+    check = { line: '', note: '', model: '', rejected: {}, pick: '' };
     st.state = 'running'; st.step = 0; st.detail = ''; st.stop = null; st.canFinish = false; render();
     api('POST', '/api/finish', { job: st.job, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'failed'; showError(e.message, 'resError'); render(); });
