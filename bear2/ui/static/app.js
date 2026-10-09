@@ -7,12 +7,13 @@
   var SHEETS_URL = 'https://docs.google.com/spreadsheets/u/0/';
   var $ = function (id) { return document.getElementById(id); };
   var st = { job: null, uploading: false, uploaded: false, state: 'idle', step: 0, detail: '', steps: [], logLength: 0, results: null, canOpen: false,
-    question: null, stop: null, canFinish: false };
+    question: null, error: null, canFinish: false };
   var stepsKey = '';  // last rendered progress list, so the spinner is not restarted by unrelated updates
   var configs = {}, configsKey = '';  // model setups from the server, by id; the page always opens on the first (default)
   var namesKey = '', serverName = '';  // name model drop-down, and the server's kept model it last showed
   var askKey = '', answered = 0;       // last rendered question, and the id of the last one answered here
   var names = {};                      // name model id -> label
+  var bannerKey = '', closedKey = '';  // error shown in the banner, and the one the operator closed
   var check = { line: '', note: '', model: '', rejected: {}, pick: '' };  // first-line check shown above GO
 
   function esc(s) {
@@ -117,6 +118,30 @@
     return q && q.id !== answered && q.kind === kind ? q : null;
   }
 
+  // The name model failed (try again / switch / stop): answered from the banner and the model drop-down.
+  function failing() {
+    var e = st.error;
+    return e && e.ask && e.ask !== answered ? e : null;
+  }
+
+  // Run errors drop down from the top: a code, what to do, and the full error under Info.
+  function renderBanner() {
+    var e = st.error && (!st.error.ask || failing()) ? st.error : null;
+    var key = e ? e.code + e.title + (e.ask || '') : '';
+    if (key !== bannerKey) {
+      bannerKey = key;
+      if (e) {
+        $('bannerCode').textContent = e.code;
+        $('bannerTitle').textContent = e.title;
+        $('bannerDetail').textContent = e.detail;
+        $('bannerActions').hidden = !e.ask;
+        $('banner').querySelector('details').open = false;
+      }
+    }
+    var open = !!e && key !== closedKey;
+    $('banner').classList.toggle('open', open);
+  }
+
   // The first-line check: the finished line shows in the output field above GO. GO approves it;
   // picking another model in the drop-down rejects it and checks again with that model.
   function renderCheck() {
@@ -141,7 +166,8 @@
 
   // A question from the run. Lines after the first are the finished results line to check.
   function renderAsk() {
-    var q = st.question && st.question.id !== answered && st.question.kind !== 'check' ? st.question : null;
+    var q = st.question && st.question.id !== answered && st.question.kind !== 'check' &&
+      !(st.error && st.error.ask === st.question.id) ? st.question : null;
     var key = q ? JSON.stringify(q) : '';
     if (key === askKey) return;
     askKey = key;
@@ -182,13 +208,14 @@
     answered = id;
     renderAsk();
     renderCheck();
+    renderBanner();
     api('POST', '/api/answer', { id: id, key: key }).catch(function (e) { showError(e.message); });
   }
 
   function render() {
     var running = st.state === 'running';
     $('config').disabled = running;
-    var checking = !!pending('check');
+    var checking = !!pending('check') || !!failing();
     $('nameModel').disabled = running && !checking;
     var canGo = checking || (st.uploaded && !st.uploading && !running && $('car').value.trim() !== '');
     $('go').disabled = !canGo;
@@ -196,8 +223,7 @@
     renderSteps();
     renderAsk();
     renderCheck();
-    $('stopMsg').textContent = st.state === 'failed' && st.stop ? st.stop : '';
-    $('stopMsg').hidden = !$('stopMsg').textContent;
+    renderBanner();
     $('finishNames').hidden = !st.canFinish;
     var r = st.results, done = st.state === 'done' && r;
     $('dlXlsx').disabled = !done;
@@ -212,7 +238,7 @@
     } else if (st.canFinish) {
       $('resLabel').textContent = 'The photo reads and eBay results are saved. Pick a name model above, then finish the names.';
     } else if (st.state === 'failed') {
-      $('resLabel').textContent = st.stop ? 'The run stopped.' : 'The run failed. Check the BEAR server output for details.';
+      $('resLabel').textContent = 'The run stopped.';
     } else {
       $('resLabel').textContent = running ? 'Working on it...' : 'Available when the run finishes';
     }
@@ -224,7 +250,7 @@
       st.logLength = d.logLength;  // tells the server how much log we have already seen; the page no longer shows it
       st.state = d.state; st.step = d.step; st.detail = d.detail; st.steps = d.steps;
       st.results = d.results; st.canOpen = d.canOpen;
-      st.question = d.question; st.stop = d.stop; st.canFinish = d.canFinish;
+      st.question = d.question; st.error = d.error; st.canFinish = d.canFinish;
       if (d.nameModels && d.nameModels.length) renderNames(d.nameModels, d.nameModel);
       if (d.configs && d.configs.length) renderConfigs(d.configs, d.config);
       if (d.job && d.job !== st.job && !st.uploading) {  // page reloaded: pick the server's folder back up
@@ -295,7 +321,12 @@
   $('car').addEventListener('input', render);
   $('config').addEventListener('change', showConfig);
   $('nameModel').addEventListener('change', function () {
-    if (pending('check')) {  // wrong line: reject this model and check again with the one picked
+    if (failing()) {  // the name model failed: switch to the one picked (its line is checked first)
+      check.pick = $('nameModel').value;
+      check.line = '';
+      check.note = 'Checking with ' + names[check.pick] + '...';
+      answer('m', failing().ask);
+    } else if (pending('check')) {  // wrong line: reject this model and check again with the one picked
       check.rejected[check.model] = true;
       check.pick = $('nameModel').value;
       check.line = '';
@@ -303,6 +334,13 @@
       answer('n');
     }
     showConfig();
+  });
+  $('bannerClose').addEventListener('click', function () { closedKey = bannerKey; renderBanner(); });
+  $('bannerRetry').addEventListener('click', function () { if (failing()) answer('r', failing().ask); render(); });
+  $('bannerStop').addEventListener('click', function () { if (failing()) answer('q', failing().ask); render(); });
+  $('bannerModel').addEventListener('click', function () {
+    $('nameModel').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    $('nameModel').focus();
   });
   $('checkHint').addEventListener('click', function (e) {
     if (e.target.id === 'noneRight') { check.rejected[check.model] = true; answer('n'); }
@@ -316,14 +354,14 @@
     if (pending('check')) { answer('y'); render(); return; }  // the line looks right
     showError('');
     check = { line: '', note: '', model: '', rejected: {}, pick: '' };
-    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; st.stop = null; st.canFinish = false; render();
+    st.state = 'running'; st.step = 0; st.detail = ''; st.results = null; st.error = null; st.canFinish = false; render();
     api('POST', '/api/run', { job: st.job, vehicle: $('car').value.trim(), config: $('config').value, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'idle'; showError(e.message); render(); });
   });
   $('finishNames').addEventListener('click', function () {
     showError('', 'resError');
     check = { line: '', note: '', model: '', rejected: {}, pick: '' };
-    st.state = 'running'; st.step = 0; st.detail = ''; st.stop = null; st.canFinish = false; render();
+    st.state = 'running'; st.step = 0; st.detail = ''; st.error = null; st.canFinish = false; render();
     api('POST', '/api/finish', { job: st.job, nameModel: $('nameModel').value })
       .catch(function (e) { st.state = 'failed'; showError(e.message, 'resError'); render(); });
   });

@@ -211,6 +211,42 @@ def summary(out):
             "nulls": len(lines("null_files.txt"))}
 
 
+# Error codes for the banner at the top of the page.
+#   BEAR-N01 name model rate limited      BEAR-N02 name model not responding
+#   BEAR-N03 name model gave unusable names   BEAR-N04 every name model gave a wrong line
+#   BEAR-R01 the run failed (anything else)
+NAME_FAIL = re.compile(r"^(.+?) (is unavailable|gave an unusable answer|gave a name BEAR can't use)")
+
+
+def error_info(text):
+    """{code, title, detail} for a run error: a plain-English title and the full message."""
+    m = NAME_FAIL.match(text)
+    if text.startswith("Every name model gave a bad line"):
+        code, title = "BEAR-N04", "Every name model gave a wrong line. The cleaning instructions need fixing."
+    elif m and m.group(2) == "is unavailable":
+        limited = re.search(r"HTTP 429|rate.?limit", text, re.I)
+        code = "BEAR-N01" if limited else "BEAR-N02"
+        title = f"{m.group(1)} is {'rate limited' if limited else 'not responding'}. Please change the name model."
+    elif m:
+        code, title = "BEAR-N03", f"{m.group(1)} gave part names BEAR can't use. Please change the name model."
+    else:
+        code, title = "BEAR-R01", "The BEAR run failed."
+    log = "\n".join(l for l in JOB.log[-15:] if not l.startswith("Question: "))
+    return {"code": code, "title": title, "detail": f"{text.strip()}\n\nLast messages:\n{log}"}
+
+
+def run_error(stop):
+    """The error to show in the banner, or None. A run the operator stopped is not an error."""
+    q = JOB.question
+    if q and [k for k, _ in q["choices"]] == ["r", "m", "q"]:  # the name model failed: try again / switch / stop
+        return {**error_info(q["ask"]), "ask": q["id"]}
+    if JOB.state != "failed":
+        return None
+    if JOB.stop is None:
+        return error_info("The run ended with an error.")
+    return error_info(stop) if stop and not stop.startswith(("Stopped", "No answer")) else None
+
+
 def can_finish():
     """A stopped run whose photo reads and eBay results are saved, so only the names are left."""
     return JOB.state == "failed" and bool(JOB.out) and (JOB.out / "agent2_results.md").exists()
@@ -229,7 +265,7 @@ def status(since):
                 "log": JOB.log[since:], "logLength": len(JOB.log), "results": res,
                 "canOpen": bool(shutil.which("open")), "configs": config_list(), "config": JOB.config,
                 "nameModels": name_models(), "nameModel": NAME_MODEL,
-                "question": JOB.question, "stop": stop, "canFinish": finish}
+                "question": JOB.question, "error": run_error(stop), "canFinish": finish}
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -127,7 +127,20 @@ label{font-size:16px;line-height:24px}
 .listing{display:flex;flex-direction:column;gap:4px;padding:16px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-size:16px;line-height:24px;overflow-wrap:anywhere}
 .ask .btn{width:auto;min-width:200px;padding:0 24px}
 .btn.quiet{background:var(--surface);border:1px solid var(--control-border)}
-.stop-msg{white-space:pre-line}
+
+/* Error banner: drops down from the top of the window, with the full error under Info */
+.banner{position:fixed;top:0;left:0;right:0;z-index:10;background:var(--surface-raised);border-bottom:2px solid var(--error);transform:translateY(-110%);transition:transform .25s ease-out;visibility:hidden}
+.banner.open{transform:none;visibility:visible}
+.banner-in{display:flex;flex-direction:column;gap:12px;max-width:720px;margin:0 auto;padding:16px 24px}
+.banner-head{display:flex;align-items:center;gap:12px}
+.banner .tag{border-color:var(--error);color:var(--error)}
+.banner-title{flex:1;font-size:16px;line-height:24px;font-weight:700}
+.banner .btn{width:auto;height:40px;padding:0 16px}
+.close{flex:none;width:32px;height:32px;padding:0;background:none;border:0;color:var(--ink-muted);font-size:24px;line-height:32px;cursor:pointer}
+.close:hover{color:var(--ink)}
+.banner summary{width:max-content;font-size:14px;line-height:20px;color:var(--ink-muted);cursor:pointer}
+.banner summary:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.banner pre{max-height:240px;margin:8px 0 0;padding:12px;overflow:auto;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-size:12px;line-height:18px;color:var(--ink-muted);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* First-line check: the finished output line next to the name model drop-down, above GO */
 .verify{display:grid;grid-template-columns:1fr 240px;gap:8px;align-items:end}
@@ -137,6 +150,17 @@ label{font-size:16px;line-height:24px}
 </style>
 </head>
 <body>
+<div id="banner" class="banner" role="alert" aria-live="assertive">
+  <div class="banner-in">
+    <div class="banner-head"><span id="bannerCode" class="tag"></span><span id="bannerTitle" class="banner-title"></span><button type="button" id="bannerClose" class="close" aria-label="Close">&times;</button></div>
+    <div id="bannerActions" class="row" hidden>
+      <button type="button" id="bannerModel" class="btn">Change model</button>
+      <button type="button" id="bannerRetry" class="btn quiet">Try again</button>
+      <button type="button" id="bannerStop" class="btn quiet">Stop</button>
+    </div>
+    <details><summary>Info</summary><pre id="bannerDetail"></pre></details>
+  </div>
+</div>
 <div class="page">
 
   <header class="hero">
@@ -200,7 +224,6 @@ label{font-size:16px;line-height:24px}
         <h2 id="h-progress">4. Progress</h2>
         <ol id="steps" class="steps"></ol>
         <div id="ask" class="panel col ask" role="group" aria-labelledby="askTitle" hidden></div>
-        <span id="stopMsg" class="error stop-msg" role="alert" hidden></span>
       </section>
 
       <section aria-labelledby="h-results">
