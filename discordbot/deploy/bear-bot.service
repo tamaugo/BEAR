@@ -1,0 +1,26 @@
+# systemd service for the BEAR Discord bot. setup.sh installs it as /etc/systemd/system/bear-bot.service.
+#   status: systemctl status bear-bot      log: journalctl -u bear-bot -f      restart: systemctl restart bear-bot
+[Unit]
+Description=BEAR Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bear
+Group=bear
+WorkingDirectory=/opt/bear
+Environment=PYTHONUNBUFFERED=1
+Environment=BEAR_STORAGE=/var/lib/bear/runs
+ExecStart=/opt/bear/.venv/bin/python /opt/bear/discordbot/bot.py
+Restart=always
+RestartSec=10
+# Stopping the bot also stops any BEAR run it started.
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

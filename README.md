@@ -1,42 +1,21 @@
-## BEAR 0.4 — quick start (Mac)
+## BEAR — Discord server edition
 
-1. Get the code into `~/Desktop/bear` (the one BEAR folder on the Mac): `git clone https://github.com/tamaugo/BEAR.git ~/Desktop/bear && cd ~/Desktop/bear` (already cloned? `cd ~/Desktop/bear && git pull`).
-   Keep only this copy; delete older BEAR folders once `bear` works (never `~/Desktop/ebay-jobs/`, that is customer data).
-2. Install the command: `./install.sh` — links `bear` into `~/.local/bin` and adds it to your PATH (open a new Terminal afterwards).
-3. Store the three keys once in the macOS Keychain (each command prompts silently for the value):
-   ```
-   security add-generic-password -a "$USER" -s openrouter-api-key -w
-   security add-generic-password -a "$USER" -s ebay-app-id -w
-   security add-generic-password -a "$USER" -s ebay-cert-id -w
-   ```
-4. Run `bear`, drag the photo folder into Terminal, press Enter, then type the vehicle. Or non-interactively: `bear <folder> "HYUNDAI I40 MK1 SEDAN 2015 1.7 DIESEL"`.
-   Prefer a page to click through? Run `bear ui` (see below).
-5. `bear check` verifies Python, Pillow and that all keys are present. `bear update` pulls the latest version and refreshes dependencies.
+This branch runs BEAR on a Debian 13 VM, fully managed through a Discord bot. Each car gets its own channel: create its photo folder with `/newfolder`, flag the part-number photo with 💸, then start the run with `/run`. The bot posts the finished spreadsheet back to the channel. Up to 2 folders can run at the same time. The Mac `bear` command and the `bear ui` web page are not on this branch; they live on `main`.
 
-**Results** go to `<photo folder>/bear-results-YYYYmmdd-HHMMSS/` (`results.xlsx`, `agent2_results.md`, `agent3_results.txt`, `trace.json`); the spreadsheet opens automatically on a Mac.
+**Cost:** about 0.2p per part (measured). Each folder has its own spend cap, `BEAR_RUN_CAP_USD` in `.env` on the server ($3 in the template).
 
-**Cost:** about 0.2p per part (measured). Each run has a spend cap of $1.00; change it with the `BEAR_RUN_CAP_USD` environment variable, e.g. `BEAR_RUN_CAP_USD=2 bear`.
+- Setup guide: [discordbot/SETUP.md](discordbot/SETUP.md)
+- Design: [discordbot/PLAN.md](discordbot/PLAN.md)
+- Research: [discordbot/RESEARCH.md](discordbot/RESEARCH.md)
+- Changes: [CHANGELOG.md](CHANGELOG.md)
 
-### Web page (`bear ui`)
-
-`bear ui` opens the BEAR page in your browser (it runs only on your Mac, at `http://127.0.0.1:8642`; keep the Terminal window open, Ctrl+C stops it).
-
-1. **Photos**: *Add folder* uploads the `.jpg/.jpeg/.png` photos directly inside the folder into `~/Documents/BEAR/<folder>-<time>/` (change with `BEAR_UI_JOBS_DIR`).
-2. **Model setup**: pick a whole setup from the drop-down: *Default*, *Beta* (cheaper photo check) or *Experimental* (Claude Haiku 5.5). The models each setup uses are listed underneath.
-3. **Car**: type the vehicle, press **GO**. This runs the same pipeline as the `bear` command. Above GO, the **output name** field and the **Model name** drop-down (Qwen by default, or Gemini / Claude Haiku 5.5, the model that cleans eBay titles into part names) handle the first-line check: the first finished line appears in the field; if it looks right press **GO** again, if not pick another model from the drop-down and it checks again. A model approved on the page is kept for every run until `bear ui` is closed; a restart goes back to the default.
-4. **Progress**: live steps (starting up, verifying first part, scanning photos, eBay lookup, formatting text = cleaning part names, creating the xlsx). Run errors drop down in a banner at the top of the page with an error code (`BEAR-N01` name model rate limited, `N02` not responding, `N03` unusable names, `N04` every model gave a wrong line, `R01` anything else), what to do, and the full error under *Info*. If the name model fails mid-run the banner offers *Change model* (pick one in the Model name drop-down; its line is checked first), *Try again* or *Stop*.
-5. **Results**: priced / not-priced counts and cost, *Download results.xlsx*, *Open spreadsheet (import to google sheets)* (opens Google Sheets in a new tab: File > Import > Upload the downloaded file), *Show in Finder*. If a run stopped at the names, *Finish names* finishes them with the chosen name model (after checking one line) without redoing the photo reads or eBay lookups.
-
-The version number in the top corner links to this GitHub repo. Next to it, **Dev mode** runs a simulated run (`bear2/simulate.py`: fake photo reads, eBay results and name models, no credits spent) of any scenario: a clean run, a wrong first line, every model wrong (`BEAR-N04`), rate limited at the check or mid-run (`BEAR-N01`), not responding (`BEAR-N02`), unusable names (`BEAR-N03`) or a crash (`BEAR-R01`). It also runs the **offline test suite** (free, no network). The same suite runs in Terminal:
+Offline tests (free, no network):
 
 ```
 python3 tests/test_names_offline.py      # part names and the finished line layout
-python3 tests/test_web_flow_offline.py   # every dev-mode scenario through the real web server
-``` What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
-
-The run's messages (and any error) appear in the Terminal window running `bear ui`.
-
-The look follows the mockup attached to issue #7 and will be restyled later.
+python3 tests/test_discord_offline.py    # the Discord bot's folder rules and error codes
+.venv/bin/python tests/test_discord_flow_offline.py   # the whole bot flow in dev mode (needs discord.py)
+```
 
 ### How 0.4 works
 
@@ -44,7 +23,7 @@ The look follows the mockup attached to issue #7 and will be restyled later.
 2. **Numbers** — each reading is searched on eBay UK (exact match, several normalised forms). No UK listing means it is not a sellable number.
 3. **Listing** — Jev picks the number when more than one survives, vetoes listings for pairs/sets/other assemblies, prefers used items, takes the consensus price, and sets the sell price to the smallest x.99 at or above it (floor 19.99).
 4. **Assemble** — deterministic code builds the final rows (vehicle, location from filename, part number, price, URL, image, sort, FAILED/NULL rows); one cheap model call only tidies titles into names.
-5. **Check and names** — before the full run you approve the first finished line (or switch name model: Qwen, Gemini or Claude Haiku 5.5). If the name model fails, BEAR stops and asks instead of writing messy names.
+5. **Names** — Discord runs have no first-line check. If the name model fails, the run stops with an error code (`BEAR-N01`–`N03`) instead of writing messy names; swap the model with `BEAR_NAME_MODEL` in the server's `.env` (Qwen by default, or Gemini / Claude Haiku 5.5).
 
 ---
 
@@ -55,6 +34,8 @@ The look follows the mockup attached to issue #7 and will be restyled later.
 - Free (eBay API only). Measured: right part in the image-search top 50 for 5/9 known photos, so it is a hint, not a verdict.
 
 ## Legacy pi pipeline (BEAR 0.1)
+
+*(Mac edition, on `main`)*
 
 # BEAR
 

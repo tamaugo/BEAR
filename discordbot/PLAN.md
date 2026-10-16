@@ -1,11 +1,11 @@
 # Discord BEAR — build plan
 
-Status: **planning only, nothing built yet.** Everything here was agreed with the owner in
-October 2026. The research behind it (Discord limits, blind spots, sources) is in
-[RESEARCH.md](RESEARCH.md).
+Status: **the bot and VM setup are built** (see [SETUP.md](SETUP.md)). Photo-quality testing
+(§8) is still to do. Everything here was agreed with the owner in October 2026. The research
+behind it (Discord limits, blind spots, sources) is in [RESEARCH.md](RESEARCH.md).
 
 The Discord bot is a new, separate way to start BEAR. The Mac `bear` command and `bear ui`
-stay exactly as they are.
+stay exactly as they are on `main`; this branch (`discord-bear`) is the server edition and drops them.
 
 ---
 
@@ -47,20 +47,21 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 
 | Topic | Decision |
 |---|---|
-| Hosting | One always-on bot on the owner's **Debian 13** server (Proxmox). Outbound connection to Discord; no port forwarding. |
+| Hosting | One always-on bot on a **Debian 13** VM (Proxmox): 2 cores, 4 GB RAM, 32 GB disk. Outbound connection to Discord; no port forwarding. See [SETUP.md](SETUP.md) §1. |
 | Car name | From the **channel topic**. Empty topic = refuse to run. |
 | Folders | `/newfolder name:<x>` starts one; `/run` ends and runs it. **One spreadsheet per folder.** |
 | Part-number photo | Posted **alone**, reacted with **💸**. Only flagged photos go to BEAR. If this proves unreliable, switch to "first/last photo of a part". |
 | Chat text | Never read; text-only messages deleted. |
 | "Running x parts" | Information only, no GO button. |
-| First-line name check | **Not used in Discord runs.** No automatic model fallback. If Qwen keeps failing, the owner swaps the name model by hand. |
+| First-line name check | **Not used in Discord runs.** No automatic model fallback. If Qwen keeps failing, the owner swaps the name model by hand: set `BEAR_NAME_MODEL` in the server's `.env` (applies on the next `/run`, no restart). |
 | Name model fails | Run stops, error goes to the error channel. Photo reads and eBay results are kept, so only the names need finishing later. |
 | Errors | Separate error channel: folder name + error code + fix. Full error list to be refined later. |
 | Who can run it | Anyone in the server. |
 | Upload wait | ~30 s with no new photo before running. |
 | webp | BEAR reads webp directly (no separate conversion step). HEIC = refuse with an error. |
 | Spend cap | The OpenRouter key's own cap is the real limit. |
-| Parallel runs | Separate BEAR processes or VMs; **only one bot**. Never the same car twice at once. |
+| Parallel runs | **One VM, one bot**, up to 2 BEAR runs at once (`BEAR_MAX_RUNS`, default 2). A 3rd `/run` waits in a queue and the bot says it is queued. Never the same car twice at once: one folder per car channel. |
+| Status command | `/status` lists running and queued folders. |
 | Same part number twice in a folder | No special handling for now. Add a "DUPLICATE? check" mark only if it becomes a problem. |
 | Location (NSF/NSR/OSF/OSR) | **Later.** Plan: four custom emojis reacted on the 💸 photo; the bot puts the code in the filename. |
 | Image column in the spreadsheet | Kept as it is for now. |
@@ -87,11 +88,10 @@ What already works without changing BEAR:
 - **Keys from `.env`.** `common._env()` and `jev_client.resolve_api_key()` read the shell
   environment, then `.env` at the repo root. No Keychain needed on Linux. Only the `bin/bear`
   launcher uses the macOS Keychain, and the bot does not use the launcher.
-- **Spend cap per run.** Each folder is a fresh process, so the `$1` cap in
-  `bear2/common.py:41` counts only that folder. Set `BEAR_RUN_CAP_USD` higher in the bot's
-  environment if a full folder can cost more. Two runs on the **same machine** share
-  `bear2/spend.jsonl` and can count each other's spending, so give parallel runs separate
-  VMs or a higher cap.
+- **Spend cap per run.** Each run has its own spend ledger (`BEAR_SPEND_LEDGER`, set by the
+  bot to the run folder), so parallel runs do not count each other's spending. The `$1` cap in
+  `bear2/common.py:41` counts only that run. Set `BEAR_RUN_CAP_USD` higher in the bot's
+  environment if a full folder can cost more.
 
 How the bot names the photos it hands to BEAR (BEAR reads order and location from the
 filename, `bear2/assemble.py:59-72`):
@@ -157,11 +157,13 @@ channel and the run's log. The fixes below are a first draft, to be refined late
 | `BEAR-N02` | Name model not responding | Same as N01. |
 | `BEAR-N03` | Name model gave unusable names | Swap the name model. |
 | `BEAR-K01` | OpenRouter credit / key cap reached (HTTP 402) | Top up or raise the key's cap. |
+| `BEAR-K02` | BEAR's own per-folder spend cap reached (`BEAR_RUN_CAP_USD`); some parts not priced | Raise `BEAR_RUN_CAP_USD`, then `/run` again. |
+| `BEAR-T01` | Run took over 2 hours, stopped | `/run` again; if it repeats, owner looks at the log. |
 | `BEAR-R01` | Anything else | Owner looks at the log. |
 
 `N01`–`N03` and `R01` are the same codes the web page uses (`bear2/ui/server.py:257`). `N04`
 (every model gave a wrong first line) can't happen without the first-line check.
-`K01` and the `D` codes are new.
+`K01`, `K02`, `T01` and the `D` codes are new.
 
 ---
 
@@ -176,26 +178,20 @@ channel and the run's log. The fixes below are a first draft, to be refined late
    Manage Messages, Use Application Commands.
 4. Register `/newfolder` and `/run` for this server only (they appear instantly).
 5. Create the error channel and note its ID.
-6. Store the bot token in the server's `.env` (`DISCORD_TOKEN`) with `ERROR_CHANNEL_ID`.
-   The token never goes in chat, logs or code.
+6. Store the bot token in the server's `.env` (`DISCORD_TOKEN`), with `DISCORD_GUILD_ID`,
+   `ERROR_CHANNEL_ID` and `CARS_CATEGORY_ID`. The token never goes in chat, logs or code.
+   Steps in [SETUP.md](SETUP.md) §2.
 
 ---
 
 ## 7. Server setup (Debian 13)
 
-1. Clone the repo, e.g. `/opt/bear`, on the `discord-bear` branch.
-2. `python3 -m venv .venv && .venv/bin/pip install "Pillow>=10" discord.py`.
-3. Check Pillow can read webp:
-   `.venv/bin/python -c "from PIL import features; print(features.check('webp'))"`
-4. `.env` at the repo root: `OPENROUTER_API_KEY`, `EBAY_APP_ID`, `EBAY_CERT_ID`,
-   `JEV_MODEL`, `DISCORD_TOKEN`, `ERROR_CHANNEL_ID`, optionally `BEAR_RUN_CAP_USD`.
-5. Run `python3 tests/test_names_offline.py` and a dev-mode run to prove BEAR works on
-   Linux. BEAR has only been used on Mac (and Windows via `.env`) so far.
-6. A `systemd` service for the bot with `Restart=always`, so it starts at boot and after
-   crashes.
-7. Storage: `<storage>/<channel>/<folder>-<time>/` holding `photos/`, BEAR's results
-   (`results.xlsx`, `agent2_results.md`, `agent3_results.txt`, `trace.json`) and the bot's
-   log. How long to keep them: **to decide**.
+Done: see [SETUP.md](SETUP.md). `discordbot/deploy/setup.sh` does the one-command VM setup:
+packages, a `bear` user, the code in `/opt/bear`, the venv, `.env` from `env.example`, the
+offline tests, and the `bear-bot` systemd service (`Restart=always`). It starts in dev mode
+(`BEAR_SIM=ok`).
+
+How long to keep runs (stored under `/var/lib/bear/runs/`): **to decide**.
 
 ---
 
@@ -224,13 +220,13 @@ The accuracy rule applies: Discord runs must be as accurate as the current flow.
 1. **BEAR reads webp.** Add `.webp` to the file filters in `bear2/run.py:149` and
    `bear2/stage1_read.py:126`. Everything after that already goes through Pillow, including
    eBay image search (`bear2/image_hints.py:22`). This touches code the Mac flow shares, so it
-   needs the owner's OK.
-2. **Bot skeleton**: connects, `/newfolder`, deletes text-only messages, error channel.
-3. **`/run`**: collect 💸 photos, checks `D01`–`D06`, download and name, "Running x parts".
-4. **Run BEAR and post the spreadsheet**, map failures to `N01`–`N03`, `K01`, `R01`.
-5. **Dev-mode runs and offline bot tests.**
-6. **Debian setup notes and the `systemd` service file.**
-7. **Photo-quality test results** written up in `tests/`.
+   needs the owner's OK. — done
+2. **Bot skeleton**: connects, `/newfolder`, deletes text-only messages, error channel. — done
+3. **`/run`**: collect 💸 photos, checks `D01`–`D06`, download and name, "Running x parts". — done
+4. **Run BEAR and post the spreadsheet**, map failures to `N01`–`N03`, `K01`, `R01`. — done
+5. **Dev-mode runs and offline bot tests.** — done
+6. **Debian setup notes and the `systemd` service file.** — done
+7. **Photo-quality test results** written up in `tests/`. (still to do)
 
 ---
 

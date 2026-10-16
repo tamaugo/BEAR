@@ -146,7 +146,7 @@ def main():
     s1_cache = sys.argv[sys.argv.index("--s1") + 1] if "--s1" in sys.argv else None
     out_dir.mkdir(parents=True, exist_ok=True)
     spend0 = c.total_spend()
-    photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+    photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in c.PHOTO_EXT)
     nulls = [p.name for p in photos if "NULL" in p.stem.upper().replace("-", " ").replace("_", " ").split()]
     photos = [p for p in photos if p.name not in nulls]
     # Terminal runs ask in the Terminal, web page runs on the page (BEAR_WEB_ASK).
