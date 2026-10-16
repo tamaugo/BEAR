@@ -28,15 +28,15 @@ FOLDER = "\N{FILE FOLDER}"
 # Discord's limit is 100 characters for each description.
 COMMANDS = {
     "newfolder": {
-        "description": "Start a new box of parts in this car's channel",
-        "options": {"name": "Box name, e.g. Q184"},
+        "description": "Start a new folder (one box of parts) in this car's channel",
+        "options": {"name": "Folder name, e.g. Q184"},
     },
     "run": {
-        "description": "Finish the box and price every 💸 photo in it",
+        "description": "Finish the folder and price every 💸 photo in it",
         "options": {},
     },
     "status": {
-        "description": "See which boxes BEAR is working on",
+        "description": "See which folders BEAR is working on",
         "options": {},
     },
 }
@@ -46,7 +46,7 @@ COMMANDS = {
 UPLOADER_FIX = {
     "BEAR-D01": "This channel has no car yet. Put the car in the **channel topic**, make first "
                 "(e.g. `FORD FIESTA MK7 2012 1.4 DIESEL`), then try again.",
-    "BEAR-D02": "There's no box open here. Start one with **/newfolder**, upload the photos, then **/run**.",
+    "BEAR-D02": "There's no folder open here. Start one with **/newfolder**, upload the photos, then **/run**.",
     "BEAR-D03": f"No photo has a {MONEY} yet. React {MONEY} on each **part-number photo**, then **/run** again.",
     "BEAR-D04": f"A {MONEY} message has more than one photo, so BEAR can't tell which is the part number. "
                 f"Post that part-number photo **on its own**, {MONEY} it, then **/run** again.",
@@ -60,7 +60,7 @@ UPLOADER_FIX = {
 # Short titles for the problem card, so the code means something at a glance.
 TITLES = {
     "BEAR-D01": "No car in the channel topic",
-    "BEAR-D02": "No box open",
+    "BEAR-D02": "No folder open",
     "BEAR-D03": f"No {MONEY} photos",
     "BEAR-D04": f"{MONEY} on a message with several photos",
     "BEAR-D05": "Photo type BEAR can't read",
@@ -69,7 +69,7 @@ TITLES = {
     "BEAR-N02": "Name model isn't answering",
     "BEAR-N03": "Name model gave bad names",
     "BEAR-K01": "Out of OpenRouter credit",
-    "BEAR-K02": "Box hit BEAR's spend cap",
+    "BEAR-K02": "Folder hit BEAR's spend cap",
     "BEAR-T01": "Run took too long",
     "BEAR-R01": "BEAR run failed",
 }
@@ -129,18 +129,18 @@ def kwargs(post):
 
 def folder_card(name, car, dev=False):
     """The /newfolder reply. The content line must stay exactly "📁 Folder **<name>**": /run finds the
-    box by reading it back (folders.MARKER)."""
+    folder by reading it back (folders.MARKER)."""
     how = (f"**1.** Upload the photos, any way you like\n"
            f"**2.** Post each **part-number photo on its own** and react {MONEY}\n"
-           f"**3.** **/run** when the box is done")
+           f"**3.** **/run** when the folder is done")
     return _post(_embed(BRAND, description=f"**{car}**\n\n{how}", footer=_footer(dev, "Only 💸 photos go to BEAR")),
                  content=f"{FOLDER} Folder **{name}**")
 
 
 def open_folder_warning(previous):
-    """Ephemeral note on /newfolder when the box before it was never /run (its photos would be skipped)."""
-    return (f"Heads up: box **{previous}** was never run. Its photos won't be priced unless you "
-            f"scroll up and **/run** it first. This new box has started anyway.")
+    """Ephemeral note on /newfolder when the folder before it was never /run (its photos would be skipped)."""
+    return (f"Heads up: folder **{previous}** was never run. Its photos won't be priced unless you "
+            f"scroll up and **/run** it first. This new folder has started anyway.")
 
 
 # --- The live run card ---------------------------------------------------------------------------
@@ -149,10 +149,12 @@ def open_folder_warning(previous):
 
 def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=None,
              wait_seconds=None, max_runs=None, dev=False):
-    """state: checking | waiting | downloading | queued | running."""
+    """state: checking | waiting | downloading | queued | running. folder is None while /run is
+    still looking for it."""
     p = _plural(parts, "part") if parts is not None else None
     if state == "checking":
-        title, colour, line = f"{FOLDER} {folder} · Checking the box", GREY, "Looking for 💸 photos ..."
+        title = f"{FOLDER} {folder} · Checking the folder" if folder else f"{FOLDER} Checking the folder"
+        colour, line = GREY, f"Looking for {MONEY} photos ..."
     elif state == "waiting":
         title, colour = f"{FOLDER} {folder} · Waiting for uploads", AMBER
         line = (f"Photos are still arriving. BEAR starts once none have come in for "
@@ -162,8 +164,8 @@ def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=N
         line = f"Saving the photos ... {got or 0}/{parts}"
     elif state == "queued":
         title, colour = f"{FOLDER} {folder} · Running {p}", AMBER
-        ahead = f"{_plural(queue_ahead, 'box')} ahead" if queue_ahead else "next in line"
-        line = f"Queued: {ahead}. BEAR prices {max_runs or 2} boxes at once."
+        ahead = f"{_plural(queue_ahead, 'folder')} ahead" if queue_ahead else "next in line"
+        line = f"Queued: {ahead}. BEAR prices {max_runs or 2} folders at once."
     elif state == "running":
         title, colour = f"{FOLDER} {folder} · Running {p}", GREY
         line = f"{BEAR} BEAR is pricing the parts" + (f" (started {_when(since)})" if since else "") + "."
@@ -203,8 +205,9 @@ def problem_card(folder, code, error_channel_id, photo_links=(), dev=False, part
                                     for i, u in enumerate(shown, 1))
         if len(photo_links) > len(shown):
             desc += f"\n... and {len(photo_links) - len(shown)} more (see <#{error_channel_id}>)"
-    title = f"\N{CROSS MARK} {folder} · {TITLES.get(code, 'Problem')}" if not partial else \
-        f"\N{WARNING SIGN} {folder} · Some parts not priced"
+    name = f"{folder} · " if folder else ""
+    title = f"\N{CROSS MARK} {name}{TITLES.get(code, 'Problem')}" if not partial else \
+        f"\N{WARNING SIGN} {name}Some parts not priced"
     return _post(_embed(RED if not partial else AMBER, title, desc, footer=_footer(dev, code)))
 
 
@@ -215,7 +218,7 @@ def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", ju
     line keeps the agreed format so it reads right in notifications and search:
     **Q184** encountered an issue — `BEAR-D04` — fix: ..."""
     content = f"**{folder}** encountered an issue — `{code}` — fix: {fix}"
-    fields = [("Car channel", f"<#{channel_id}>" + (f" · [jump to the box]({jump_url})" if jump_url else ""), True)]
+    fields = [("Car channel", f"<#{channel_id}>" + (f" · [jump to the folder]({jump_url})" if jump_url else ""), True)]
     if car:
         fields.append(("Car", car, True))
     desc = meaning
@@ -225,10 +228,10 @@ def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", ju
 
 
 def bot_started(max_runs, sim=None, version=None):
-    lines = [f"Pricing up to {_plural(max_runs, 'box')} at once."]
+    lines = [f"Pricing up to {_plural(max_runs, 'folder')} at once."]
     if sim:
         lines.append(f"**Dev mode**: runs are simulated (`{sim}`), no credit is spent.")
-    lines.append("A box that was running when the bot stopped needs **/run** again.")
+    lines.append("A folder that was running when the bot stopped needs **/run** again.")
     return _post(_embed(GREY, f"{BEAR} BEAR is online", "\n".join(lines),
                         footer=f"BEAR {version}" if version else None))
 
@@ -239,7 +242,7 @@ def status_card(active, max_runs, now, dev=False):
     """active: [{"folder", "channel_id", "state", "parts", "since"}]."""
     if not active:
         return _post(_embed(GREY, f"{BEAR} Nothing running",
-                            f"BEAR can price {_plural(max_runs, 'box')} at once.", footer=_footer(dev)))
+                            f"BEAR can price {_plural(max_runs, 'folder')} at once.", footer=_footer(dev)))
     rows = []
     for a in active:
         mins = int((now - a["since"]) // 60)
@@ -254,9 +257,12 @@ def status_card(active, max_runs, now, dev=False):
 
 REPLIES = {
     "not_car_channel": "Use this in a car's channel (the ones under **Cars**).",
-    "bad_name": "Box names are letters, numbers, `-` and `_` only, up to 40, e.g. `Q184`.",
-    "busy": "Box **{folder}** here is still {state}. **/run** again once it's done.",
-    "no_topic": "Box **{name}** not started: this channel has no car in its topic yet.",
+    "bad_name": "Folder names are letters, numbers, `-` and `_` only, up to 40, e.g. `Q184`.",
+    "busy": "Folder **{folder}** here is still {state}. **/run** again once it's done.",
+    "no_topic": "Folder **{name}** not started: this channel has no car in its topic yet.",
+    "topic_order": "Check this channel's topic: it should start with the make (e.g. `FORD ...`), not "
+                   "`{first}`. BEAR uses the first word as the make.",
+    "on_it": "On it: the card below shows how it's going.",
     "oops": "Something went wrong on BEAR's side (`BEAR-R01`). The owner can see it in the bot's log.",
     "text_removed": "Only photos stay in car channels, so your message was removed. "
                     "Use **/newfolder**, photos, {money} and **/run**.",
@@ -274,14 +280,14 @@ def guide(error_channel_id=None):
     steps = (
         "**1. One channel per car.** The **channel topic** is the car, make first:\n"
         "`FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL`\n\n"
-        "**2. /newfolder** `Q184` opens a box. Everything after it belongs to that box.\n\n"
+        "**2. /newfolder** `Q184` opens a folder. Everything after it belongs to that folder.\n\n"
         "**3. Upload the photos** in any groups you like.\n\n"
         f"**4. Part-number photo on its own**, then react {MONEY}. Only {MONEY} photos are priced.\n\n"
-        "**5. /run** when the box is done. BEAR says how many parts it found, then posts the "
+        "**5. /run** when the folder is done. BEAR says how many parts it found, then posts the "
         "spreadsheet. If that number is lower than you expect, a " + MONEY + " is missing."
     )
     tips = ("Text messages are removed: car channels are photos only.\n"
-            "**/run** again re-does the whole box.\n"
+            "**/run** again re-does the whole folder.\n"
             "**/status** shows what BEAR is working on.")
     if error_channel_id:
         tips += f"\nProblems also go to <#{error_channel_id}>."

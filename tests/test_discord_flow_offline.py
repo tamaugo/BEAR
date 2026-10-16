@@ -22,6 +22,7 @@ os.environ.pop("CARS_CATEGORY_ID", None)
 sys.path.insert(0, str(ROOT / "discordbot"))
 import bot as B  # noqa: E402
 import folders as fo  # noqa: E402
+import look  # noqa: E402
 from PIL import Image  # noqa: E402
 
 ME, PERSON = NS(id=7, bot=True), NS(id=8, bot=False)
@@ -39,24 +40,45 @@ class Att:
         Image.new("RGB", (64, 48), "white").save(path, "JPEG" if Path(path).suffix != ".webp" else "WEBP")
 
 
+def flat(content, embeds):
+    """A post as plain text (content + each embed's title and description), for the checks."""
+    return "\n".join([content or ""] + [f"{e.title or ''}\n{e.description or ''}" for e in embeds or []])
+
+
 class Channel:
+    """A fake car channel. sent: [(text, file name)] per bot message, updated when it is edited
+    (the run card); shown: every text a message ever had, so passing states can be checked."""
+
     def __init__(self, cid, topic=CAR):
         self.id, self.name, self.topic, self.mention = cid, f"car-{cid}", topic, f"<#{cid}>"
-        self.msgs, self.sent = [], []
+        self.msgs, self.sent, self.shown = [], [], []
 
-    def add(self, author=PERSON, content="", files=(), money=False, ago=300):
-        self.msgs.append(NS(author=author, content=content, attachments=[Att(f) for f in files],
-                            reactions=[NS(emoji=fo.MONEY)] if money else [],
-                            created_at=datetime.now(timezone.utc) - timedelta(seconds=ago),
-                            jump_url=f"https://discord.com/channels/1/{self.id}/{len(self.msgs)}"))
+    def add(self, author=PERSON, content="", files=(), money=False, ago=300, embeds=()):
+        m = NS(author=author, content=content, attachments=[Att(f) for f in files], embeds=list(embeds),
+               reactions=[NS(emoji=fo.MONEY)] if money else [],
+               created_at=datetime.now(timezone.utc) - timedelta(seconds=ago),
+               jump_url=f"https://discord.com/channels/1/{self.id}/{len(self.msgs)}")
+        self.msgs.append(m)
+        return m
 
     async def history(self, limit=100):
         for m in self.msgs[::-1][:limit]:
             yield m
 
-    async def send(self, text, file=None, files=None):
+    async def send(self, content=None, embeds=None, file=None, files=None, delete_after=None):
+        text = flat(content, embeds)
         self.sent.append((text, file.filename if file else None))
-        self.add(ME, text, ago=0)
+        self.shown.append(text)
+        m = self.add(ME, content or "", ago=0, embeds=embeds or [])
+        i, ch = len(self.sent) - 1, self
+
+        async def edit(content=None, embeds=None, attachments=None):
+            text = flat(content, embeds)
+            ch.sent[i] = (text, attachments[0].filename if attachments else ch.sent[i][1])
+            ch.shown.append(text)
+            m.content, m.embeds = content or "", embeds or []
+        m.edit = edit
+        return m
 
 
 ERRORS = Channel(99)
@@ -71,11 +93,12 @@ class Inter:
     def __init__(self, ch):
         self.channel, self.replies = ch, []
         self.response = NS(send_message=self.reply, is_done=lambda: True)
+        self.followup = NS(send=self.reply)
 
-    async def reply(self, text, ephemeral=False):
-        self.replies.append(text)
+    async def reply(self, content=None, embeds=None, ephemeral=False):
+        self.replies.append(flat(content, embeds))
         if not ephemeral:
-            self.channel.add(ME, text, ago=0)
+            self.channel.add(ME, content or "", ago=0, embeds=embeds or [])
 
 
 def folder(cid, name="Q184", flags=2, topic=CAR, extra=()):
@@ -112,8 +135,10 @@ async def main():
     ch = await run(folder(10))
     text, fname = ch.sent[-1]
     check("spreadsheet posted", fname, "Q184-mitsubishi-shogun-2007.xlsx")
-    check("listings counted", "found 6 listings for 7 parts" in text, True)
-    check("running message", any("Running 2 parts" in t for t, _ in ch.sent), True)
+    check("parts counted", "priced **6 of 7** parts" in text, True)
+    check("running shown", any("Running 2 parts" in t for t in ch.shown), True)
+    check("one card per run", len(ch.sent), 1)
+    check("card ends done", "Done" in text, True)
     run_dir = next((TMP / "car-10-10").iterdir())
     check("photo names", sorted(p.name for p in (run_dir / "photos").iterdir()), ["001.jpg", "002.webp"])
     check("own spend ledger used", (run_dir / "results" / "results.xlsx").exists(), True)
@@ -129,7 +154,7 @@ async def main():
     ]
     for what, ch, code in cases:
         await run(ch)
-        check(what, f"`{code}`" in last_error() and f"`{code}`" in ch.sent[-1][0], True)
+        check(what, f"`{code}`" in last_error() and look.TITLES[code] in ch.sent[-1][0], True)
 
     # Name model failures and a crash, from the simulated run's log.
     for i, (sim, code) in enumerate([("rate-limit", "BEAR-N01"), ("no-response", "BEAR-N02"),
@@ -142,14 +167,14 @@ async def main():
     ch = folder(30)
     ch.add(files=["IMG_99.jpg"], money=True, ago=0)
     await run(ch)
-    check("waited for uploads", any("still uploading" in t for t, _ in ch.sent), True)
+    check("waited for uploads", any("Waiting for uploads" in t for t in ch.shown), True)
     check("ran after waiting", ch.sent[-1][1], "Q184-mitsubishi-shogun-2007.xlsx")
 
     # Three folders at once with two slots: one is queued, all three finish.
     chans = [folder(40 + i, name=f"BOX{i}") for i in range(3)]
     os.environ["BEAR_SIM"] = "ok"
     await asyncio.gather(*(B.run.callback(Inter(c)) for c in chans))
-    check("one queued", sum(any("queued" in t for t, _ in c.sent) for c in chans), 1)
+    check("one queued", sum(any("Queued" in t for t in c.shown) for c in chans), 1)
     check("all three posted", [c.sent[-1][1] for c in chans],
           [f"BOX{i}-mitsubishi-shogun-2007.xlsx" for i in range(3)])
     check("nothing left running", B.ACTIVE, {})
@@ -158,8 +183,34 @@ async def main():
     ch, second = folder(50), None
     second = Inter(ch)
     await asyncio.gather(B.run.callback(Inter(ch)), B.run.callback(second))
-    check("second /run refused", any("in this channel is still" in r for r in second.replies), True)
+    check("second /run refused", any("here is still" in r for r in second.replies), True)
     check("only one spreadsheet", sum(1 for _, f in ch.sent if f), 1)
+
+    # Owner-side problems don't tell the uploader to edit .env; D04 links to the photo.
+    ch = await run(folder(60), "rate-limit")
+    check("N01 card hides the fix", ".env" not in ch.sent[-1][0] and "Nothing for you to do" in ch.sent[-1][0], True)
+    ch = await run(folder(61, extra=[dict(files=["a.jpg", "b.jpg"], money=True)]))
+    check("D04 links the photo", "[Photo 1](https://discord.com/channels/1/61/" in ch.sent[-1][0], True)
+
+    # /newfolder: the marker card, and a heads-up when the folder before was never run.
+    ch = folder(70, name="OLD")
+    i = Inter(ch)
+    await B.newfolder.callback(i, "NEW")
+    check("marker posted", fo.split_folder(ch.msgs[::-1], ME.id)[0], "NEW")
+    check("never-run warning", any("**OLD** was never run" in r for r in i.replies), True)
+    ch = await run(folder(71, name="DONE1"))
+    i = Inter(ch)
+    await B.newfolder.callback(i, "NEXT")
+    check("no warning after a run", any("never run" in r for r in i.replies), False)
+    ch = Channel(72, topic="2012 FORD FIESTA")
+    i = Inter(ch)
+    await B.newfolder.callback(i, "Q1")
+    check("topic order warning", any("start with the make" in r for r in i.replies), True)
+
+    # /status is a card only the person who asked sees.
+    i = Inter(Channel(73))
+    await B.status.callback(i)
+    check("status card", "Nothing running" in i.replies[-1], True)
 
 asyncio.run(main())
 if fails:

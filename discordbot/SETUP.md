@@ -49,18 +49,25 @@ Optional but handy: give the VM a fixed IP (a DHCP reservation on the router) so
 3. **General Information** page: copy the **Application ID**.
 4. Invite the bot. Open this link with your Application ID in place of `APP_ID`:
    ```
-   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=2147593280
+   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=2416045136
    ```
-   That gives it exactly: View Channels, Send Messages, Read Message History, Attach Files,
-   Add Reactions, Manage Messages (to delete text-only messages), Use Application Commands.
-5. In your server:
-   - Make a category called **Cars**. Every car gets a text channel in it; the channel
-     **topic** is the exact vehicle text, make first, e.g. `FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL`.
-   - Make an **error channel** (e.g. `#bear-errors`) **outside** Cars.
-6. Copy the IDs: Discord settings > Advanced > turn on **Developer Mode**, then right-click:
-   - the server icon > **Copy Server ID** → `DISCORD_GUILD_ID`
-   - the error channel > **Copy Channel ID** → `ERROR_CHANNEL_ID`
-   - the Cars category > **Copy Category ID** → `CARS_CATEGORY_ID`
+   That gives it: View Channels, Send Messages, Read Message History, Attach Files,
+   **Embed Links** (the bot's cards don't show without it), Add Reactions, Manage Messages (to
+   delete text-only messages and pin the guide), Use Application Commands, plus **Manage
+   Channels** and **Manage Roles**, which only the one-off layout script in §3 uses. You can take
+   those two away afterwards (Server Settings > Roles > BEAR).
+5. Copy the server ID: Discord settings > Advanced > turn on **Developer Mode**, then right-click
+   the server icon > **Copy Server ID** → `DISCORD_GUILD_ID`.
+6. The channels are made for you in §3 (`setup_server.py`):
+   - **🐻 BEAR** with `#how-to-bear` (the guide, pinned) and `#bear-errors` (the error channel),
+     both read-only for everyone but the bot.
+   - **🚗 Cars**: every car gets a text channel here; the channel **topic** is the exact vehicle
+     text, make first, e.g. `FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL`.
+   - **🗄️ Done**: drag finished cars here; it's read-only and commands are refused.
+
+   The layout and how every message looks are explained in [FRONTEND.md](FRONTEND.md).
+   To make them by hand instead, copy the IDs with right-click: the error channel > **Copy
+   Channel ID** → `ERROR_CHANNEL_ID`, the Cars category > **Copy Category ID** → `CARS_CATEGORY_ID`.
 
 ---
 
@@ -87,14 +94,17 @@ nano /opt/bear/.env
 ```
 
 Paste the OpenRouter key and eBay keys (the same ones the Mac uses), the Discord token and the
-three IDs from §2. Leave `BEAR_SIM=ok` for now. Save with Ctrl+O, Enter, Ctrl+X. Then:
+server ID from §2. Leave `BEAR_SIM=ok` for now. Save with Ctrl+O, Enter, Ctrl+X. Then lay out
+the server. This makes the channels, pins the guide and writes the other two IDs into `.env`.
+It's safe to run again; it only adds what's missing:
 
 ```
+/opt/bear/.venv/bin/python /opt/bear/discordbot/setup_server.py --write-env
 systemctl restart bear-bot
 systemctl status bear-bot        # should say "active (running)"
 ```
 
-Within a few seconds the error channel shows **🐻 BEAR bot started: 2 folders at once, dev mode**.
+Within a few seconds `#bear-errors` shows a grey **🐻 BEAR is online** card that mentions dev mode.
 If not, see §6.
 
 `.env` is only readable by root and the `bear` user and never leaves the VM.
@@ -110,10 +120,11 @@ real (folders, 💸, downloads, queue, errors) but the photo reads, eBay results
 1. In Cars, make a channel `test-car` with topic `MITSUBISHI SHOGUN 2007 3.2 DI-D`.
 2. `/newfolder name: T1` → the bot posts **📁 Folder T1**.
 3. Upload a few photos. Post one on its own and react to it with 💸. Type some text: it is deleted.
-4. `/run` → "Checking the folder", "Running 1 parts", then the spreadsheet `T1-mitsubishi-shogun-2007.xlsx`.
+4. `/run` → one card that changes as it goes: "Checking the folder", "Running 1 part", then green
+   "Done" with the spreadsheet `T1-mitsubishi-shogun-2007.xlsx` attached. The footer says DEV MODE.
 5. Try the mistakes: `/run` with no 💸 (→ `BEAR-D03`), 💸 on a message with two photos
-   (→ `BEAR-D04`), a channel with no topic (→ `BEAR-D01`). Each one shows in the car channel and
-   the error channel with its fix.
+   (→ `BEAR-D04`), a channel with no topic (→ `BEAR-D01`). Each one turns the card red with what to
+   do (D04 links to the photo), and the error channel gets the code, the fix and the details.
 6. Two at once: make a second car channel, start a folder in each, `/run` both, then `/status`.
    With three channels, the third says "queued" and starts when one finishes.
 7. Error scenarios: in `.env` change `BEAR_SIM=ok` to `rate-limit`, `no-response`, `unusable` or
@@ -124,7 +135,7 @@ real (folders, 💸, downloads, queue, errors) but the photo reads, eBay results
 ## 5. Go live
 
 1. `nano /opt/bear/.env`, put `#` in front of `BEAR_SIM=ok`, save, `systemctl restart bear-bot`.
-   The start message no longer says dev mode.
+   The "BEAR is online" card no longer mentions dev mode, and the cards lose the DEV MODE footer.
 2. **Photo quality check first** (PLAN §8): Discord's phone app may shrink photos. Upload a few
    test-set photos from the phone, run a small folder, and compare the part numbers with the
    Mac run of the same photos. Only switch over once they match.

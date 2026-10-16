@@ -92,11 +92,12 @@ def scenes():
                  note="Text is removed by the bot (a 10-second notice tells them why)")
         + bot({"content": look.reply("text_removed"), "embeds": []}, when="Today at 13:54",
               note="Notice, deletes itself after 10 s")
-        + bot(look.run_card("checking", "Q184", CAR), used="/run",
-              note="ONE live card, edited in place. Stage 1: checking")
+        + bot({"content": look.reply("on_it"), "embeds": []}, used="/run",
+              ephemeral=True, when="Today at 14:02", note="/run: a private \"on it\", then ONE live card, edited in place")
+        + bot(look.run_card("checking", "Q184", CAR), note="Stage 1: checking")
         + bot(look.run_card("waiting", "Q184", CAR, wait_seconds=30), note="Stage 2 (only if photos are still arriving)")
         + bot(look.run_card("downloading", "Q184", CAR, parts=12, got=7), note="Stage 3: \"Running 12 parts\" appears straight away")
-        + bot(look.run_card("queued", "Q184", CAR, parts=12, queue_ahead=1, max_runs=2), note="Stage 4 (only if 2 boxes are already running)")
+        + bot(look.run_card("queued", "Q184", CAR, parts=12, queue_ahead=1, max_runs=2), note="Stage 4 (only if 2 folders are already running)")
         + bot(look.run_card("running", "Q184", CAR, parts=12, since=NOW - 240), note="Stage 5")
         + bot(look.done_card("Q184", CAR, 12, 10, fname, minutes=9), file=fname, when="Today at 14:11",
               note="Final state: the same card, green, with the spreadsheet"))

@@ -63,6 +63,8 @@ for state in ("checking", "waiting", "downloading", "queued", "running"):
     if state not in ("checking", "waiting"):
         check(f"{state} says Running x parts", "Running 12 parts" in p["embeds"][0]["title"])
 check("1 part is singular", "Running 1 part " in look.run_card("running", "Q", CAR, parts=1)["embeds"][0]["title"] + " ")
+check("checking before the folder is known", look.run_card("checking", None, CAR)["embeds"][0]["title"].endswith("Checking the folder"))
+check("problem with no folder", "None" not in look.problem_card(None, "BEAR-D02", 9)["embeds"][0]["title"])
 try:
     look.run_card("bogus", "Q", CAR)
     fails.append("unknown state accepted")
@@ -76,12 +78,13 @@ fits("status", look.status_card([{"folder": "Q1", "channel_id": 5, "state": "run
 fits("started", look.bot_started(2, "all_ok", "0.4"))
 fits("guide", look.guide(9))
 for key in look.REPLIES:
-    text = look.reply(key, folder="Q1", state="running", name="Q1")
+    text = look.reply(key, folder="Q1", state="running", name="Q1", first="2012")
     check(f"reply {key} fits", 0 < len(text) <= 2000)
 for name, c in look.COMMANDS.items():
     check(f"/{name} name", re.fullmatch(r"[a-z0-9_-]{1,32}", name) is not None)
     check(f"/{name} description", 1 <= len(c["description"]) <= 100)
     check(f"/{name} options", all(1 <= len(d) <= 100 for d in c["options"].values()))
+check("messages say folder, not box", "box" not in str([look.guide(), look.REPLIES, look.UPLOADER_FIX, look.TITLES]).replace("box of parts", ""))
 check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status"})
 
 if fails:
