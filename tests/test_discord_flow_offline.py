@@ -19,6 +19,9 @@ TMP = Path(tempfile.mkdtemp(prefix="bear-discord-test-"))
 os.environ.update({"DISCORD_GUILD_ID": "1", "ERROR_CHANNEL_ID": "99", "BEAR_STORAGE": str(TMP),
                    "BEAR_UPLOAD_WAIT": "1", "BEAR_MAX_RUNS": "2", "BEAR_SIM_PAUSE": "0.02"})
 os.environ.pop("CARS_CATEGORY_ID", None)
+sys.path.insert(0, str(ROOT / "tools"))
+import jev_client  # noqa: E402
+jev_client.ENV_FILE = TMP / "no.env"   # the server's .env (PASTE_HERE lines, real IDs) must not change the test
 sys.path.insert(0, str(ROOT / "discordbot"))
 import bot as B  # noqa: E402
 import folders as fo  # noqa: E402

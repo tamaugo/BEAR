@@ -41,8 +41,16 @@ def dotenv():
 
 
 def setting(name, default=None):
-    v = os.environ.get(name) or dotenv().get(name)
-    return v.strip() if v and v.strip() else default
+    """A setting, or default when it is unset, blank or still the PASTE_HERE placeholder."""
+    v = (os.environ.get(name) or dotenv().get(name) or "").strip()
+    return v if v and v != "PASTE_HERE" else default
+
+
+def config_error(text):
+    """Stop with a message for the log. Exit 78 tells systemd not to restart (bear-bot.service):
+    the bot stays stopped until .env is fixed and it is restarted."""
+    print(text, file=sys.stderr)
+    sys.exit(78)
 
 
 def number(name, default=None):
@@ -50,10 +58,10 @@ def number(name, default=None):
     v = setting(name)
     if v is None:
         if default is None:
-            sys.exit(f"{name} is missing from .env (see discordbot/SETUP.md)")
+            config_error(f"{name} is not filled in, in /opt/bear/.env (see discordbot/SETUP.md)")
         return default
     if not v.isdigit():
-        sys.exit(f"{name} in .env must be a number only (no spaces or comments after it), not {v!r}")
+        config_error(f"{name} in .env must be a number only (no spaces or comments after it), not {v!r}")
     return int(v)
 
 
@@ -326,9 +334,14 @@ async def on_command_error(inter: discord.Interaction, error):
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if not TOKEN:
-        sys.exit("DISCORD_TOKEN is missing from .env (see discordbot/SETUP.md)")
+        config_error("DISCORD_TOKEN is not filled in, in /opt/bear/.env (see discordbot/SETUP.md)")
     STORAGE.mkdir(parents=True, exist_ok=True)
-    bot.run(TOKEN, log_handler=None)
+    try:
+        bot.run(TOKEN, log_handler=None)
+    except discord.LoginFailure:
+        config_error("Discord refused DISCORD_TOKEN: paste the current token from the Bot page into .env (SETUP.md part 2)")
+    except discord.PrivilegedIntentsRequired:
+        config_error("Turn on Message Content Intent on the Discord Bot page (SETUP.md part 2), then restart")
 
 
 if __name__ == "__main__":

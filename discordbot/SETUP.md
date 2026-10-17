@@ -156,6 +156,7 @@ traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …
 
 | Problem | Fix |
 |---|---|
+| Status says `inactive` / `status=78` | A setting in `.env` is not filled in or wrong; the last log line says which. Fix it, then `systemctl restart bear-bot` (it won't retry by itself). |
 | `/run` says "The application did not respond" | The bot is down or the VM has no internet: `systemctl status bear-bot`, then the log. |
 | `/newfolder` and `/run` don't appear | Wrong `DISCORD_GUILD_ID`, or the bot was invited without `applications.commands`: re-open the invite link (§2.4). Then restart. |
 | Log says `PrivilegedIntentsRequired` | Turn on Message Content Intent (§2.2), restart. |
