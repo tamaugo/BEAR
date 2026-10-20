@@ -36,13 +36,13 @@ Discord login in the shared preview is also restored.
 |---|---|
 | C4: two running, one queued | PASS: two VM processes, third card queued, private `/status` listed all three; all finished on their original cards with spreadsheets |
 | C6: automatic return after VM reboot | PASS: new boot ID, bot active, SSD mounts correct and new Discord online card |
-| C7: live photo on the VM | Pending: browser lost its login while opening the source photo; no live run started |
+| C7: live photo on the VM | PASS: owner's live `PHONETEST` run finished green with two real part numbers/prices and a spreadsheet |
 | C9: private unrun-folder warning | PASS: human `/newfolder C9OLD`, one photo with 💸, then `/newfolder C4A` produced a new public marker and a warning marked "Only you can see this" |
-| Phone photo-quality comparison | Not attempted; requires phone uploads and matching source photos |
+| Phone photo-quality comparison | PASS for this three-photo sample: same resolution, part numbers, prices and unreadable-photo outcome as the original Mac run |
 
 No feature branch was deployed. The temporary C4 simulation delay was removed.
-Live mode was briefly enabled to prepare C7, then simulation mode was restored when
-Discord required login again. The bot is active in simulation mode; no live run started.
+The bot is active in live mode after the owner's phone run. `BEAR_SIM` is commented
+out; the per-folder spend cap is unchanged. No Mac bot was started.
 The C9 screenshot checks the existing warning behavior; this PR's corrected wording
 is verified offline and awaits deployment. C9's photo message is
 `1562167872841846987` in `#test-ford-focus`.
@@ -58,13 +58,36 @@ folder has one downloaded photo and a 3,346-byte spreadsheet on the SSD:
 Run-card message IDs are `1562168329546899530`, `1562168333208518808` and
 `1562168345598361723`. The private status message was `1562168353802555395`.
 
+## Live phone comparison
+
+The owner uploaded the same three Q184 source photos through the phone app into
+`PHONETEST` in `#test-ford-focus`. The green result card is
+[`1562175337339555911`](https://discord.com/channels/1559923225746739334/1562152643160444958/1562175337339555911),
+with `PHONETEST-ford-focus-mk3.xlsx` attached and no DEV footer. The run is stored at
+`/var/lib/bear/runs/test-ford-focus-1562152643160444958/PHONETEST-20261020-144721`.
+Its recorded model cost is **$0.00344775** and the spreadsheet is 3,386 bytes.
+
+The actual originals are in `~/Desktop/temp/Q184 FFOCUSMK3-3 09-10`. They match the
+source files beside the original Mac results by SHA-256. The comparison uses that
+original Mac run's `agent2_results.md` in
+`~/Documents/BEAR/Q184 FFOCUSMK3-3 09-10-20261013-220645/bear-results-20261013-220648`.
+
+| Original photo | Original Mac result | Live phone result | Original / phone bytes |
+|---|---|---|---|
+| IMG_6448 | BM51-17504-BH, £19.99 | BM51-17504-BH, £19.99 | 737,597 / 244,090 |
+| IMG_6457 | 3M51-6F012-BH, £19.99 | 3M51-6F012-BH, £19.99 | 857,833 / 306,921 |
+| IMG_6467 | No clear part number (Agent 1) | No clear part number (Agent 1) | 1,332,032 / 463,753 |
+
+All originals and phone copies are **1536 × 2048 pixels**. The phone copies were
+recompressed, but this sample shows no loss of the Mac run's successful results.
+Phone upload order differs: `001.jpg` is IMG_6457, `002.jpg` is IMG_6448 and `003.jpg`
+is IMG_6467; the run's `photos.tsv` preserves this mapping.
+
 ## Next steps
 
-1. Restore Discord login and finish C7 with one real photo. The existing Q184
-   `IMG_6448.JPEG` has a visibly readable `BM51-17504-BH` label and a previous Mac
-   result of £19.99; its downloaded bytes have SHA-256
-   `f64aecfbacfefa4f6b308006528f35fb7826142f036ebf55d633bb9218ea08ff`.
-2. Complete the phone photo-quality comparison before real use. The owner has been
-   asked whether the Q184 photos were phone uploads and where their originals are.
-3. Owner merges the PRs when satisfied, then update the VM from `discord-bear` and
-   verify the resulting deployment.
+1. Owner reviews and merges PRs #27, #28 and #29 into `discord-bear`.
+2. Check that no folders are active, update the VM from `discord-bear`, then verify
+   the offline suites, service, SSD mounts and online card.
+
+Frontend review found no code blockers. A router DHCP reservation would prevent
+the VM's address changing on a future reboot; no router changes were made.
