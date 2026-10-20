@@ -139,8 +139,9 @@ def folder_card(name, car, dev=False):
 
 def open_folder_warning(previous):
     """Ephemeral note on /newfolder when the folder before it was never /run (its photos would be skipped)."""
-    return (f"Heads up: folder **{previous}** was never run. Its photos won't be priced unless you "
-            f"scroll up and **/run** it first. This new folder has started anyway.")
+    return (f"Heads up: folder **{previous}** was never run. **/run** now uses this new folder. "
+            f"To price the earlier photos, upload them again below this folder's marker, "
+            f"react {MONEY} on each part-number photo, then **/run**.")
 
 
 # --- The live run card ---------------------------------------------------------------------------

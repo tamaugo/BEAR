@@ -10,11 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "discordbot"))
 import look  # noqa: E402
+from folders import ERRORS, MARKER, marker  # noqa: E402
 
-CODES = ["BEAR-D01", "BEAR-D02", "BEAR-D03", "BEAR-D04", "BEAR-D05", "BEAR-D06", "BEAR-N01", "BEAR-N02",
-         "BEAR-N03", "BEAR-K01", "BEAR-K02", "BEAR-T01", "BEAR-R01"]
-# The pattern /run reads the marker back with (discordbot/folders.py MARKER).
-MARKER = re.compile(r"^\N{FILE FOLDER} Folder \*\*([A-Za-z0-9][A-Za-z0-9_-]{0,39})\*\*")
 CAR = "FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL"
 fails = []
 
@@ -40,7 +37,8 @@ def fits(what, post):
     check(f"{what}: embeds over 6000", total <= L["embed_total"])
 
 
-for code in CODES:
+# Use the backend's registry so a new error cannot silently ship without frontend wording.
+for code in ERRORS:
     check(f"{code} has an uploader entry", code in look.UPLOADER_FIX)
     check(f"{code} has a title", code in look.TITLES)
     fits(code, look.problem_card("Q184", code, 1, ["https://discord.com/x"] * 30))
@@ -55,6 +53,7 @@ check("owner problem says nothing to do", "Nothing for you to do" in look.proble
 check("photo links capped at 10", look.problem_card("Q1", "BEAR-D04", 9, ["u"] * 14)["embeds"][0]["description"].count("[Photo") == 10)
 
 m = MARKER.match(look.folder_card("Q184", CAR)["content"])
+check("marker exactly matches the backend", look.folder_card("Q184", CAR)["content"] == marker("Q184"))
 check("marker reads back", m and m.group(1) == "Q184")
 fits("folder", look.folder_card("Q184", CAR, dev=True))
 for state in ("checking", "waiting", "downloading", "queued", "running"):
