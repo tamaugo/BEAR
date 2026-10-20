@@ -192,7 +192,7 @@ def asker():
 
 
 def start_model():
-    """The first name model to check: the web page's kept model, else the default."""
+    """The name model to start with: BEAR_NAME_MODEL (set in .env on the Discord server), else the default."""
     m = os.environ.get("BEAR_NAME_MODEL")
     return m if m in NAME_MODELS else MODEL
 
@@ -268,7 +268,7 @@ def main(run_dir, vehicle, ask=None, model=None):
     priced = {f"i{k}": f for k, f in enumerate(rows) if f[1] != "FAILED"}
     if model and ask and priced and model != check.get("model"):
         check = approve(run, vehicle, priced, check, ask, model)
-    model = check.get("model") or MODEL
+    model = check.get("model") or start_model()   # no first-line check (Discord): BEAR_NAME_MODEL or the default
     todo = {k: f for k, f in priced.items() if f[0] != check.get("image")}
     print(f"Cleaning part names ({label(model)}) ...", file=sys.stderr, flush=True)
     while True:

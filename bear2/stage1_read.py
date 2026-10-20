@@ -123,7 +123,7 @@ if __name__ == "__main__":
     folder, vehicle = Path(sys.argv[1]), sys.argv[2]
     model = sys.argv[3] if len(sys.argv) > 3 else MODEL
     out = Path(sys.argv[4]) if len(sys.argv) > 4 else Path("stage1.json")
-    photos = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+    photos = sorted(p for p in folder.iterdir() if p.suffix.lower() in c.PHOTO_EXT)
     with cf.ThreadPoolExecutor(6) as ex:
         res = dict(zip([p.name for p in photos], ex.map(lambda p: read_photo(p, vehicle, model), photos)))
     out.write_text(json.dumps(res, indent=1))

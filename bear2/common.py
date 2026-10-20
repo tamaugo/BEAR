@@ -4,7 +4,7 @@ cache, OpenRouter chat + Jev decisions calls with a cost ledger.
 Secrets: loaded from BEAR/.env into this process only. Nothing here ever prints,
 logs or returns a secret value.
 """
-import base64, hashlib, json, os, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, hashlib, json, os, sys, threading, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,7 +13,8 @@ import jev_client  # noqa: E402
 
 CACHE = ROOT / "bear2" / "cache"
 CACHE.mkdir(parents=True, exist_ok=True)
-LEDGER = ROOT / "bear2" / "spend.jsonl"
+LEDGER = Path(os.environ.get("BEAR_SPEND_LEDGER") or ROOT / "bear2" / "spend.jsonl")   # the Discord bot gives each run its own
+PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")   # photos BEAR reads; everything else in the folder is ignored
 
 
 def _env(name):
@@ -93,7 +94,10 @@ def ebay_search_raw(q, limit=200, max_age_h=24, category=CAR_PARTS_CATEGORY):
         # Measured (IMG_3974): eBay occasionally returns a degraded payload with no
         # condition field on any item, which silently disables the used-first rule.
         if not items or sum(1 for i in items if i.get("condition")) >= 0.5 * len(items):
-            cf.write_text(json.dumps({"q": q, "items": items}))
+            # temp file + rename: two runs at once (Discord bot) never read a half-written file
+            tmp = cf.with_name(f"{cf.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp.write_text(json.dumps({"q": q, "items": items}))
+            os.replace(tmp, cf)
             return items
         time.sleep(1 + attempt)
     return items  # degraded, not cached
