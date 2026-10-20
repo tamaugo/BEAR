@@ -70,15 +70,29 @@ async def text_channel(guild, cat, name, topic, overwrites, wanted_id=None):
 
 
 async def pin_guide(ch, me, errors_id):
+    """Post the guide, or update the one already there (pinned or among the last 50 messages), and pin it.
+    Pinning needs Discord's separate Pin Messages permission; without it the guide is still posted."""
     post = look.kwargs(look.guide(errors_id))
-    for m in await ch.pins():
-        if m.author.id == me.id and m.embeds and m.embeds[0].title == GUIDE_TITLE:
-            await m.edit(**post)
-            print(f"  guide in #{ch.name} updated")
-            return
-    m = await ch.send(**post)
-    await m.pin()
-    print(f"  guide posted and pinned in #{ch.name}")
+    mine = lambda m: m.author.id == me.id and m.embeds and m.embeds[0].title == GUIDE_TITLE
+    found = None
+    try:
+        found = next(iter([m async for m in ch.pins() if mine(m)]), None)
+    except discord.DiscordException:
+        pass
+    if found is None:
+        found = next(iter([m async for m in ch.history(limit=50) if mine(m)]), None)
+    if found is not None:
+        await found.edit(**post)
+        print(f"  guide in #{ch.name} updated")
+    else:
+        found = await ch.send(**post)
+        print(f"  guide posted in #{ch.name}")
+    if not found.pinned:
+        try:
+            await found.pin()
+            print("  guide pinned")
+        except discord.Forbidden:
+            print(f"  couldn't pin the guide (the bot needs Pin Messages): pin it by hand in #{ch.name}")
 
 
 async def lay_out(client, guild_id, write):
@@ -130,7 +144,13 @@ def main():
         except SystemExit as e:
             result["exit"] = e.code
         except discord.Forbidden as e:
+            import traceback
+            traceback.print_exc()
             result["exit"] = f"Discord said no ({e.text}). Check the bot's role is above @everyone and it has the setup permissions."
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            result["exit"] = f"Setup stopped: {type(e).__name__}: {e}"
         finally:
             await client.close()
 
