@@ -49,11 +49,12 @@ Optional but handy: give the VM a fixed IP (a DHCP reservation on the router) so
 3. **General Information** page: copy the **Application ID**.
 4. Invite the bot. Open this link with your Application ID in place of `APP_ID`:
    ```
-   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=2416045136
+   https://discord.com/oauth2/authorize?client_id=APP_ID&scope=bot+applications.commands&permissions=2251802229730384
    ```
    That gives it: View Channels, Send Messages, Read Message History, Attach Files,
    **Embed Links** (the bot's cards don't show without it), Add Reactions, Manage Messages (to
-   delete text-only messages and pin the guide), Use Application Commands, plus **Manage
+   delete text-only messages), **Pin Messages** (to pin the guide; Discord split it from Manage
+   Messages), Use Application Commands, plus **Manage
    Channels** and **Manage Roles**, which only the one-off layout script in §3 uses. You can take
    those two away afterwards (Server Settings > Roles > BEAR).
 5. Copy the server ID: Discord settings > Advanced > turn on **Developer Mode**, then right-click
