@@ -27,6 +27,8 @@ ERRORS = {
                  "Re-upload it as JPG, PNG or WEBP, flag it with 💸, then /run again."),
     "BEAR-D06": ("A 💸 photo couldn't be downloaded from Discord.",
                  "/run again. If it keeps failing, re-upload that photo."),
+    "BEAR-D07": ("The photos couldn't be renamed: one didn't download, or a zip couldn't be posted.",
+                 "/rename again with the same SKU. If it keeps failing, re-upload that photo or look at the bot's log."),
     "BEAR-N01": ("The name model is rate limited.",
                  "Wait a few minutes and /run again, or set BEAR_NAME_MODEL in the server's .env to another name model."),
     "BEAR-N02": ("The name model is not responding.",

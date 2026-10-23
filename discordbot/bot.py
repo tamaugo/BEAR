@@ -3,6 +3,9 @@
 photos and runs BEAR on them as a separate process, then posts the spreadsheet. Up to
 BEAR_MAX_RUNS folders (default 2) run at once; more wait in a queue. Errors go to the error
 channel with a code and a fix (folders.ERRORS). /status lists what is running.
+Renaming (renames.py) is separate from BEAR: /run offers to rename every photo in the folder to
+SKU-1, SKU-2 ... for BEAR_RENAME_WAIT seconds, and posts them as zips after the spreadsheet;
+/rename does only that. /quit stops everything /run or /rename is doing in the channel.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -12,14 +15,17 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_MAX_RUNS        folders running at once (2)
   BEAR_UPLOAD_WAIT     seconds with no new upload before /run starts (30)
   BEAR_RUN_TIMEOUT     seconds before a run is stopped (7200)
-  BEAR_STORAGE         where photos, results and logs are kept (<repo>/runs)
+  BEAR_STORAGE         where photos, results and logs are kept (<repo>/runs); renames go in its renames/
+  BEAR_RENAME_WAIT     seconds /run gives people to type a SKU (60); read at each /run, no restart
+  BEAR_RENAME_DOWNLOADS  photos downloaded at once for renaming, across all channels (6)
+  BEAR_ZIP_MB          biggest zip posted, in MiB (10: Discord's limit without server boosts)
   BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
 
 usage: python3 discordbot/bot.py       (systemd runs this: discordbot/deploy/bear-bot.service)
 """
-import asyncio, logging, os, signal, sys, time, traceback
+import asyncio, logging, os, shutil, signal, sys, time, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +37,7 @@ import discord  # noqa: E402
 from discord import app_commands  # noqa: E402
 import folders as fo  # noqa: E402
 import look  # noqa: E402
+import renames as rn  # noqa: E402
 
 log = logging.getLogger("bear-bot")
 RUN_PY = REPO / "bear2" / "run.py"
@@ -78,14 +85,34 @@ MAX_RUNS = max(1, number("BEAR_MAX_RUNS", 2))
 UPLOAD_WAIT = number("BEAR_UPLOAD_WAIT", 30)
 RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
 STORAGE = Path(setting("BEAR_STORAGE", str(REPO / "runs")))
+RENAMES_DIR = STORAGE / "renames"   # on the same disk as the runs (the SSD on the VM)
+RENAME_DOWNLOADS = max(1, number("BEAR_RENAME_DOWNLOADS", 6))
+ZIP_MB = max(1, number("BEAR_ZIP_MB", 10))
+NO_CAR = "No car in the topic"
 
 SLOTS = asyncio.Semaphore(MAX_RUNS)
-ACTIVE = {}   # channel id -> {"folder", "state", "parts", "since"}: one folder per car channel at a time
+# Renames have no limit on how many run at once. What keeps CPU and memory down is that photos
+# are downloaded RENAME_DOWNLOADS at a time across all of them (each is held in memory while it
+# is saved) and zips are written two at a time (stored, not compressed: disk work only).
+DOWNLOADS = asyncio.Semaphore(RENAME_DOWNLOADS)
+ZIPPING = asyncio.Semaphore(2)
+ACTIVE = {}   # channel id -> {"folder", "state", "parts", "since", "task"}: one /run per car channel at a time
+RENAMES = {}  # channel id -> set of /rename tasks, so /quit can stop them
 NOTICED = {}  # channel id -> when the last "text was removed" notice was posted
 
 
 def dev():
     return bool(setting("BEAR_SIM"))
+
+
+def rename_wait():
+    """BEAR_RENAME_WAIT, read again at each /run. A typo here logs a warning and uses 60 rather
+    than stopping the bot in the middle of a run."""
+    v = setting("BEAR_RENAME_WAIT", "60")
+    if not v.isdigit():
+        log.warning("BEAR_RENAME_WAIT in .env must be a number of seconds, not %r: using 60", v)
+        return 60
+    return max(5, int(v))
 
 
 def version():
@@ -102,15 +129,17 @@ class Card:
     def __init__(self, ch):
         self.ch, self.msg = ch, None
 
-    async def show(self, post, file=None):
+    async def show(self, post, file=None, view=False):
+        """view: buttons to put under the card, None to take them away, False to leave them."""
+        buttons = {} if view is False else {"view": view}
         try:
             if self.msg is not None:
                 extra = {"attachments": [file]} if file else {}
-                return await self.msg.edit(**look.kwargs(post), **extra)
+                return await self.msg.edit(**look.kwargs(post), **extra, **buttons)
         except discord.DiscordException:
-            log.warning("can't edit the run card in %s, posting a new one", self.ch, exc_info=True)
+            log.warning("can't edit the card in %s, posting a new one", self.ch, exc_info=True)
         extra = {"file": file} if file else {}
-        self.msg = await self.ch.send(**look.kwargs(post), **extra)
+        self.msg = await self.ch.send(**look.kwargs(post), **extra, **({"view": view} if view else {}))
 
 
 def run_env():
@@ -161,7 +190,7 @@ class Bot(discord.Client):
         meaning, fix = fo.ERRORS[code]
         await self.to_errors(look.error_report(label, code, meaning, fix, ch.id, (ch.topic or "").strip() or None,
                                                detail, jump_url, dev()), files)
-        links = LINK.findall(detail) if code in ("BEAR-D04", "BEAR-D05", "BEAR-D06") else []
+        links = LINK.findall(detail) if code in ("BEAR-D04", "BEAR-D05", "BEAR-D06", "BEAR-D07") else []
         post = look.problem_card(folder, code, ERROR_CHANNEL_ID, links, dev(), partial)
         try:
             await (card or Card(ch)).show(post)
@@ -257,23 +286,119 @@ async def run(inter: discord.Interaction):
         return await inter.response.send_message(look.reply("busy", folder=a["folder"] or "(checking)", state=a["state"]),
                                                   ephemeral=True)
     # Claimed before the first await, so a second /run straight after this one is refused.
-    ACTIVE[ch.id] = {"folder": None, "state": "being checked", "parts": 0, "since": time.time(),
-                     "channel_id": ch.id}
-    folder, card = None, Card(ch)
+    a = ACTIVE[ch.id] = {"folder": None, "state": "being checked", "parts": 0, "since": time.time(),
+                         "channel_id": ch.id}
+    card = Card(ch)
     try:
         await inter.response.send_message(look.reply("on_it"), ephemeral=True)
-        folder = await run_folder(ch, card)
-    except fo.FolderError as e:
-        a = ACTIVE[ch.id]
-        await bot.fail(ch, a["folder"], e.code, e.detail, card=card, jump_url=a.get("marker_url"))
-    except Exception:
-        log.exception("run failed in %s", ch)
-        a = ACTIVE[ch.id]
-        await bot.fail(ch, a["folder"], "BEAR-R01", traceback.format_exc()[-1400:], card=card,
-                       jump_url=a.get("marker_url"))
+        if not a.get("quit"):
+            a["task"] = asyncio.create_task(whole_run(ch, card, a))   # /quit cancels this
+            await a["task"]
+    except asyncio.CancelledError:
+        if not a.get("quit"):   # the bot is stopping, not /quit
+            raise
     finally:
         ACTIVE.pop(ch.id, None)
-    log.info("run finished in %s (%s)", ch, folder)
+    if a.get("quit") and not a.get("bear_finished"):   # a finished spreadsheet card stays as it is
+        try:
+            await card.show(look.stopped_card(a["folder"], dev()))
+        except discord.DiscordException:
+            log.exception("can't post in %s", ch)
+    log.info("run %s in %s (%s)", "stopped" if a.get("quit") else "finished", ch, a["folder"])
+
+
+async def whole_run(ch, card, a):
+    """Everything one /run does: BEAR on the 💸 photos, and beside it the offer to rename every
+    photo in the folder, whose zip is posted after the spreadsheet. The two don't depend on each
+    other: either can fail on its own. Cancelling this task (/quit) stops both."""
+    car = (ch.topic or "").strip()
+    await card.show(look.run_card("checking", None, car or NO_CAR, dev=dev()))
+    ready, bear_done = asyncio.get_running_loop().create_future(), asyncio.Event()
+    renaming = asyncio.create_task(offer_rename(ch, ready, bear_done))
+    try:
+        try:
+            await run_folder(ch, card, a, ready)
+        except fo.FolderError as e:
+            await bot.fail(ch, a["folder"], e.code, e.detail, card=card, jump_url=a.get("marker_url"))
+        except Exception:
+            log.exception("run failed in %s", ch)
+            await bot.fail(ch, a["folder"], "BEAR-R01", traceback.format_exc()[-1400:], card=card,
+                           jump_url=a.get("marker_url"))
+        finally:
+            if not ready.done():   # no folder: nothing for the rename to number
+                ready.set_result(None)
+        a["bear_finished"] = True
+        bear_done.set()
+        if not renaming.done():
+            a.update(state="renaming photos")
+        await renaming
+    finally:
+        if not renaming.done():
+            renaming.cancel()
+            await asyncio.gather(renaming, return_exceptions=True)
+
+
+@bot.tree.command(name="quit", description=look.COMMANDS["quit"]["description"])
+async def quit_cmd(inter: discord.Interaction):
+    """Stops the /run in this channel (BEAR, its queue place, the rename offer and zip) and any /rename."""
+    ch = inter.channel
+    a = ACTIVE.get(ch.id)
+    renaming = [t for t in RENAMES.get(ch.id, ()) if not t.done()]
+    if not a and not renaming:
+        return await inter.response.send_message(look.reply("quit_none"), ephemeral=True)
+    what = []
+    if a:
+        a["quit"] = True
+        if a.get("task"):
+            a["task"].cancel()
+        what.append(f"folder **{a['folder']}**" if a["folder"] else "the run")
+    for t in renaming:
+        t.cancel()
+    if renaming:
+        what.append("the renaming")
+    log.info("/quit in %s by %s", ch, inter.user)
+    await inter.response.send_message(look.reply("quit_done", what=" and ".join(what)), ephemeral=True)
+
+
+@bot.tree.command(name="rename", description=look.COMMANDS["rename"]["description"])
+@app_commands.describe(**look.COMMANDS["rename"]["options"])
+async def rename(inter: discord.Interaction, sku: str):
+    """Only the renaming: every photo in the folder, as SKU-1, SKU-2 ... in zips. No BEAR run, so
+    it runs next to a /run or another /rename."""
+    ch = inter.channel
+    problem = car_channel_problem(ch)
+    if problem:
+        return await inter.response.send_message(problem, ephemeral=True)
+    sku = sku.strip()
+    if not rn.SKU.fullmatch(sku):
+        return await inter.response.send_message(look.reply("bad_sku"), ephemeral=True)
+    await inter.response.send_message(look.reply("rename_on_it", sku=sku), ephemeral=True)
+    rcard = Card(ch)
+    task = asyncio.create_task(rename_alone(ch, rcard, sku))
+    RENAMES.setdefault(ch.id, set()).add(task)
+    try:
+        await task
+    except asyncio.CancelledError:
+        if not task.cancelled():   # the bot is stopping, not /quit
+            raise
+    finally:
+        RENAMES.get(ch.id, set()).discard(task)
+        if not RENAMES.get(ch.id):
+            RENAMES.pop(ch.id, None)
+
+
+async def rename_alone(ch, rcard, sku):
+    folder = None
+
+    async def seen(name, marker):
+        nonlocal folder
+        folder = name
+
+    async def work():
+        await rcard.show(look.rename_card("waiting", sku, dev=dev()))
+        _, msgs, _ = await settled_folder(ch, seen)
+        await rename_folder(ch, rcard, folder, msgs, sku)
+    await guard_rename(ch, rcard, lambda: folder, sku, work())
 
 
 @bot.tree.command(name="status", description=look.COMMANDS["status"]["description"])
@@ -292,53 +417,59 @@ async def read_folder(ch):
     return name, after, marker
 
 
-async def run_folder(ch, card):
-    a = ACTIVE[ch.id]
-    car = (ch.topic or "").strip()
-    await card.show(look.run_card("checking", None, car or "No car in the topic", dev=dev()))
+async def settled_folder(ch, seen=None, waiting=None):
+    """The folder once uploads have stopped: (name, messages oldest first, marker). The bot can't
+    see an upload still in progress, so it waits for UPLOAD_WAIT seconds with no new photo.
+    seen(name, marker) is awaited after each read; waiting(name) once, if it has to wait."""
     folder, msgs, marker = await read_folder(ch)
-    a.update(folder=folder, marker_url=getattr(marker, "jump_url", None))
-    if not car:
-        raise fo.FolderError("BEAR-D01")
-    await card.show(look.run_card("checking", folder, car, dev=dev()))
-    # The bot can't see an upload still in progress: wait for UPLOAD_WAIT seconds of quiet.
+    if seen:
+        await seen(folder, marker)
     waited, told = 0, False
     while waited < MAX_UPLOAD_WAIT:
         age = fo.seconds_since_last_upload(msgs)
         if age is None or age >= UPLOAD_WAIT:
             break
-        if not told:
-            await card.show(look.run_card("waiting", folder, car, wait_seconds=UPLOAD_WAIT, dev=dev()))
+        if not told and waiting:
+            await waiting(folder)
             told = True
         pause = UPLOAD_WAIT - age + 1
         await asyncio.sleep(pause)
         waited += pause
         folder, msgs, marker = await read_folder(ch)
+        if seen:
+            await seen(folder, marker)
+    return folder, msgs, marker
+
+
+async def run_folder(ch, card, a, ready):
+    """BEAR's side of /run. ready gets (folder, messages) once uploads have stopped, for the rename."""
+    car = (ch.topic or "").strip()
+
+    async def seen(folder, marker):
+        first = a["folder"] is None
         a.update(folder=folder, marker_url=getattr(marker, "jump_url", None))
+        if first:
+            await card.show(look.run_card("checking", folder, car or NO_CAR, dev=dev()))
+
+    async def waiting(folder):
+        await card.show(look.run_card("waiting", folder, car or NO_CAR, wait_seconds=UPLOAD_WAIT, dev=dev()))
+
+    folder, msgs, marker = await settled_folder(ch, seen, waiting)
+    ready.set_result((folder, msgs))
+    if not car:
+        raise fo.FolderError("BEAR-D01")
     picks = fo.flagged_photos(msgs)
     a.update(state="downloading photos", parts=len(picks))
     await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))
 
     # Download now: Discord's file links expire after 24 hours.
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = base = STORAGE / f"{fo.slug(ch.name)}-{ch.id}" / f"{folder}-{stamp}"
-    n = 1
-    while run_dir.exists():   # the same folder run again within a second
-        n += 1
-        run_dir = base.with_name(f"{base.name}-{n}")
+    run_dir = new_dir(STORAGE / f"{fo.slug(ch.name)}-{ch.id}", folder)
     photos, results = run_dir / "photos", run_dir / "results"
     photos.mkdir(parents=True)
     manifest = []
     for i, (msg, att) in enumerate(picks, 1):
         name = fo.photo_name(i, att.filename)
-        for attempt in range(3):
-            try:
-                await att.save(photos / name)
-                break
-            except (discord.DiscordException, OSError) as e:
-                if attempt == 2:
-                    raise fo.FolderError("BEAR-D06", f"{att.filename}: {msg.jump_url}\n{type(e).__name__}: {e}")
-                await asyncio.sleep(2 + attempt * 3)
+        await download(att, photos / name, msg, "BEAR-D06")
         manifest.append(f"{name}\t{att.filename}\t{msg.jump_url}")
         if i % 5 == 0 and i < len(picks):   # not every photo: Discord limits how often a message is edited
             await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=i, dev=dev()))
@@ -359,9 +490,31 @@ async def run_folder(ch, card):
     return folder
 
 
+def new_dir(parent, name):
+    """parent/<name>-<date-time>, with -2, -3 ... if the same name was started within a second."""
+    base = parent / f"{name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    path, n = base, 1
+    while path.exists():
+        n += 1
+        path = base.with_name(f"{base.name}-{n}")
+    return path
+
+
+async def download(att, path, msg, code):
+    """Save one Discord file, three tries; then FolderError(code) with a link to its message."""
+    for attempt in range(3):
+        try:
+            return await att.save(path)
+        except (discord.DiscordException, OSError) as e:
+            if attempt == 2:
+                raise fo.FolderError(code, f"{att.filename}: {msg.jump_url}\n{type(e).__name__}: {e}")
+            await asyncio.sleep(2 + attempt * 3)
+
+
 async def run_bear(photos, car, results, logfile):
     """Run BEAR as its own process; returns its exit code, or None if it ran out of time.
-    No stdin and no terminal, so BEAR skips the first-line check and stops if the name model fails."""
+    No stdin and no terminal, so BEAR skips the first-line check and stops if the name model fails.
+    If this is cancelled (/quit), BEAR is stopped too."""
     env = run_env()
     sim = env.get("BEAR_SIM")
     script = SIM_PY if sim else RUN_PY
@@ -373,13 +526,204 @@ async def run_bear(photos, car, results, logfile):
             cwd=str(REPO), env=env, start_new_session=True)
         try:
             return await asyncio.wait_for(proc.wait(), RUN_TIMEOUT)
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, asyncio.CancelledError) as e:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)   # BEAR and the validator / xlsx steps it started
             except ProcessLookupError:   # it finished just as time ran out
                 pass
             await proc.wait()
+            if isinstance(e, asyncio.CancelledError):
+                raise
             return None
+
+
+# --- Renaming -----------------------------------------------------------------------------------
+
+class SkuAsk(discord.ui.View):
+    """The Rename photos button under /run's offer. It keeps its own deadline: a View's timeout
+    starts again on every click, so it can't be the clock."""
+
+    def __init__(self, deadline, wait):
+        super().__init__(timeout=None)
+        self.deadline, self.wait = deadline, wait
+        self.answer = asyncio.get_running_loop().create_future()
+
+    def open(self):
+        return not self.answer.done() and time.time() < self.deadline
+
+    def close(self):
+        if not self.answer.done():
+            self.answer.cancel()
+        self.stop()
+
+    @discord.ui.button(label="Rename photos", emoji=look.TAG, style=discord.ButtonStyle.primary)
+    async def rename_photos(self, inter: discord.Interaction, button):
+        if not self.open():
+            return await inter.response.send_message(look.reply("too_late", wait=self.wait), ephemeral=True)
+        await inter.response.send_modal(SkuBox(self))
+
+
+class SkuBox(discord.ui.Modal, title="Rename the photos"):
+    sku = discord.ui.TextInput(label="SKU (letters, numbers, - and _)", placeholder="e.g. MYSKU",
+                               min_length=1, max_length=40)
+
+    def __init__(self, ask):
+        super().__init__(timeout=max(1, ask.deadline - time.time()) + 300)
+        self.ask = ask
+
+    async def on_submit(self, inter: discord.Interaction):
+        sku = self.sku.value.strip()
+        if not self.ask.open():
+            return await inter.response.send_message(look.reply("too_late", wait=self.ask.wait), ephemeral=True)
+        if not rn.SKU.fullmatch(sku):   # the button is still there to try again
+            return await inter.response.send_message(look.reply("bad_sku"), ephemeral=True)
+        self.ask.answer.set_result(sku)
+        log.info("SKU %s given by %s in %s", sku, inter.user, inter.channel)
+        await inter.response.send_message(look.reply("sku_ok", sku=sku), ephemeral=True)
+
+
+async def ask_sku(rcard, wait, ready):
+    """Post the offer with its button; the SKU typed within `wait` seconds, or None. It closes
+    early if ready says there is no folder."""
+    deadline = time.time() + wait
+    ask = SkuAsk(deadline, wait)
+
+    def no_folder(f):
+        if f.result() is None and not ask.answer.done():
+            ask.answer.set_result(None)
+    ready.add_done_callback(no_folder)
+    await rcard.show(look.rename_card("offer", deadline=deadline, dev=dev()), view=ask)
+    try:
+        return await asyncio.wait_for(asyncio.shield(ask.answer), wait)
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        ask.close()
+
+
+async def offer_rename(ch, ready, bear_done):
+    """/run's rename: offer it, and if a SKU is given, rename the photos BEAR's side settled on
+    (ready) and post the zips once the spreadsheet is out (bear_done)."""
+    rcard, sku, folder = Card(ch), None, None
+
+    async def work():
+        nonlocal sku, folder
+        sku = await ask_sku(rcard, rename_wait(), ready)
+        if not sku and ready.done() and ready.result() is None:   # no folder: the run card says so
+            rename_log(ch, None, None, "no folder")
+            return await rcard.show(look.rename_card("nothing", dev=dev()), view=None)
+        if not sku:
+            rename_log(ch, None, None, "no SKU given")
+            return await rcard.show(look.rename_card("skipped", dev=dev()), view=None)
+        await rcard.show(look.rename_card("waiting", sku, dev=dev()), view=None)
+        got = await ready
+        if not got:   # no folder: the run card already says so
+            rename_log(ch, None, sku, "no folder")
+            return await rcard.show(look.rename_card("nothing", sku, dev=dev()))
+        folder = got[0]
+        await rename_folder(ch, rcard, folder, got[1], sku, bear_done.wait)
+    await guard_rename(ch, rcard, lambda: folder, lambda: sku, work())
+
+
+async def guard_rename(ch, rcard, folder, sku, work):
+    """Run a rename, and say on its card how it ended if it didn't finish: stopped by /quit, or
+    BEAR-D07. folder and sku are the name and SKU, or functions giving them as they are now."""
+    get = lambda v: v() if callable(v) else v   # noqa: E731
+    try:
+        await work
+    except asyncio.CancelledError:
+        rename_log(ch, get(folder), get(sku), "stopped with /quit")
+        try:
+            await rcard.show(look.rename_card("stopped", get(sku), dev=dev()), view=None)
+        except discord.DiscordException:
+            pass
+        raise
+    except fo.FolderError as e:
+        await bot.fail(ch, get(folder) or get(sku), e.code, e.detail, card=rcard)
+        rename_log(ch, get(folder), get(sku), f"failed {e.code}")
+    except Exception:
+        log.exception("rename failed in %s", ch)
+        await bot.fail(ch, get(folder) or get(sku), "BEAR-D07", traceback.format_exc()[-1400:], card=rcard)
+        rename_log(ch, get(folder), get(sku), "failed BEAR-D07")
+
+
+async def rename_folder(ch, rcard, folder, msgs, sku, before_post=None):
+    """Every photo in msgs, numbered from the start of the folder, saved as SKU-1.jpg ... in
+    <storage>/renames/<channel>/<SKU>-<time>/, zipped to fit Discord and posted. before_post is
+    awaited before the zips go up (/run: the spreadsheet first). Afterwards only renamed.tsv
+    (new name, Discord name, message) stays on disk, and a line in renames/renames.log."""
+    picks, others = rn.all_photos(msgs)
+    if not picks:
+        rename_log(ch, folder, sku, "no photos")
+        return await rcard.show(look.rename_card("nothing", sku, folder, dev=dev()))
+    job = new_dir(RENAMES_DIR / f"{fo.slug(ch.name)}-{ch.id}", sku)
+    photos, zips = job / "photos", job / "zips"
+    photos.mkdir(parents=True)
+    zips.mkdir()
+    names = [rn.new_name(sku, i, att.filename) for i, (_, att) in enumerate(picks, 1)]
+    too_big = []
+    (job / "renamed.tsv").write_text("".join(f"{n}\t{att.filename}\t{m.jump_url}\n"
+                                             for n, (m, att) in zip(names, picks)))
+    try:
+        await rcard.show(look.rename_card("saving", sku, folder, photos=len(picks), got=0, dev=dev()))
+
+        async def one(i):
+            async with DOWNLOADS:
+                msg, att = picks[i]
+                await download(att, photos / names[i], msg, "BEAR-D07")
+        tasks = [asyncio.create_task(one(i)) for i in range(len(picks))]
+        try:
+            for got, t in enumerate(asyncio.as_completed(tasks), 1):
+                await t
+                if got % 10 == 0 and got < len(picks):   # Discord limits how often a message is edited
+                    await rcard.show(look.rename_card("saving", sku, folder, photos=len(picks), got=got, dev=dev()))
+        finally:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        plan, too_big = rn.plan_zips([(n, (photos / n).stat().st_size) for n in names], ZIP_MB * 1024 * 1024)
+        made = []
+        for k, part in enumerate(plan, 1):
+            path = zips / rn.zip_name(sku, k)
+            async with ZIPPING:
+                await asyncio.to_thread(rn.write_zip, path, [(photos / names[i], names[i]) for i in part])
+            made.append((path, names[part[0]], names[part[-1]]))
+        await rcard.show(look.rename_card("posting", sku, folder, photos=len(picks), alone=before_post is None,
+                                          dev=dev()))
+        if before_post:
+            await before_post()
+        for k, (path, first, last) in enumerate(made, 1):
+            try:
+                await ch.send(**look.kwargs(look.zip_post(sku, k, len(made), first, last)),
+                              file=discord.File(path, filename=path.name))
+            except discord.DiscordException as e:
+                raise fo.FolderError("BEAR-D07", f"{path.name} ({path.stat().st_size} bytes) wasn't posted: "
+                                                 f"{type(e).__name__}: {e}")
+        await rcard.show(look.rename_card("done", sku, folder, photos=len(picks), zips=len(made), first=names[0],
+                                          last=names[-1], others=others, too_big=[names[i] for i in too_big],
+                                          dev=dev()))
+        rename_log(ch, folder, sku, "posted", len(picks), len(made), job)
+    finally:
+        # Tidy up whatever happened; photos too big for Discord stay so the owner can hand them over.
+        keep = {names[i] for i in too_big}
+        shutil.rmtree(zips, ignore_errors=True)
+        for p in photos.iterdir():
+            if p.name not in keep:
+                p.unlink(missing_ok=True)
+        if not keep:
+            shutil.rmtree(photos, ignore_errors=True)
+
+
+def rename_log(ch, folder, sku, outcome, photos=0, zips=0, where=""):
+    """One line per rename (or offer left blank) in <storage>/renames/renames.log, kept for good."""
+    log.info("rename in %s: %s %s %s (%s photos, %s zips)", ch, folder, sku, outcome, photos, zips)
+    try:
+        RENAMES_DIR.mkdir(parents=True, exist_ok=True)
+        with open(RENAMES_DIR / "renames.log", "a") as f:
+            f.write(rn.log_line(f"{ch.name}-{ch.id}", folder, sku, outcome, photos, zips, where))
+    except OSError:
+        log.exception("can't write the rename log")
 
 
 async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=None):
