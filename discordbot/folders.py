@@ -64,15 +64,20 @@ def marker_name(msg, bot_id):
     return m.group(1) if m else None
 
 
-def split_folder(newest_first, bot_id):
-    """(folder name, marker message, messages after it oldest first) from channel history read
-    newest first; (None, None, []) if no folder was started."""
+def split_folder(newest_first, bot_id, name=None, marker_id=None):
+    """(folder name, marker message, its messages oldest first) from channel history read newest
+    first; (None, None, []) if there is no such folder. The newest folder by default, else the
+    newest one called name, or the one whose marker is marker_id. A folder's messages stop at the
+    next folder's marker, so a folder started later never adds to or takes over an earlier one."""
     after = []
     for msg in newest_first:
-        name = marker_name(msg, bot_id)
-        if name:
-            return name, msg, after[::-1]
-        after.append(msg)
+        found = marker_name(msg, bot_id)
+        if not found:
+            after.append(msg)
+        elif (marker_id is None or msg.id == marker_id) and (name is None or found == name):
+            return found, msg, after[::-1]
+        else:
+            after = []   # a later folder's messages, not this one's
     return None, None, []
 
 

@@ -33,7 +33,7 @@ COMMANDS = {
     },
     "run": {
         "description": "Finish the folder and price every 💸 photo in it",
-        "options": {},
+        "options": {"folder": "Leave empty for the newest folder, or name an earlier one, e.g. Q183"},
     },
     "status": {
         "description": "See which folders BEAR is working on",
@@ -140,8 +140,7 @@ def folder_card(name, car, dev=False):
 def open_folder_warning(previous):
     """Ephemeral note on /newfolder when the folder before it was never /run (its photos would be skipped)."""
     return (f"Heads up: folder **{previous}** was never run. **/run** now uses this new folder. "
-            f"To price the earlier photos, upload them again below this folder's marker, "
-            f"react {MONEY} on each part-number photo, then **/run**.")
+            f"To price **{previous}** too, use **/run** `folder:{previous}`.")
 
 
 # --- The live run card ---------------------------------------------------------------------------
@@ -260,6 +259,8 @@ REPLIES = {
     "not_car_channel": "Use this in a car's channel (the ones under **Cars**).",
     "bad_name": "Folder names are letters, numbers, `-` and `_` only, up to 40, e.g. `Q184`.",
     "busy": "Folder **{folder}** here is still {state}. **/run** again once it's done.",
+    "no_such_folder": "There's no folder **{folder}** in this channel. Check the name, or leave it empty "
+                      "to run the newest folder.",
     "no_topic": "Folder **{name}** not started: this channel has no car in its topic yet.",
     "topic_order": "Check this channel's topic: it should start with the make (e.g. `FORD ...`), not "
                    "`{first}`. BEAR uses the first word as the make.",
@@ -289,6 +290,7 @@ def guide(error_channel_id=None):
     )
     tips = ("Text messages are removed: car channels are photos only.\n"
             "**/run** again re-does the whole folder.\n"
+            "**/run** `folder:Q183` runs an earlier folder. Folders of one car can run at the same time.\n"
             "**/status** shows what BEAR is working on.")
     if error_channel_id:
         tips += f"\nProblems also go to <#{error_channel_id}>."

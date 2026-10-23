@@ -1,8 +1,9 @@
 """Discord BEAR bot. One channel per car (the vehicle text is the channel topic):
 /newfolder name:<x> starts a folder, 💸 flags each part-number photo, /run downloads the flagged
-photos and runs BEAR on them as a separate process, then posts the spreadsheet. Up to
-BEAR_MAX_RUNS folders (default 2) run at once; more wait in a queue. Errors go to the error
-channel with a code and a fix (folders.ERRORS). /status lists what is running.
+photos and runs BEAR on them as a separate process, then posts the spreadsheet. /run uses the
+newest folder; /run folder:<x> runs an earlier one. Up to BEAR_MAX_RUNS folders (default 2) run at
+once, from any car channels, including two folders of the same car; more wait in a queue. Errors
+go to the error channel with a code and a fix (folders.ERRORS). /status lists what is running.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -19,7 +20,8 @@ and read again for each run, so changing them needs no restart. The token is nev
 
 usage: python3 discordbot/bot.py       (systemd runs this: discordbot/deploy/bear-bot.service)
 """
-import asyncio, logging, os, signal, sys, time, traceback
+import asyncio, logging, os, re, signal, sys, time, traceback
+from typing import Optional
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,7 +40,7 @@ SIM_PY = REPO / "bear2" / "simulate.py"
 HISTORY_LIMIT = 5000      # messages read back looking for the folder marker
 MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this many seconds
 NOTICE_GAP = 60           # seconds between "text was removed" notices in one channel
-LINK = __import__("re").compile(r"https://discord\.com/channels/\S+")
+LINK = re.compile(r"https://discord\.com/channels/\S+")
 
 
 def dotenv():
@@ -80,7 +82,8 @@ RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
 STORAGE = Path(setting("BEAR_STORAGE", str(REPO / "runs")))
 
 SLOTS = asyncio.Semaphore(MAX_RUNS)
-ACTIVE = {}   # channel id -> {"folder", "state", "parts", "since"}: one folder per car channel at a time
+ACTIVE = {}   # folder marker id -> {"folder", "channel_id", "state", "parts", "since"}: one run per
+              # folder; different folders of the same car (channel) run side by side
 NOTICED = {}  # channel id -> when the last "text was removed" notice was posted
 
 
@@ -199,10 +202,16 @@ def car_channel_problem(ch):
     return None
 
 
-def never_run(msgs):
-    """True if a folder (messages after its marker) has 💸 photos but /run never posted a card."""
+def never_run(name, marker, msgs, newer):
+    """True if a folder has 💸 photos but /run never posted a card for it. msgs: the folder's own
+    messages; newer: everything posted after its marker, because a folder run late (/run folder:)
+    or alongside the next one has its card below the next folder's marker."""
+    if marker.id in ACTIVE:
+        return False
     has_flags = any(not m.author.bot and m.attachments and fo.flagged(m) for m in msgs)
-    has_card = any(m.author.bot and getattr(m, "embeds", None) for m in msgs)
+    named = re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])")   # Q18 must not match a Q184 card
+    has_card = any(m.author.bot and any(named.search(getattr(e, "title", None) or "") for e in m.embeds or [])
+                   for m in newer)
     return has_flags and not has_card
 
 
@@ -225,16 +234,18 @@ async def newfolder(inter: discord.Interaction, name: str):
         post = {**post, "content": fo.marker(name)}
     await inter.response.send_message(**look.kwargs(post))
     # Then look at the folder before this one: skip back past the new marker to the previous one.
-    previous, msgs = None, []
+    previous, msgs, newer = None, [], []
     try:
         history = [m async for m in ch.history(limit=500)]
         new = next((i for i, m in enumerate(history) if fo.marker_name(m, bot.user.id)), None)
         if new is not None:
-            previous, _, msgs = fo.split_folder(history[new + 1:], bot.user.id)
+            previous, marker, msgs = fo.split_folder(history[new + 1:], bot.user.id)
+            if previous:
+                newer = history[:next(i for i, m in enumerate(history) if m is marker)]
     except discord.DiscordException:
         pass
     notes = []
-    if previous and never_run(msgs):
+    if previous and never_run(previous, marker, msgs, newer):
         notes.append(look.open_folder_warning(previous))
     first = car.split()[0]
     if first.isdigit():
@@ -247,57 +258,61 @@ async def newfolder(inter: discord.Interaction, name: str):
 
 
 @bot.tree.command(name="run", description=look.COMMANDS["run"]["description"])
-async def run(inter: discord.Interaction):
+@app_commands.describe(**look.COMMANDS["run"]["options"])
+async def run(inter: discord.Interaction, folder: Optional[str] = None):
     ch = inter.channel
     problem = car_channel_problem(ch)
     if problem:
         return await inter.response.send_message(problem, ephemeral=True)
-    if ch.id in ACTIVE:
-        a = ACTIVE[ch.id]
-        return await inter.response.send_message(look.reply("busy", folder=a["folder"] or "(checking)", state=a["state"]),
-                                                  ephemeral=True)
-    # Claimed before the first await, so a second /run straight after this one is refused.
-    ACTIVE[ch.id] = {"folder": None, "state": "being checked", "parts": 0, "since": time.time(),
-                     "channel_id": ch.id}
-    folder, card = None, Card(ch)
+    if folder is not None and not fo.FOLDER_NAME.fullmatch(folder):
+        return await inter.response.send_message(look.reply("bad_name"), ephemeral=True)
+    await inter.response.send_message(look.reply("on_it"), ephemeral=True)
+    card, key, a = Card(ch), None, {}
     try:
-        await inter.response.send_message(look.reply("on_it"), ephemeral=True)
-        folder = await run_folder(ch, card)
+        name, msgs, marker = await read_folder(ch, folder)
+        if marker.id in ACTIVE:   # this folder is already on its way (double click, two people)
+            b = ACTIVE[marker.id]
+            return await inter.followup.send(look.reply("busy", folder=name, state=b["state"]), ephemeral=True)
+        # Claimed before the next await, so a second /run of the same folder is refused. Other
+        # folders, in this channel or any other, are not held up.
+        key = marker.id
+        a = ACTIVE[key] = {"folder": name, "channel_id": ch.id, "state": "being checked", "parts": 0,
+                           "since": time.time(), "marker_url": getattr(marker, "jump_url", None)}
+        await run_folder(ch, card, a, marker, msgs)
     except fo.FolderError as e:
-        a = ACTIVE[ch.id]
-        await bot.fail(ch, a["folder"], e.code, e.detail, card=card, jump_url=a.get("marker_url"))
+        if e.code == "BEAR-D02" and folder and key is None:   # a mistyped name: only they need to know
+            return await inter.followup.send(look.reply("no_such_folder", folder=folder), ephemeral=True)
+        await bot.fail(ch, a.get("folder") or folder, e.code, e.detail, card=card, jump_url=a.get("marker_url"))
     except Exception:
         log.exception("run failed in %s", ch)
-        a = ACTIVE[ch.id]
-        await bot.fail(ch, a["folder"], "BEAR-R01", traceback.format_exc()[-1400:], card=card,
+        await bot.fail(ch, a.get("folder") or folder, "BEAR-R01", traceback.format_exc()[-1400:], card=card,
                        jump_url=a.get("marker_url"))
     finally:
-        ACTIVE.pop(ch.id, None)
-    log.info("run finished in %s (%s)", ch, folder)
+        if key is not None:
+            ACTIVE.pop(key, None)
+    log.info("run finished in %s (%s)", ch, a.get("folder"))
 
 
 @bot.tree.command(name="status", description=look.COMMANDS["status"]["description"])
 async def status(inter: discord.Interaction):
-    active = [{**a, "folder": a["folder"] or "(checking)", "channel_id": cid} for cid, a in ACTIVE.items()]
+    active = list(ACTIVE.values())
     await inter.response.send_message(**look.kwargs(look.status_card(active, MAX_RUNS, time.time(), dev())),
                                       ephemeral=True)
 
 
-async def read_folder(ch):
-    """(name, messages after the latest marker oldest first, the marker). Raises D02 if there is no folder."""
+async def read_folder(ch, name=None, marker_id=None):
+    """(name, the folder's messages oldest first, its marker): the newest folder, the newest one
+    called name, or the one with that marker (folders.split_folder). Raises D02 if there is none."""
     history = [m async for m in ch.history(limit=HISTORY_LIMIT)]
-    name, marker, after = fo.split_folder(history, bot.user.id)
-    if not name:
+    found, marker, after = fo.split_folder(history, bot.user.id, name, marker_id)
+    if not found:
         raise fo.FolderError("BEAR-D02")
-    return name, after, marker
+    return found, after, marker
 
 
-async def run_folder(ch, card):
-    a = ACTIVE[ch.id]
+async def run_folder(ch, card, a, marker, msgs):
+    folder = a["folder"]
     car = (ch.topic or "").strip()
-    await card.show(look.run_card("checking", None, car or "No car in the topic", dev=dev()))
-    folder, msgs, marker = await read_folder(ch)
-    a.update(folder=folder, marker_url=getattr(marker, "jump_url", None))
     if not car:
         raise fo.FolderError("BEAR-D01")
     await card.show(look.run_card("checking", folder, car, dev=dev()))
@@ -313,8 +328,8 @@ async def run_folder(ch, card):
         pause = UPLOAD_WAIT - age + 1
         await asyncio.sleep(pause)
         waited += pause
-        folder, msgs, marker = await read_folder(ch)
-        a.update(folder=folder, marker_url=getattr(marker, "jump_url", None))
+        # The same folder again (by its marker), even if a newer folder was started meanwhile.
+        _, msgs, _ = await read_folder(ch, marker_id=marker.id)
     picks = fo.flagged_photos(msgs)
     a.update(state="downloading photos", parts=len(picks))
     await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))

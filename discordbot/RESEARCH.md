@@ -55,7 +55,7 @@ version of the pipeline, and how each one was settled. Researched October 2026.
 | 9 | 15-minute reply window. | Spreadsheet posted as a normal message. |
 | 10 | Attachment links expire after 24 h. | Download at `/run` time; keep copies on the server. |
 | 11 | Image column is a meaningless filename in Discord. | Kept as is for now. |
-| 12 | Parallel runs share files and rate limits. | Separate processes/VMs, one bot, never the same car twice at once. |
+| 12 | Parallel runs share files and rate limits. | Separate processes, one bot. Each run has its own run folder and spend ledger (`BEAR_SPEND_LEDGER`), and the eBay cache is written atomically, so since 2026-10-23 two folders of the same car may run at once; the same folder never runs twice at once. |
 | 13 | Keys, permissions, Mac flow. | `.env` on Debian; permissions in PLAN §6; Mac flow untouched. |
 | 14 | 500-channel limit. | Fine for now. |
 | — | Same part number twice in one folder (by mistake or genuinely two parts). | No special handling unless it becomes a problem. |

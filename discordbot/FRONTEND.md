@@ -79,9 +79,10 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 
 | When | What people see | `look.py` |
 |---|---|---|
-| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every 💸 photo in it*, `/status` *See which folders BEAR is working on* | `COMMANDS` |
+| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every 💸 photo in it* (optional `folder:` for an earlier folder), `/status` *See which folders BEAR is working on* | `COMMANDS` |
 | `/newfolder Q184` | `📁 Folder **Q184**` + a brand-red card: the car, then the three steps | `folder_card` |
-| `/newfolder` while the last folder was never run | Only you: *"Heads up: folder Q183 was never run…"* | `open_folder_warning` |
+| `/newfolder` while the last folder was never run | Only you: *"Heads up: folder Q183 was never run… use /run folder:Q183"* | `open_folder_warning` |
+| `/run folder:` with a name that isn't in the channel | Only you: *"There's no folder NOPE in this channel…"* | `reply("no_such_folder")` |
 | Someone types text | Their message disappears; a notice explains why, then deletes itself after 10 s | `reply("text_removed")` |
 | `/run` | One card: *Checking the folder* | `run_card("checking")` |
 | …photos still arriving | Same card, amber: *Waiting for uploads* | `run_card("waiting")` |

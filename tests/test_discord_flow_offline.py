@@ -5,7 +5,8 @@ discord.py (the server's .venv has it).
 Plays /run through the real bot code against a fake car channel, with BEAR's dev mode
 (bear2/simulate.py) as the run: the spreadsheet posted for a good folder, every BEAR-D error a
 person can cause, the name model failures (N01-N03) and a crash (R01) landing in the error
-channel, and three folders at once with two slots (one waits in the queue).
+channel, three folders at once with two slots (one waits in the queue), and two folders of the
+same car running at once (/run folder:, a new folder started during the upload wait).
 
 usage: .venv/bin/python tests/test_discord_flow_offline.py
 """
@@ -30,6 +31,7 @@ from PIL import Image  # noqa: E402
 
 ME, PERSON = NS(id=7, bot=True), NS(id=8, bot=False)
 CAR = "MITSUBISHI SHOGUN 2007 3.2 DI-D"
+IDS = iter(range(1, 10 ** 9))   # message ids, unique across channels like Discord's
 B.bot._connection.user = ME
 logging.disable(logging.CRITICAL)   # the bot logs every error it posts; the checks below cover them
 B.car_channel_problem = lambda ch: None
@@ -57,7 +59,7 @@ class Channel:
         self.msgs, self.sent, self.shown = [], [], []
 
     def add(self, author=PERSON, content="", files=(), money=False, ago=300, embeds=()):
-        m = NS(author=author, content=content, attachments=[Att(f) for f in files], embeds=list(embeds),
+        m = NS(id=next(IDS), author=author, content=content, attachments=[Att(f) for f in files], embeds=list(embeds),
                reactions=[NS(emoji=fo.MONEY)] if money else [],
                created_at=datetime.now(timezone.utc) - timedelta(seconds=ago),
                jump_url=f"https://discord.com/channels/1/{self.id}/{len(self.msgs)}")
@@ -115,10 +117,21 @@ def folder(cid, name="Q184", flags=2, topic=CAR, extra=()):
     return ch
 
 
-async def run(ch, sim="ok"):
+async def run(ch, sim="ok", name=None, inter=None):
     os.environ["BEAR_SIM"] = sim
-    await B.run.callback(Inter(ch))
+    await B.run.callback(inter or Inter(ch), name)
     return ch
+
+
+def add_folder(ch, name, flags):
+    """Start another folder in the same channel, as /newfolder does, with flags 💸 photos."""
+    ch.add(ME, fo.marker(name), ago=0)
+    for i in range(flags):
+        ch.add(files=[f"{name}_{i}.jpg"], money=True)
+
+
+def photo_count(ch, name):
+    return len(list(next(TMP.glob(f"{ch.name}-{ch.id}/{name}-*")).glob("photos/*")))
 
 
 fails = []
@@ -189,6 +202,35 @@ async def main():
     check("second /run refused", any("here is still" in r for r in second.replies), True)
     check("only one spreadsheet", sum(1 for _, f in ch.sent if f), 1)
 
+    # Same car, two folders at once: A is /run, B is started and /run while A is still going.
+    # Both run side by side (neither queued), each with only its own photos.
+    ch = folder(80, name="A")   # 2 💸
+    add_folder(ch, "B", 3)
+    await asyncio.gather(run(ch, name="A"), run(ch))
+    check("same car: neither queued", any("Queued" in t for t in ch.shown), False)
+    check("same car: both spreadsheets", sorted(f for _, f in ch.sent if f),
+          ["A-mitsubishi-shogun-2007.xlsx", "B-mitsubishi-shogun-2007.xlsx"])
+    check("same car: own photos", (photo_count(ch, "A"), photo_count(ch, "B")), (2, 3))
+    check("same car: nothing left running", B.ACTIVE, {})
+
+    # A new folder started while /run waits for uploads doesn't take the run over.
+    ch = folder(81, name="WAIT1")
+    ch.add(files=["late.jpg"], money=True, ago=0)   # 3 💸, the last one still arriving
+
+    async def next_folder_meanwhile():
+        await asyncio.sleep(0.3)
+        add_folder(ch, "WAIT2", 1)
+    await asyncio.gather(run(ch), next_folder_meanwhile())
+    check("wait: same folder", [f for _, f in ch.sent if f], ["WAIT1-mitsubishi-shogun-2007.xlsx"])
+    check("wait: its own photos", photo_count(ch, "WAIT1"), 3)
+
+    # A mistyped folder name gets a private reply, not an error report.
+    ch, i, before = folder(82), None, len(ERRORS.sent)
+    i = Inter(ch)
+    await run(ch, name="NOPE", inter=i)
+    check("unknown folder reply", any("no folder **NOPE**" in r for r in i.replies), True)
+    check("unknown folder not reported", len(ERRORS.sent), before)
+
     # Owner-side problems don't tell the uploader to edit .env; D04 links to the photo.
     ch = await run(folder(60), "rate-limit")
     check("N01 card hides the fix", ".env" not in ch.sent[-1][0] and "Nothing for you to do" in ch.sent[-1][0], True)
@@ -205,6 +247,14 @@ async def main():
     i = Inter(ch)
     await B.newfolder.callback(i, "NEXT")
     check("no warning after a run", any("never run" in r for r in i.replies), False)
+    # X is run late (/run folder:X), so its card sits below Y's marker: that doesn't count as Y's run.
+    ch = folder(74, name="X")
+    await B.newfolder.callback(Inter(ch), "Y")
+    await run(ch, name="X")
+    ch.add(files=["y.jpg"], money=True)
+    i = Inter(ch)
+    await B.newfolder.callback(i, "Z")
+    check("late run of another folder isn't this one's", any("**Y** was never run" in r for r in i.replies), True)
     ch = Channel(72, topic="2012 FORD FIESTA")
     i = Inter(ch)
     await B.newfolder.callback(i, "Q1")

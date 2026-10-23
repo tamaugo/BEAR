@@ -30,10 +30,10 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 | Command | Where | Visible reply | Effect |
 |---|---|---|---|
 | `/newfolder name:<str>` | a car channel | `look.folder_card` (public). Extra notes are ephemeral: `open_folder_warning`, `reply("topic_order")` | Starts a folder. The marker content line is exactly `📁 Folder **<name>**` (`folders.MARKER`): **the front end must not change this line**; `/run` finds the folder by it. |
-| `/run` | a car channel | ephemeral `reply("on_it")`, then **one run card** (a normal channel message) edited through the states, ending in `done_card` + the `.xlsx` attached, or `problem_card` | Reads the folder, downloads the 💸 photos, queues, runs BEAR, posts the result. |
+| `/run [folder:<str>]` | a car channel | ephemeral `reply("on_it")`, then **one run card** (a normal channel message) edited through the states, ending in `done_card` + the `.xlsx` attached, or `problem_card` | Reads the folder (the newest, or the newest one called `folder`), downloads the 💸 photos, queues, runs BEAR, posts the result. A folder's messages run from its marker to the next marker. |
 | `/status` | anywhere | `look.status_card` (ephemeral) | Lists running and queued folders. |
 
-**Rules for `name`**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`; anything else → `reply("bad_name")`.
+**Rules for `name`** (and `/run folder:`): `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`; anything else → `reply("bad_name")`.
 
 **Refusals** (ephemeral `look.reply` keys):
 
@@ -41,7 +41,8 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 |---|---|
 | `not_car_channel` | not a text channel, or not in `CARS_CATEGORY_ID` |
 | `no_topic` | `/newfolder` with no channel topic |
-| `busy` | a `/run` is already active in this channel; it gets `folder` (or `(checking)`) and `state` |
+| `busy` | a `/run` of the **same folder** is already active; it gets `folder` and `state`. Other folders, even of the same car, are not refused |
+| `no_such_folder` | `/run folder:<x>` and this channel has no folder `<x>`; it gets `folder`. Not reported to the error channel |
 | `oops` | an unhandled command error (logged) |
 
 **Car channel behaviour**:
@@ -87,7 +88,7 @@ downloads), because Discord rate-limits edits.
 | `bot_started(max_runs, sim, version)` | |
 | `guide(error_channel_id)` | |
 | `open_folder_warning(previous)` | ephemeral note on `/newfolder` |
-| `reply(key, **kw)` | keys: `not_car_channel`, `bad_name`, `busy`, `no_topic`, `on_it`, `topic_order`, `text_removed`, `oops` |
+| `reply(key, **kw)` | keys: `not_car_channel`, `bad_name`, `busy`, `no_such_folder`, `no_topic`, `on_it`, `topic_order`, `text_removed`, `oops` |
 | constants | `COMMANDS`, `TITLES`, `UPLOADER_FIX`, `LIMITS` |
 
 - **A post** is a plain dict: `{"content": str | None, "embeds": [embed_dict]}`.
@@ -143,7 +144,10 @@ run. `DISCORD_TOKEN` and `BEAR_WEB_ASK` are removed.
 
 **Concurrency**:
 - At most `BEAR_MAX_RUNS` BEAR processes run at once (`asyncio.Semaphore`).
-- One active `/run` per channel (`ACTIVE`).
+- One active `/run` per **folder** (`ACTIVE`, keyed by the folder's marker message). Two folders of
+  the same car run side by side; each has its own run folder and `spend.jsonl`.
+- The upload wait re-reads the same folder by its marker, so a `/newfolder` during the wait doesn't
+  take the run over.
 - The queue is FIFO by `queued_at`.
 
 ## 4. Settings and auth
@@ -229,6 +233,7 @@ Run against the **VM bot** in the real server, one bot online.
 | C7 | Live | with `BEAR_SIM` off, one real part-number photo → green card with a real part number and price |
 | C8 | D04 links | 💸 on a 2-photo message → red D04 card whose photo link jumps to that message |
 | C9 | Unrun folder | `/newfolder` while the previous folder was never `/run` → a private warning |
+| C10 | Same car twice | in one car channel: `/newfolder A`, 💸, `/run`; straight away `/newfolder B`, 💸, `/run` → both cards running at once, each spreadsheet has only its own parts; `/run folder:A` again while A runs → `busy` |
 
 **Who checks what**:
 - **Front end** checks the Discord side through the bot's REST API (messages and embeds) and screenshots.

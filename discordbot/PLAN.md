@@ -49,7 +49,7 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 |---|---|
 | Hosting | One always-on bot on a **Debian 13** VM (Proxmox): 2 cores, 4 GB RAM, 32 GB disk. Outbound connection to Discord; no port forwarding. See [SETUP.md](SETUP.md) §1. |
 | Car name | From the **channel topic**. Empty topic = refuse to run. |
-| Folders | `/newfolder name:<x>` starts one; `/run` ends and runs it. **One spreadsheet per folder.** |
+| Folders | `/newfolder name:<x>` starts one; `/run` ends and runs the newest; `/run folder:<x>` runs an earlier one. A folder ends at the next folder's marker. **One spreadsheet per folder.** |
 | Part-number photo | Posted **alone**, reacted with **💸**. Only flagged photos go to BEAR. If this proves unreliable, switch to "first/last photo of a part". |
 | Chat text | Never read; text-only messages deleted. |
 | "Running x parts" | Information only, no GO button. |
@@ -60,7 +60,7 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 | Upload wait | ~30 s with no new photo before running. |
 | webp | BEAR reads webp directly (no separate conversion step). HEIC = refuse with an error. |
 | Spend cap | The OpenRouter key's own cap is the real limit. |
-| Parallel runs | **One VM, one bot**, up to 2 BEAR runs at once (`BEAR_MAX_RUNS`, default 2). A 3rd `/run` waits in a queue and the bot says it is queued. Never the same car twice at once: one folder per car channel. |
+| Parallel runs | **One VM, one bot**, up to 2 BEAR runs at once (`BEAR_MAX_RUNS`, default 2). A 3rd `/run` waits in a queue and the bot says it is queued. Two folders of the **same car** may run at once (changed 2026-10-23: each run has its own photos, results and spend ledger); the same folder is never run twice at once. |
 | Status command | `/status` lists running and queued folders. |
 | Same part number twice in a folder | No special handling for now. Add a "DUPLICATE? check" mark only if it becomes a problem. |
 | Location (NSF/NSR/OSF/OSR) | **Later.** Plan: four custom emojis reacted on the 💸 photo; the bot puts the code in the filename. |

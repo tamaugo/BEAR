@@ -21,7 +21,7 @@ _n = [0]
 
 def msg(author=ALICE, files=(), money=False, content="", ago=120):
     _n[0] += 1
-    return NS(author=author, content=content, created_at=NOW - timedelta(seconds=ago),
+    return NS(id=_n[0], author=author, content=content, created_at=NOW - timedelta(seconds=ago),
               attachments=[NS(filename=f) for f in files], jump_url=f"https://discord.com/x/{_n[0]}",
               reactions=[NS(emoji=fo.MONEY)] if money else [NS(emoji="\N{THUMBS UP SIGN}")])
 
@@ -53,6 +53,14 @@ name, m, after = fo.split_folder(history[::-1], BOT.id)
 check("folder name", name, "Q184")
 check("folder messages", after, [p1, label, p2, reply])
 check("no folder", fo.split_folder([p1, fake][::-1], BOT.id)[0], None)
+# An earlier folder, by name or by its marker: its messages stop at the next folder's marker, so
+# two folders of the same car can be run side by side without taking each other's photos.
+early = msg(files=["x.jpg"], money=True)
+history2 = [old, early, mark, p1]
+check("earlier folder by name", fo.split_folder(history2[::-1], BOT.id, name="Q183")[2], [early])
+check("earlier folder by marker", fo.split_folder(history2[::-1], BOT.id, marker_id=old.id)[:2], ("Q183", old))
+check("newest folder still the default", fo.split_folder(history2[::-1], BOT.id)[2], [p1])
+check("unknown name", fo.split_folder(history2[::-1], BOT.id, name="Q999"), (None, None, []))
 check("marker round trip", fo.marker_name(msg(BOT, content=fo.marker("Box_7-a")), BOT.id), "Box_7-a")
 
 # Picking the 💸 photos.
