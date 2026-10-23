@@ -27,6 +27,20 @@ stay exactly as they are on `main`; this branch (`discord-bear`) is the server e
 7. Anything that goes wrong is posted in the **error channel**:
    "**Q184** encountered an issue — `BEAR-D04` — fix: …".
 
+8. **Renaming (optional).** Next to the run card, `/run` posts **🏷️ Rename the photos?** with a
+   **Rename photos** button. Tapping it opens a box to type a SKU, e.g. `MYSKU`. People have
+   **1 minute** (`BEAR_RENAME_WAIT`); left blank, the photos aren't renamed and the card says so.
+   With a SKU, **every photo** in the folder (from the 📁 marker to `/run`, 💸 or not, in upload
+   order) is named `MYSKU-1.jpg`, `MYSKU-2.jpg` ... and posted as `MYSKU-1.zip` (more zips,
+   `MYSKU-2.zip` ..., if it doesn't fit Discord's 10 MB limit) **after the spreadsheet**, even if
+   BEAR failed. **`/rename sku: MYSKU`** does only this, with no BEAR run.
+9. **`/quit`** stops everything `/run` or `/rename` is doing in the channel: BEAR, the queue,
+   the rename. Nothing more is posted for that folder.
+
+Renaming is separate from BEAR: BEAR never sees the renamed files and the rename never reads 💸.
+Renames have no limit on how many run at once; photos are downloaded 6 at a time across all of
+them (`BEAR_RENAME_DOWNLOADS`) and zips are stored, not compressed, so CPU and memory stay low.
+
 Rules:
 - Text is never read. **Text-only messages are deleted** by the bot (a photo with a caption
   is kept). The bot never deletes its own messages.
@@ -153,6 +167,7 @@ channel and the run's log. The fixes below are a first draft, to be refined late
 | `BEAR-D04` | A 💸 message holds more than one photo | Post the part-number photo on its own, flag it, `/run` again. |
 | `BEAR-D05` | A flagged file BEAR can't read (e.g. HEIC) | Re-upload as JPG/PNG/WEBP. |
 | `BEAR-D06` | A flagged photo couldn't be downloaded | `/run` again. |
+| `BEAR-D07` | Renaming failed: a photo didn't download or a zip wasn't posted | `/rename` again with the same SKU. |
 | `BEAR-N01` | Name model rate limited | Wait and finish the names, or swap the name model. |
 | `BEAR-N02` | Name model not responding | Same as N01. |
 | `BEAR-N03` | Name model gave unusable names | Swap the name model. |

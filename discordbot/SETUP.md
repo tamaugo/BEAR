@@ -155,9 +155,11 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Live log | `journalctl -u bear-bot -f` (Ctrl+C to stop watching) |
 | Restart | `systemctl restart bear-bot` (a running folder is lost; `/run` it again) |
 | Update to the latest `discord-bear` | `/status` in Discord first (updating restarts the bot), then `bash /opt/bear/discordbot/deploy/setup.sh` |
-| Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM` apply to the next `/run`; anything else needs a restart. |
+| Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
+| Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60). No restart. |
+| What was renamed | `cat /var/lib/bear/runs/renames/renames.log` (one line per rename: when, channel, folder, SKU, what happened, photos, zips) |
 | Swap the name model (Qwen keeps failing, `BEAR-N01`–`N03`) | In `.env`: `BEAR_NAME_MODEL=google/gemini-3.1-flash-lite` (or `anthropic/claude-haiku-5.5`) |
-| Disk space | `df -h /` and `du -sh /var/lib/bear/runs/*` |
+| Disk space | `df -h /var/lib/bear/runs` and `du -sh /var/lib/bear/runs/*` |
 | Delete runs older than 60 days | `find /var/lib/bear/runs -mindepth 2 -maxdepth 2 -type d -mtime +60 -exec rm -rf {} +` |
 
 **Where things are:** each run is in
@@ -165,6 +167,11 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 order), `photos.tsv` (which Discord message each photo came from, so a spreadsheet row can be
 traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
 `spend.jsonl` (what that folder cost).
+
+Renames are in `/var/lib/bear/runs/renames/<channel>-<id>/<SKU>-<date-time>/`, on the same disk
+as the runs (the SSD). Once the zips are posted the photos and zips are deleted; `renamed.tsv`
+stays (new name, Discord name, message link), and so does the line in `renames/renames.log`.
+A photo too big for Discord stays in `photos/` so it can be handed over by hand.
 
 | Problem | Fix |
 |---|---|
@@ -179,6 +186,6 @@ traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …
 
 Error codes in the error channel (fixes are in each message):
 `D01` no topic · `D02` no folder · `D03` no 💸 · `D04` two photos on one 💸 · `D05` file BEAR can't
-read (HEIC) · `D06` download failed · `N01`/`N02`/`N03` name model rate limited / not responding /
+read (HEIC) · `D06` download failed · `D07` renaming failed (a photo or zip) · `N01`/`N02`/`N03` name model rate limited / not responding /
 unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap · `T01` run took over
 2 hours · `R01` anything else (log attached).

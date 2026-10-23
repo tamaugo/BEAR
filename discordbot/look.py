@@ -23,6 +23,7 @@ GREY = 0x4E5058
 MONEY = "\N{MONEY WITH WINGS}"
 BEAR = "\N{BEAR FACE}"
 FOLDER = "\N{FILE FOLDER}"
+TAG = "\N{LABEL}\N{VARIATION SELECTOR-16}"
 
 # Slash commands: names are agreed, this is the text people see when they type "/".
 # Discord's limit is 100 characters for each description.
@@ -39,6 +40,14 @@ COMMANDS = {
         "description": "See which folders BEAR is working on",
         "options": {},
     },
+    "rename": {
+        "description": "Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip",
+        "options": {"sku": "The SKU the photos are named after, e.g. MYSKU"},
+    },
+    "quit": {
+        "description": "Stop everything /run or /rename is doing in this channel",
+        "options": {},
+    },
 }
 
 # What the person in the car channel should do, per error code: short, phone-sized, no settings
@@ -53,6 +62,8 @@ UPLOADER_FIX = {
     "BEAR-D05": f"A {MONEY} file isn't a photo BEAR can read (iPhone HEIC?). Re-send it as a normal photo, "
                 f"{MONEY} it, then **/run** again.",
     "BEAR-D06": "Discord didn't hand over a photo. **/run** again; if it keeps happening, re-send that photo.",
+    "BEAR-D07": "The photos couldn't be renamed. **/rename** again with the same SKU; if it keeps happening, "
+                "re-send the photo below.",
     "BEAR-N01": None, "BEAR-N02": None, "BEAR-N03": None,
     "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None,
 }
@@ -65,6 +76,7 @@ TITLES = {
     "BEAR-D04": f"{MONEY} on a message with several photos",
     "BEAR-D05": "Photo type BEAR can't read",
     "BEAR-D06": "A photo didn't download",
+    "BEAR-D07": "Photos couldn't be renamed",
     "BEAR-N01": "Name model is busy",
     "BEAR-N02": "Name model isn't answering",
     "BEAR-N03": "Name model gave bad names",
@@ -212,6 +224,67 @@ def problem_card(folder, code, error_channel_id, photo_links=(), dev=False, part
     return _post(_embed(RED if not partial else AMBER, title, desc, footer=_footer(dev, code)))
 
 
+def stopped_card(folder, dev=False):
+    """Last edit of the run card after /quit."""
+    name = f"{folder} · " if folder else ""
+    return _post(_embed(RED, f"\N{BLACK SQUARE FOR STOP} {name}Stopped",
+                        "Stopped with **/quit**: nothing more is posted for this folder. **/run** starts it again.",
+                        footer=_footer(dev)))
+
+
+# --- Renaming the photos -------------------------------------------------------------------------
+# A second card next to the run card (or on its own for /rename), edited as it goes:
+# offer -> skipped, or waiting -> saving -> posting -> done / nothing / stopped.
+
+def rename_card(state, sku=None, folder=None, deadline=None, photos=None, got=None, zips=None,
+                first=None, last=None, others=0, too_big=(), alone=False, dev=False):
+    """alone=True for /rename on its own (no spreadsheet to wait for)."""
+    tag = f"{TAG} {sku} · " if sku else f"{TAG} "
+    if state == "offer":
+        return _post(_embed(AMBER, f"{TAG} Rename the photos?",
+                            "Tap **Rename photos** and type a SKU. Every photo in this folder comes back "
+                            "named `SKU-1`, `SKU-2` ... in a zip, after the spreadsheet.\n"
+                            f"Closes {_when(deadline)}. Leave it and the photos aren't renamed.",
+                            footer=_footer(dev, "/quit stops the whole run")))
+    if state == "skipped":
+        return _post(_embed(GREY, f"{TAG} Not renamed", "No SKU given, photos not renamed.", footer=_footer(dev)))
+    if state == "stopped":
+        return _post(_embed(RED, f"\N{BLACK SQUARE FOR STOP} {tag}Stopped",
+                            "Stopped with **/quit**: no zip will be posted.", footer=_footer(dev)))
+    if state == "nothing":
+        where = f"folder **{folder}**" if folder else "this folder"
+        return _post(_embed(GREY, f"{tag}Nothing to rename", f"There are no photos in {where}.",
+                            footer=_footer(dev)))
+    if state == "waiting":
+        line = "Waiting for the folder's photos ..."
+    elif state == "saving":
+        line = f"Saving the photos ... {got or 0}/{photos}"
+    elif state == "posting":
+        line = "Posting the zip ..." if alone else "Zip ready. It's posted after the spreadsheet."
+    elif state == "done":
+        lines = [f"Folder **{folder}**: `{first}` to `{last}`." if photos > 1 else f"Folder **{folder}**: `{first}`.",
+                 f"In {_plural(zips, 'zip')} below, from `{sku}-1.zip`." if zips else "No zip: see below."]
+        if others:
+            lines.append(f"{_plural(others, 'file')} that isn't a photo was left out." if others == 1
+                         else f"{others} files that aren't photos were left out.")
+        if too_big:
+            shown = ", ".join(f"`{n}`" for n in list(too_big)[:10])
+            lines.append(f"Too big for Discord, kept on the server: {shown}"
+                         + (f" and {len(too_big) - 10} more" if len(too_big) > 10 else "") + ".")
+        return _post(_embed(GREEN, f"{TAG} {sku} · {_plural(photos, 'photo')} renamed",
+                            "\n".join(lines), footer=_footer(dev)))
+    else:
+        raise ValueError(f"unknown rename state {state!r}")
+    title = f"{tag}Renaming {_plural(photos, 'photo')}" if photos else f"{tag}Renaming"
+    return _post(_embed(GREY, title, line, footer=_footer(dev)))
+
+
+def zip_post(sku, n, total, first, last):
+    """The line on each zip message: MYSKU-1.zip (1 of 2): MYSKU-1.jpg to MYSKU-14.jpg."""
+    span = f"`{first}` to `{last}`" if first != last else f"`{first}`"
+    return {"content": _cut(f"{TAG} **{sku}-{n}.zip** ({n} of {total}): {span}", LIMITS["content"]), "embeds": []}
+
+
 # --- Error channel -------------------------------------------------------------------------------
 
 def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", jump_url=None, dev=False):
@@ -267,6 +340,12 @@ REPLIES = {
     "oops": "Something went wrong on BEAR's side (`BEAR-R01`). The owner can see it in the bot's log.",
     "text_removed": "Only photos stay in car channels, so your message was removed. "
                     "Use **/newfolder**, photos, {money} and **/run**.",
+    "bad_sku": "SKUs are letters, numbers, `-` and `_` only, up to 40, e.g. `MYSKU`.",
+    "too_late": "Too late: renaming closed after {wait} seconds. Use **/rename** to rename the photos.",
+    "sku_ok": "Got it: the photos will be named **{sku}-1**, **{sku}-2** ...",
+    "rename_on_it": "Renaming the photos as **{sku}-1**, **{sku}-2** ...: the card below shows how it's going.",
+    "quit_none": "Nothing is running in this channel.",
+    "quit_done": "Stopping {what}.",
 }
 
 
@@ -289,6 +368,9 @@ def guide(error_channel_id=None):
     )
     tips = ("Text messages are removed: car channels are photos only.\n"
             "**/run** again re-does the whole folder.\n"
+            "**/run** also offers to rename every photo to `SKU-1`, `SKU-2` ... and posts them as a zip "
+            "after the spreadsheet. **/rename** does only that.\n"
+            "**/quit** stops whatever is running in the channel.\n"
             "**/status** shows what BEAR is working on.")
     if error_channel_id:
         tips += f"\nProblems also go to <#{error_channel_id}>."

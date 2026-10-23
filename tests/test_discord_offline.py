@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
-folder, picking the 💸 photos, the BEAR-D errors, photo and spreadsheet names, the upload wait
-and which error code a failed run gets.
+folder, picking the 💸 photos, the BEAR-D errors, photo and spreadsheet names, the upload wait,
+which error code a failed run gets, and renaming (every photo, SKU names, splitting the zips).
 
 usage: python3 tests/test_discord_offline.py
 """
@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "discordbot"))
 sys.path.insert(0, str(ROOT / "bear2"))
 import folders as fo  # noqa: E402
+import renames as rn  # noqa: E402
 
 BOT, ALICE = NS(id=1, bot=True), NS(id=2, bot=False)
 NOW = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
@@ -104,6 +105,38 @@ check("partial: clean", fo.partial_problem('{"003.jpg": {"s1": {}}}'), None)
 rep = fo.error_report("Q184", "BEAR-D04", "<#9>", "x" * 5000)
 check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D04` — fix: "), len(rep) <= 2000), (True, True))
 check("every code has a meaning and a fix", all(len(v) == 2 and all(v) for v in fo.ERRORS.values()), True)
+
+# Renaming: every photo people posted, in order, flags or not; other files and the bot's left out.
+both = msg(files=["a.jpg", "b.HEIC", "clip.mov"])
+photos, others = rn.all_photos([mark, p1, label, both, reply, msg(BOT, files=["r.jpg"])])
+check("rename takes every photo", [a.filename for _, a in photos], ["IMG_1.jpg", "IMG_2.jpg", "IMG_4821.JPG", "a.jpg", "b.HEIC"])
+check("rename leaves out other files", others, 1)
+check("rename by content type", rn.is_image(NS(filename="photo", content_type="image/jpeg")), True)
+check("rename names", [rn.new_name("MYSKU", i, f) for i, f in [(1, "IMG_4821.JPG"), (12, "x.webp"), (3, "noext")]],
+      ["MYSKU-1.jpg", "MYSKU-12.webp", "MYSKU-3.jpg"])
+check("zip names", [rn.zip_name("MYSKU", 1), rn.zip_name("MYSKU", 2)], ["MYSKU-1.zip", "MYSKU-2.zip"])
+check("SKUs", [bool(rn.SKU.match(n)) for n in ["MYSKU", "AB-12_c", "", "-x", "a b", "../x", "x" * 41]],
+      [True, True, False, False, False, False, False])
+MB = 1024 * 1024
+files = [(f"S-{i}.jpg", 3 * MB) for i in range(1, 8)]
+plan, big = rn.plan_zips(files, 10 * MB)
+check("zips split in order", plan, [[0, 1, 2], [3, 4, 5], [6]])
+check("every zip fits", all(sum(files[i][1] + 100 for i in z) < 10 * MB for z in plan), True)
+plan, big = rn.plan_zips([("S-1.jpg", MB), ("S-2.jpg", 11 * MB), ("S-3.jpg", MB)], 10 * MB)
+check("too big for any zip", (plan, big), ([[0, 2]], [1]))
+check("nothing to zip", rn.plan_zips([], 10 * MB), ([], []))
+import tempfile, zipfile  # noqa: E402
+with tempfile.TemporaryDirectory() as d:
+    src = Path(d) / "x.jpg"
+    src.write_bytes(b"\xff\xd8" + b"x" * 5000)
+    rn.write_zip(Path(d) / "S-1.zip", [(src, "S-1.jpg"), (src, "S-2.jpg")])
+    z = zipfile.ZipFile(Path(d) / "S-1.zip")
+    check("zip holds the renamed photos", z.namelist(), ["S-1.jpg", "S-2.jpg"])
+    check("zip is stored, not compressed", {i.compress_type for i in z.infolist()}, {zipfile.ZIP_STORED})
+    real = (Path(d) / "S-1.zip").stat().st_size
+    check("zip size planned right", real <= 2 * (5002 + rn.ENTRY_BYTES + 2 * 7) + rn.END_BYTES, True)
+line = rn.log_line("car-1", "Q184", "MYSKU", "posted", 6, 1, "/x")
+check("log line", line.rstrip("\n").split("\t")[1:], ["car-1", "Q184", "MYSKU", "posted", "6", "1", "/x"])
 
 if fails:
     print("\n".join(fails))

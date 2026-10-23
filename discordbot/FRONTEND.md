@@ -79,7 +79,7 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 
 | When | What people see | `look.py` |
 |---|---|---|
-| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every 💸 photo in it*, `/status` *See which folders BEAR is working on* | `COMMANDS` |
+| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every 💸 photo in it*, `/status` *See which folders BEAR is working on*, `/rename` *Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip*, `/quit` *Stop everything /run or /rename is doing in this channel* | `COMMANDS` |
 | `/newfolder Q184` | `📁 Folder **Q184**` + a brand-red card: the car, then the three steps | `folder_card` |
 | `/newfolder` while the last folder was never run | Only you: *"Heads up: folder Q183 was never run…"* | `open_folder_warning` |
 | Someone types text | Their message disappears; a notice explains why, then deletes itself after 10 s | `reply("text_removed")` |
@@ -95,6 +95,12 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 | In `#bear-errors` | `**Q184** encountered an issue — \`BEAR-D04\` — fix: …` + red card with meaning, car, link to the folder, log excerpt (+ log file) | `error_report` |
 | Bot starts | Grey *BEAR is online* card in `#bear-errors` | `bot_started` |
 | `/status` | *1 of 2 running*, one line per folder with a channel link | `status_card` |
+| `/run` (beside the run card) | Amber *🏷️ Rename the photos?* + **Rename photos** button (opens a SKU box), *closes in 1 minute* | `rename_card("offer")` |
+| …left blank | Same card, grey: *No SKU given, photos not renamed* | `rename_card("skipped")` |
+| …SKU typed | Same card: *Renaming 23 photos*, saving 10/23, then *Zip ready. It's posted after the spreadsheet* | `rename_card("saving"/"posting")` |
+| After the spreadsheet | `🏷️ **MYSKU-1.zip** (1 of 2): MYSKU-1.jpg to MYSKU-14.jpg` + the zip; the card turns green | `zip_post`, `rename_card("done")` |
+| `/rename MYSKU` | The same card and zips, with no BEAR run | `rename_card` |
+| `/quit` | Run card red *Stopped*; rename card *Stopped* (a finished spreadsheet card is left as it is) | `stopped_card`, `rename_card("stopped")` |
 
 Wording choices:
 - **"folder"** everywhere, matching `/newfolder` and the 📁 marker.

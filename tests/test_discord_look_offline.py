@@ -77,14 +77,34 @@ fits("status", look.status_card([{"folder": "Q1", "channel_id": 5, "state": "run
 fits("started", look.bot_started(2, "all_ok", "0.4"))
 fits("guide", look.guide(9))
 for key in look.REPLIES:
-    text = look.reply(key, folder="Q1", state="running", name="Q1", first="2012")
+    text = look.reply(key, folder="Q1", state="running", name="Q1", first="2012", wait=60, sku="MYSKU", what="Q1")
     check(f"reply {key} fits", 0 < len(text) <= 2000)
 for name, c in look.COMMANDS.items():
     check(f"/{name} name", re.fullmatch(r"[a-z0-9_-]{1,32}", name) is not None)
     check(f"/{name} description", 1 <= len(c["description"]) <= 100)
     check(f"/{name} options", all(1 <= len(d) <= 100 for d in c["options"].values()))
 check("messages say folder, not box", "box" not in str([look.guide(), look.REPLIES, look.UPLOADER_FIX, look.TITLES]).replace("box of parts", ""))
-check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status"})
+check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit"})
+
+# Renaming: every state fits, the offer says when it closes, the done card names the zips.
+fits("stopped", look.stopped_card("Q184", dev=True))
+for state in ("offer", "skipped", "stopped", "nothing", "waiting", "saving", "posting", "done"):
+    fits(f"rename {state}", look.rename_card(state, "MYSKU", "Q184", deadline=100, photos=40, got=10, zips=3,
+                                             first="MYSKU-1.jpg", last="MYSKU-40.jpg", others=2,
+                                             too_big=[f"MYSKU-{i}.jpg" for i in range(30)], dev=True))
+check("offer shows the deadline", "<t:100:R>" in look.rename_card("offer", deadline=100)["embeds"][0]["description"])
+done = look.rename_card("done", "MYSKU", "Q184", photos=6, zips=2, first="MYSKU-1.jpg", last="MYSKU-6.jpg")["embeds"][0]
+check("done names the photos", "`MYSKU-1.jpg` to `MYSKU-6.jpg`" in done["description"] and "2 zips" in done["description"])
+check("rename cards carry the tag", all(look.TAG in look.rename_card(s, "S", "Q", photos=1, zips=1, first="S-1.jpg",
+                                                                  last="S-1.jpg")["embeds"][0]["title"]
+                                        for s in ("skipped", "stopped", "nothing", "waiting", "saving", "posting", "done")))
+check("zip line", look.zip_post("MYSKU", 1, 2, "MYSKU-1.jpg", "MYSKU-14.jpg")["content"].endswith(
+    "**MYSKU-1.zip** (1 of 2): `MYSKU-1.jpg` to `MYSKU-14.jpg`"))
+try:
+    look.rename_card("bogus")
+    fails.append("unknown rename state accepted")
+except ValueError:
+    pass
 
 if fails:
     print("\n".join("FAIL " + f for f in fails))
