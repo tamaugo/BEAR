@@ -77,7 +77,8 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 | Parallel runs | **One VM, one bot**, up to 2 BEAR runs at once (`BEAR_MAX_RUNS`, default 2). A 3rd `/run` waits in a queue and the bot says it is queued. Never the same car twice at once: one folder per car channel. |
 | Status command | `/status` lists running and queued folders. |
 | Same part number twice in a folder | No special handling for now. Add a "DUPLICATE? check" mark only if it becomes a problem. |
-| Location (NSF/NSR/OSF/OSR) | **Later.** Plan: four custom emojis reacted on the 💸 photo; the bot puts the code in the filename. |
+| Location (NSF/NSR/OSF/OSR) | **Being tested.** Staff write NF/OF/NR/OR in marker on the part, so it is in the 💸 photo. The shadow test (below) logs what Decisions models read there; four custom emojis on the 💸 photo stay the fallback. |
+| Shadow test | After each `/run`, every photo goes to `openai/gpt-6-luna-decisions` (is it the part-number photo? which location?), and the 💸 photos also to `typesafe/jev-1.13` and `cloudflare/clef` (location). Logged next to the 💸 flags, never posted. 💸 stays: it is the only thing that says where one part ends. A note in the error channel every 300 💸 photos (`BEAR_SHADOW_PING_PARTS`); then `shadow_report.py`. About 1p per folder. |
 | Image column in the spreadsheet | Kept as it is for now. |
 | Channel limit (500/server, 50/category) | Fine for now; archive or delete finished cars. |
 
@@ -247,7 +248,8 @@ The accuracy rule applies: Discord runs must be as accurate as the current flow.
 
 ## 10. Later
 
-- Location reactions (NSF/NSR/OSF/OSR custom emojis → `003_NSF.jpg`).
+- Location from the 💸 photo or reactions (NF → `003_NSF.jpg`), once the shadow test shows which works.
+  Only a model answer above a cut-off (or confirmed by a second model) is used; otherwise blank.
 - "DUPLICATE? check" for the same part number twice in a folder, if needed.
 - Which name model replaces Qwen if it keeps failing.
 - What to do with finished car channels (archive, delete, or move to a forum channel).

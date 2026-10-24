@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
 folder, picking the 💸 photos, the BEAR-D errors, photo and spreadsheet names, the upload wait,
-which error code a failed run gets, and renaming (every photo, SKU names, splitting the zips).
+which error code a failed run gets, renaming (every photo, SKU names, splitting the zips), and
+the shadow test's log, note and report.
 
 usage: python3 tests/test_discord_offline.py
 """
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT / "discordbot"))
 sys.path.insert(0, str(ROOT / "bear2"))
 import folders as fo  # noqa: E402
 import renames as rn  # noqa: E402
+import shadow as sh  # noqa: E402
 
 BOT, ALICE = NS(id=1, bot=True), NS(id=2, bot=False)
 NOW = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
@@ -137,6 +139,79 @@ with tempfile.TemporaryDirectory() as d:
     check("zip size planned right", real <= 2 * (5002 + rn.ENTRY_BYTES + 2 * 7) + rn.END_BYTES, True)
 line = rn.log_line("car-1", "Q184", "MYSKU", "posted", 6, 1, "/x")
 check("log line", line.rstrip("\n").split("\t")[1:], ["car-1", "Q184", "MYSKU", "posted", "6", "1", "/x"])
+
+# --- Shadow test (shadow.py, shadow_report.py) ---
+import csv, io, json, subprocess, tempfile  # noqa: E402
+check("label + location asked together", list(sh.questions(True)), ["label", "loc"])
+check("location only", list(sh.questions(False)), ["loc"])
+check("location choices", list(sh.LOC_Q["criteria"]), ["NF", "OF", "NR", "OR", "NONE"])
+check("answers read", sh.answers({"answers": {"label": {"noul": 0.8}, "loc": {"choice": "NF", "probabilities": {"NF": 0.9}}},
+                                  "usage": {"cost": 0.0001}}),
+      {"label": 0.8, "loc": "NF", "loc_p": {"NF": 0.9}, "cost": 0.0001})
+check("location-only answers", sh.answers({"answers": {"loc": {"choice": "OR", "probabilities": {"OR": 1}}}})["label"], None)
+try:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (3000, 1500), "white").save(buf, "JPEG")
+    uri = sh.data_uri(buf.getvalue())
+    import base64
+    small = Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1])))
+    check("photo shrunk to 800px", small.size, (800, 400))
+except ImportError:
+    pass   # Pillow is in the server's .venv; the plain Mac python may not have it
+
+
+def srow(marker, run, n, flagged, model=sh.LABEL_MODEL, label=0.9, loc="NF", p=0.9, channel="car-1"):
+    return {"channel": channel, "folder": f"Q{marker}", "marker": marker, "run": run, "n": n, "flagged": flagged,
+            "url": f"https://discord.com/{marker}/{n}", "model": model, "label": label if model == sh.LABEL_MODEL else None,
+            "loc": loc, "loc_p": {loc: p}, "cost": 0.0001}
+
+
+rows = [srow(1, "a", 1, False, label=0.2), srow(1, "a", 2, True),            # first run of folder 1
+        srow(1, "b", 1, False, label=0.1), srow(1, "b", 2, True, label=0.95),  # /run again: replaces run a
+        srow(1, "b", 2, True, model=sh.LOC_MODELS[0], loc="NR", p=0.6),
+        srow(1, "b", 3, False, label=0.92),                                  # next to the 💸 photo
+        srow(2, "c", 1, True, label=0.4, loc="OF", p=0.5),                   # a 💸 photo it would miss
+        srow(2, "c", 1, True, model=sh.LOC_MODELS[0], loc="OF", p=0.7)]
+check("newest run of each folder only", sorted((r["marker"], r["run"]) for r in sh.latest_runs(rows))[:1], [(1, "b")])
+check("old run dropped", any(r["run"] == "a" for r in sh.latest_runs(rows)), False)
+check("folders and 💸 photos counted", sh.counts(rows), (2, 2))
+check("same marker in another channel is another folder", sh.counts(rows + [srow(1, "z", 1, True, channel="car-2")]), (3, 3))
+check("no note before the first 300", sh.pings_due(299, 0), None)
+check("note at 300", sh.pings_due(300, 0), 1)
+check("no second note at 450", sh.pings_due(450, 1), None)
+check("second note at 600", sh.pings_due(610, 1), 2)
+check("note every N set in .env", sh.pings_due(4, 0, every=3), 1)
+
+with tempfile.TemporaryDirectory() as d:
+    log = Path(d) / "shadow.jsonl"
+    sh.append(log, rows[:4])
+    with open(log, "a") as f:
+        f.write('{"cut short')   # a crash mid-line is skipped
+    sh.append(log, rows[4:])
+    check("log read back", len(sh.read_log(log)), len(rows))
+    review, script = Path(d) / "review.csv", ROOT / "discordbot" / "shadow_report.py"
+    out = subprocess.run([sys.executable, str(script), str(log), "--review", str(review)],
+                         capture_output=True, text=True)
+    check("report runs", out.returncode, 0)
+    check("report: folders and 💸 photos", "2 folders, 2 💸 photos" in out.stdout, True)
+    check("report: a miss at 0.5", "| 0.5 | 1 of 2 | 1 | 0 |" in out.stdout, True)
+    table = list(csv.DictReader(open(review)))
+    check("review: one row per 💸 photo", len(table), 2)
+    for r in table:
+        r["truth"] = "NF" if r["folder"] == "Q1" else "OF"
+    with open(review, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(table[0]))
+        w.writeheader()
+        w.writerows(table)
+    out = subprocess.run([sys.executable, str(script), str(log), "--truth", str(review)], capture_output=True, text=True)
+    check("report with truth runs", out.returncode, 0)
+    # Luna: NF 0.9 (right, sure) and OF 0.5 (right, not sure). Jev: NR 0.6 (wrong) and OF 0.7 (right).
+    check("report: Luna at 0.5", "| gpt-6-luna-decisions | 0.5 | 2 | 0 | 0 |" in out.stdout, True)
+    check("report: Jev at 0.5", "| jev-1.13 | 0.5 | 1 | 1 | 0 |" in out.stdout, True)
+    check("report: confirmed by Jev", "| jev-1.13 | 2 | 0 | 0 |" in out.stdout, True)
+    if out.returncode:
+        print(out.stderr)
 
 if fails:
     print("\n".join(fails))
