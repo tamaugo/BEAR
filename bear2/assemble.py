@@ -1,7 +1,7 @@
 """Deterministic Agent 3 replacement. The ONLY model job left is cleaning the eBay title
 into a part name (one cheap call per job, JSON in/out). Everything with a contract —
-vehicle string, location from filename, part number, price, URL, image, sort, failure
-and NULL rows — is code, so it cannot be corrupted.
+vehicle string, part number, price, URL, image, sort and failure rows — is code, so it
+cannot be corrupted.
 
 Why: live run r7, Agent 3 (qwen3.8-flash) wrote url itm/168603Z210 (part number blended
 into the link) and dropped the image field. URL and image are copy-through fields; a model
@@ -23,7 +23,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c
 
-LOC = {"NSF": "Near Side Front", "NSR": "Near Side Rear", "OSF": "Off Side Front", "OSR": "Off Side Rear"}
 MODEL = "qwen/qwen3.8-flash"   # default name model for every setup; update with the setups
 NAME_MODELS = {MODEL: "Qwen 3.8 Flash",
                "google/gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
@@ -54,17 +53,6 @@ EXAMPLES = """Examples (other cars, for style only):
 "VW GOLF MK7 2015 N/S FRONT WINDOW CONTROL SWITCH 5G0959857 OEM" -> "Window Control Switch"
 "Kia Ceed 2014 Front Right Seat Control Motor 88583-3S500 100kW" -> "Front Seat Control Motor"
 """
-
-
-def tokens(fn):
-    return [t.upper() for t in re.split(r"[_\-\s.]+", Path(fn).stem) if t]
-
-
-def location(fn):
-    for t in tokens(fn):
-        if t in LOC:
-            return LOC[t]
-    return None
 
 
 def image_no(fn):
@@ -132,17 +120,15 @@ def parse_row(line):
 
 
 def title_item(f):
-    return {"title": f[2], "locationcode": bool(location(f[0]))}
+    # "locationcode" is always false on the server (no location words in 001.jpg names), but it
+    # stays so the name model gets exactly the same input its instructions above describe.
+    return {"title": f[2], "locationcode": False}
 
 
 def part_line(vehicle, f, name):
     """The finished results line for a priced row, exactly as it is written to the results."""
     img, pn, price, url = f[0], f[1], f[-2], f[-1]
-    loc = location(img)
-    if loc:  # never repeat the operator's location words
-        for w in loc.split():
-            name = re.sub(rf"(?i)^{w}\b\s*", "", name) if w in ("Front", "Rear") else name
-    info = f"{vehicle} - " + (f"{loc} " if loc else "") + f"{name} {c.norm(pn)}"
+    info = f"{vehicle} - {name} {c.norm(pn)}"
     return f"{info} | {price} | {url} | {img}"
 
 
@@ -263,7 +249,6 @@ def main(run_dir, vehicle, ask=None, model=None):
     with this model, checking one line with it first if it isn't the approved one."""
     run = Path(run_dir)
     rows = [f for f in map(parse_row, (run / "agent2_results.md").read_text().splitlines()) if f]
-    nulls = [n for n in (run / "null_files.txt").read_text().split("\n") if n.strip()] if (run / "null_files.txt").exists() else []
     check = json.loads((run / CHECK_FILE).read_text()) if (run / CHECK_FILE).exists() else {}
     priced = {f"i{k}": f for k, f in enumerate(rows) if f[1] != "FAILED"}
     if model and ask and priced and model != check.get("model"):
@@ -297,9 +282,6 @@ def main(run_dir, vehicle, ask=None, model=None):
             out.append((image_no(img), f"FAILED - {f[2]} - {f[3]} | | | {img}"))
             continue
         out.append((image_no(img), part_line(vehicle, f, names[f"i{k}"])))
-    for img in nulls:
-        loc = location(img)
-        out.append((image_no(img), f"NO PART NUMBER - {vehicle}" + (f" - {loc}" if loc else "") + f" | | | {img}"))
     out.sort(key=lambda x: x[0])                      # stable: same number keeps arrival order
     text = "\n".join(l for _, l in out) + "\n"
     (run / "agent3_results.txt").write_text(text)

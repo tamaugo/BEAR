@@ -147,14 +147,11 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     spend0 = c.total_spend()
     photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in c.PHOTO_EXT)
-    nulls = [p.name for p in photos if "NULL" in p.stem.upper().replace("-", " ").replace("_", " ").split()]
-    photos = [p for p in photos if p.name not in nulls]
     # Terminal runs ask in the Terminal, web page runs on the page (BEAR_WEB_ASK).
     ask = assemble.asker()
     if "--names-only" in sys.argv:
         return finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos), assemble.start_model() if ask else None)
-    print(f"{len(photos)} photos to price ({len(nulls)} NULL). This takes a few minutes for a big job.",
-          file=sys.stderr, flush=True)
+    print(f"{len(photos)} photos to price. This takes a few minutes for a big job.", file=sys.stderr, flush=True)
     S1 = json.loads(Path(s1_cache).read_text()) if s1_cache else {}
     done = {}
     if ask:
@@ -191,10 +188,7 @@ def main():
                 trace[futs[f]] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
     ordered = [lines[p.name] for p in photos]
     (out_dir / "agent2_results.md").write_text("\n".join(ordered) + "\n")
-    (out_dir / "null_files.txt").write_text("\n".join(nulls))
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
-    (out_dir / "null_files.txt").write_text("\n".join(nulls))
-    (out_dir / "market_titles.json").write_text(json.dumps({k: v.get("market_titles", []) for k, v in trace.items()}))
     finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos))
 
 

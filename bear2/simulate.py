@@ -47,7 +47,6 @@ PARTS = [
     ("IMG_0007.jpg", "8651A034", "MITSUBISHI SHOGUN 2007 RADIATOR COOLING FAN 8651A034 OEM", "39.99",
      "Radiator Cooling Fan", "Shogun Radiator Cooling Fan Oem"),
 ]
-NULLS = ["IMG_0008-NULL.jpg"]
 
 
 def say(text, end="\n"):
@@ -102,7 +101,7 @@ def main():
     if "--names-only" in sys.argv:
         print(assemble.main(out, vehicle, ask, assemble.start_model() if ask else None))
         return
-    say(f"{len(PARTS)} photos to price ({len(NULLS)} NULL). This takes a few seconds (simulated).")
+    say(f"{len(PARTS)} photos to price. This takes a few seconds (simulated).")
     if ask:
         say("Checking the first part before the full run ...")
         time.sleep(PAUSE * 3)
@@ -115,7 +114,6 @@ def main():
         raise RuntimeError("simulated crash while pricing on eBay (BEAR_SIM=crash)")
     counter("Pricing on eBay", len(PARTS) - 1)
     (out / "agent2_results.md").write_text("\n".join(agent2_line(p) for p in PARTS) + "\n")
-    (out / "null_files.txt").write_text("\n".join(NULLS))
     print(assemble.main(out, vehicle, ask))
     print(f"\nrun cost $0.0000 for {len(PARTS)} parts (simulated, no credits spent)")
 

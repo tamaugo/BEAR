@@ -33,7 +33,7 @@ alone. So this script writes the .xlsx itself.
 An .xlsx is just a ZIP archive of XML documents, and `zipfile` plus
 careful string building covers everything this pipeline needs: a bold
 frozen header, column widths, numeric prices, clickable URLs. The rest of
-the harness already follows this rule — see ebay_browse_lookup.py.
+the harness already follows this rule.
 
 --- Input format ---
 

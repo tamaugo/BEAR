@@ -107,13 +107,13 @@ What already works without changing BEAR:
   `bear2/common.py:41` counts only that run. Set `BEAR_RUN_CAP_USD` higher in the bot's
   environment if a full folder can cost more.
 
-How the bot names the photos it hands to BEAR (BEAR reads order and location from the
-filename, `bear2/assemble.py:59-72`):
+How the bot names the photos it hands to BEAR (BEAR reads row order from the first number
+in the filename, `bear2/assemble.py:image_no`):
 - `001.jpg`, `002.jpg`, … in upload order. The order number must come first: BEAR sorts on
   the first number in the name.
-- Later, with location: `003_NSF.jpg`.
-- Never put the folder name, the word `NULL`, or `NSF`/`NSR`/`OSF`/`OSR` in a name by
-  accident. BEAR skips `NULL` photos (`bear2/run.py:150`) and reads those codes as a location.
+- The bot names the photos itself (`001.jpg`…), so BEAR never reads the word `NULL` or the
+  NSF/NSR/OSF/OSR location codes from a filename (those features were removed from the
+  server code).
 - Keep the original file extension (`.jpg`, `.png`, `.webp`).
 
 ---

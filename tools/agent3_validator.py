@@ -2,7 +2,7 @@
 """
 Deterministic post-validator + repairer for Agent 3's 4-field pipe-delimited output.
 
-Agent 3 (agents/agent3_instructions_v4_jev_tuned.md) is an LLM and, on live A/B runs,
+Agent 3 is an LLM and, on live A/B runs,
 occasionally slips on STRUCTURE rather than content: a row lands out of numeric order,
 a row-shift cascade points a row at the wrong photo, a price misses its .99/19.99 rule,
 or a failure row keeps stray price/url text. These are exactly the kind of mistakes a
@@ -74,8 +74,8 @@ def parse_output_line(line, index):
     writes an empty field as nothing between two separators, which makes consecutive
     empty fields share a single space (`| | |`, not `|  |  |`). Splitting on the
     3-character ' | ' token eats across that shared space and undercounts fields on
-    every failure/no-part-number row -- confirmed against tests/fixtures/agent3_v4_
-    expected_output.md, where literal ' | ' splitting misparses every failure line.
+    every failure/no-part-number row -- confirmed against the v4 fixture, where
+    literal ' | ' splitting misparses every failure line.
     """
     row = Row(line, index)
     fields = [piece.strip() for piece in line.split("|")]

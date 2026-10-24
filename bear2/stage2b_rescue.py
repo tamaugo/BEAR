@@ -5,15 +5,14 @@ Triggered only when no directly-read number has a strong eBay presence (>= STRON
    0165-18 -> D165-1B (Bosch vacuum pump, IMG_3931), 9643895780 -> 9643695780 (IMG_3935).
 2. Revision-suffix drop for suffixed formats (Ford 3M51-6030-BA -> 3M51-6030 family).
 Any rescued or weak reading must pass a component gate before it can be used: a better
-vision model names the part, and Jev decides whether the reading's listings sell that same
+vision model names the part and decides whether the reading's listings sell that same
 kind of component. A number that merely exists on eBay is not enough (a misread 0165-18
 matched a gold watch before the category filter).
 """
 import itertools, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c, configs
-import jev_client as j
+import common as c
 import stage2_numbers as s2
 
 STRONG = 3
@@ -72,9 +71,7 @@ def rescue(s1, make):
     return found
 
 
-GATE_MODEL = configs.active()["check"]   # None (default setup) = gemini gate only; beta: openai/gpt-6-luna-decisions
-GATE_FALLBACK_MODEL = "google/gemini-3.5-flash"
-GATE_SURE = (0.2, 0.8)   # Luna below/above these is a clear NO/YES; in between asks the fallback
+GATE_MODEL = "google/gemini-3.5-flash"   # the component gate for weak/rescued reads (default setup)
 
 
 def gate_question(reading):
@@ -87,39 +84,14 @@ def gate_question(reading):
 
 def visual_gate(photo_path, reading):
     """Photo + the reading's eBay titles -> does the photo show that kind of component?
-    Replaces a text-only Jev gate: Jev never sees the photo, and a text description of the
-    photo was wrong on IMG_3935 (said MAP sensor; the part is a crank sensor).
-    Measured 2026-10-07 on 20 photo/listing pairs (10 true, 10 swapped, i40 set): Luna Decisions
-    20/20 at ~$0.00009 per call (800px photo), gemini-3.5-flash 20/20 at ~$0.0036. Luna's
-    answers were 0.84-1.00 on true pairs and 0.00-0.03 on swapped ones. Anything less clear-cut,
-    or any Decisions API error, is decided by the old gemini gate, so the gate is never worse
-    than before. Used only for weak/rescued/low-confidence reads."""
-    if not GATE_MODEL:
-        return visual_gate_chat(photo_path, reading)
-    instructions, titles = gate_question(reading)
-    try:
-        r = c.decide(GATE_MODEL, [
-            {"type": "text", "text": "Photo of one used car part. eBay listings for the part number read off it:\n" + titles},
-            # chat-style image_url is read as a picture; an OpenAI "input_image" part is billed as text
-            {"type": "image_url", "image_url": {"url": c.img_data_uri(photo_path, 800)}}],
-            {"same": {"type": "noul", "instructions": instructions,
-                      "criteria": {"true": "same kind of component", "false": "a different kind of component"}}},
-            tag="visual_gate")
-        p = r["answers"]["same"]["noul"]
-        if p >= GATE_SURE[1]:
-            return True
-        if p <= GATE_SURE[0]:
-            return False
-    except Exception as e:
-        print(f"(photo check: {GATE_MODEL} unavailable, using {GATE_FALLBACK_MODEL}: {str(e)[:120]})",
-              file=sys.stderr, flush=True)
+    Used only for weak/rescued/low-confidence reads (gemini-3.5-flash YES/NO)."""
     return visual_gate_chat(photo_path, reading)
 
 
 def visual_gate_chat(photo_path, reading):
-    """The previous gate (gemini-3.5-flash YES/NO): fallback for errors and unclear Luna answers."""
+    """The gate: gemini-3.5-flash answers YES/NO after seeing the photo and the listings."""
     instructions, titles = gate_question(reading)
-    out, _ = c.chat(GATE_FALLBACK_MODEL, [{"role": "user", "content": [
+    out, _ = c.chat(GATE_MODEL, [{"role": "user", "content": [
         {"type": "text", "text": instructions + " Reply with exactly one word: YES or NO.\nListings:\n" + titles},
         {"type": "image_url", "image_url": {"url": c.img_data_uri(photo_path, 1600)}}]}],
         max_tokens=1500, extra={"reasoning": {"effort": "low", "exclude": True}}, tag="visual_gate")
