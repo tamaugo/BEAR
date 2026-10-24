@@ -5,9 +5,6 @@
 # Files are on disk, just untracked. Remove this line to start tracking them.
 docs/
 
-# Session working notes — handoffs and context snapshots, prose in flux
-session-notes/
-
 # Claude Code local settings (machine-specific)
 .claude/
 
@@ -46,6 +43,7 @@ real-data/
 
 # Operator test photos (real job data) — never commit
 harness/photos-base/
+tests/photos/
 bear2/cache/
 bear2/spend.jsonl
 bear2/runs/
