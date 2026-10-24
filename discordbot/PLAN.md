@@ -111,10 +111,9 @@ How the bot names the photos it hands to BEAR (BEAR reads row order from the fir
 in the filename, `bear2/assemble.py:image_no`):
 - `001.jpg`, `002.jpg`, … in upload order. The order number must come first: BEAR sorts on
   the first number in the name.
-- Later, with location: `003_NSF.jpg`.
 - The bot names the photos itself (`001.jpg`…), so BEAR never reads the word `NULL` or the
   NSF/NSR/OSF/OSR location codes from a filename (those features were removed from the
-  server code; location is planned via emoji reactions instead).
+  server code).
 - Keep the original file extension (`.jpg`, `.png`, `.webp`).
 
 ---

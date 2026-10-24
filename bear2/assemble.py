@@ -120,7 +120,9 @@ def parse_row(line):
 
 
 def title_item(f):
-    return {"title": f[2]}
+    # "locationcode" is always false on the server (no location words in 001.jpg names), but it
+    # stays so the name model gets exactly the same input its instructions above describe.
+    return {"title": f[2], "locationcode": False}
 
 
 def part_line(vehicle, f, name):
