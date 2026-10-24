@@ -28,8 +28,7 @@ version of the pipeline, and how each one was settled. Researched October 2026.
 
 | Fact | Where | Effect |
 |---|---|---|
-| Location (NSF/NSR/OSF/OSR) and row order come from the **filename**. | `bear2/assemble.py:59-72` | Discord names like `IMG_4821.jpg` / `image0.jpg` would lose both. The bot renames photos `001.jpg`… (later `003_NSF.jpg`). |
-| Photos with the word `NULL` in the name are skipped. | `bear2/run.py:150` | The bot never puts it in a name. |
+| Row order comes from the **filename** (the NSF/NSR/OSF/OSR location words and the `NULL` skip were removed from the server code). | `bear2/assemble.py:image_no` | Discord names like `IMG_4821.jpg` / `image0.jpg` would lose the order. The bot renames photos `001.jpg`… |
 | Only `.jpg/.jpeg/.png` are read. | `bear2/run.py:149`, `bear2/stage1_read.py:126` | Add `.webp` (PLAN §9 step 1). Everything later re-encodes through Pillow. |
 | Every photo is shrunk to 1600 px on the long side before the model sees it. | `bear2/common.py:192` | Makes the free pixel-size check meaningful. |
 | With no terminal and no web page, the first-line check is skipped and a failed name model stops the run with "No names were written". | `bear2/assemble.py:187`, `bear2/assemble.py:280` | The bot needs no BEAR change for this. |

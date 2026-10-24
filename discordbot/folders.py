@@ -117,8 +117,8 @@ def seconds_since_last_upload(messages, now=None):
 
 
 def photo_name(i, filename):
-    """001.jpg, 002.webp ... BEAR reads row order from the first number in the name and location
-    from NSF/NSR/OSF/OSR words, so the Discord name (IMG_4821.jpg, image0.jpg) is never kept."""
+    """001.jpg, 002.webp ... BEAR reads row order from the first number in the name, so the
+    Discord name (IMG_4821.jpg, image0.jpg) is never kept."""
     return f"{i:03d}{PurePath(filename).suffix.lower()}"
 
 

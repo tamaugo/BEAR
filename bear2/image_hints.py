@@ -1,4 +1,5 @@
-"""Possible-match hints for photos BEAR could not price (FAILED rows and NULL photos).
+"""Possible-match hints for photos BEAR could not price (FAILED rows, and NO PART NUMBER
+rows if any reach the results).
 
 eBay's search-by-image returns listings that LOOK like the photo. Measured 2026-10-01:
 right part in the top 50 for 5/9 photos with known answers, and a vision "same part?"

@@ -80,7 +80,8 @@ check("no uploads", fo.seconds_since_last_upload([msg(content="x")], NOW), None)
 check("photo names", [fo.photo_name(i, f) for i, f in [(1, "IMG_4821.JPG"), (12, "image0.webp"), (100, "a.jpeg")]],
       ["001.jpg", "012.webp", "100.jpeg"])
 import assemble  # noqa: E402
-check("BEAR sees no location or NULL in our names", [assemble.location(fo.photo_name(i, "IMG_NSF_NULL.jpg")) for i in (1, 2)], [None, None])
+check("BEAR names carry no location or NULL codes", [fo.photo_name(i, "IMG_NSF_NULL.jpg") for i in (1, 2)],
+      ["001.jpg", "002.jpg"])
 check("BEAR keeps upload order", sorted([fo.photo_name(i, "x.jpg") for i in (10, 2, 1)], key=assemble.image_no),
       ["001.jpg", "002.jpg", "010.jpg"])
 check("xlsx name", fo.xlsx_name("Q184", "FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL"), "Q184-ford-fiesta-mk7.xlsx")
@@ -99,7 +100,7 @@ LOGS = [
     ("Traceback ...\nRuntimeError: simulated crash while pricing on eBay (BEAR_SIM=crash)", "BEAR-R01"),
 ]
 for text, code in LOGS:
-    check(f"classify {code}", fo.classify("5 photos to price (0 NULL).\nReading part numbers 4/4\n" + text), code)
+    check(f"classify {code}", fo.classify("5 photos to price.\nReading part numbers 4/4\n" + text), code)
 check("partial: cap", fo.partial_problem('{"003.jpg": {"error": "RuntimeError: spend cap reached: $1"}}'), "BEAR-K02")
 check("partial: clean", fo.partial_problem('{"003.jpg": {"s1": {}}}'), None)
 rep = fo.error_report("Q184", "BEAR-D04", "<#9>", "x" * 5000)
