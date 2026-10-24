@@ -5,9 +5,8 @@
 `jev_client.py` is a stdlib-only client for OpenRouter's Decisions API
 (`POST https://openrouter.ai/api/alpha/decisions`), which the pipeline will use to
 route part-number/listing/name-cleaning decisions through the `typesafe/jev-1.13`
-model instead of free-text prompting. `jev_questions.py` builds the three
-pipeline-specific question sets (one per agent stage); `jev_client.py` itself only
-knows how to send a request and parse the response.
+model instead of free-text prompting. `jev_client.py` itself only knows how to
+send a request and parse the response.
 
 ### Setup
 
@@ -79,4 +78,4 @@ python3 tools/agent3_validator.py <agent3_results.txt> <agent2_results_file> [ba
   altered part number, unparseable price, ambiguous remaps — investigate
   before sending to a customer.
 - Original file is atomically replaced only when a repair happened; give a
-  third argument to keep a backup. Self-tests: `python3 tools/test_agent3_validator.py`.
+  third argument to keep a backup. Self-tests: `python3 tests/test_agent3_validator.py`.

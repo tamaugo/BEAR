@@ -100,7 +100,7 @@ def call_decisions(model: str, state, questions: dict, *, api_key: str = None,
     """POST one Decisions request and return the parsed JSON response.
 
     `state` is the content being evaluated (string, dict, or list); `questions` is
-    a dict of question-key -> question spec (see jev_questions.py for builders).
+    a dict of question-key -> question spec.
     """
     api_key = api_key or resolve_api_key()
     body = json.dumps({"model": model, "state": state, "questions": questions}).encode("utf-8")
