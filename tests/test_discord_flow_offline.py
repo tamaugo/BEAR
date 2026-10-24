@@ -7,11 +7,12 @@ Plays /run through the real bot code against a fake car channel, with BEAR's dev
 person can cause, the name model failures (N01-N03) and a crash (R01) landing in the error
 channel, and three folders at once with two slots (one waits in the queue). Then the renaming:
 the SKU typed in /run's offer, the zip of every photo posted after the spreadsheet, /rename on its
-own, and /quit stopping a run.
+own, and /quit stopping a run. Last, the shadow test with its models faked: every photo logged,
+reruns not counted twice, and the note in the error channel.
 
 usage: .venv/bin/python tests/test_discord_flow_offline.py
 """
-import asyncio, logging, os, sys, tempfile, time, zipfile
+import asyncio, io, logging, os, sys, tempfile, time, zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -47,6 +48,11 @@ class Att:
     async def save(self, path):
         Image.new("RGB", (64, 48), "white").save(path, "JPEG" if Path(path).suffix != ".webp" else "WEBP")
 
+    async def read(self):
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 48), "white").save(buf, "JPEG")
+        return buf.getvalue()
+
 
 def flat(content, embeds):
     """A post as plain text (content + each embed's title and description), for the checks."""
@@ -65,7 +71,8 @@ class Channel:
         self.view = None   # the buttons last put on a message
 
     def add(self, author=PERSON, content="", files=(), money=False, ago=300, embeds=()):
-        m = NS(author=author, content=content, attachments=[Att(f) for f in files], embeds=list(embeds),
+        m = NS(id=self.id * 1000 + len(self.msgs), author=author, content=content,
+               attachments=[Att(f) for f in files], embeds=list(embeds),
                reactions=[NS(emoji=fo.MONEY)] if money else [],
                created_at=datetime.now(timezone.utc) - timedelta(seconds=ago),
                jump_url=f"https://discord.com/channels/1/{self.id}/{len(self.msgs)}")
@@ -82,7 +89,8 @@ class Channel:
             if file.filename.endswith(".zip"):
                 self.zips[file.filename] = zipfile.ZipFile(file.fp).namelist()
 
-    async def send(self, content=None, embeds=None, file=None, files=None, delete_after=None, view=None):
+    async def send(self, content=None, embeds=None, file=None, files=None, delete_after=None, view=None,
+                   allowed_mentions=None):
         text = flat(content, embeds)
         self.sent.append((text, file.filename if file else None))
         self.shown.append(text)
@@ -350,6 +358,36 @@ async def main():
     q = Inter(ch)
     await B.quit_cmd.callback(q)
     check("/quit with nothing running", any("Nothing is running" in r for r in q.replies), True)
+
+    # Shadow test: never in dev mode; switched on here with the Decisions models faked (no network).
+    shadow_log = TMP / "shadow" / "shadow.jsonl"
+    check("no shadow test in dev mode", shadow_log.exists(), False)
+    asked = []
+
+    def fake_check(model, uri, with_label):
+        asked.append(uri.startswith("data:image/jpeg;base64,"))
+        return {"label": 0.9 if with_label else None, "loc": "NF", "loc_p": {"NF": 0.9}, "cost": 0.0001}
+    B.sh.check, B.shadow_on = fake_check, lambda: True
+    os.environ.update({"BEAR_SHADOW_PING_PARTS": "3", "BEAR_SHADOW_PING_USER": "123"})
+    errors_before = len(ERRORS.sent)
+    ch = folder(87, flags=2)
+    for _ in range(2):   # the second /run of the same folder replaces the first one's answers
+        await run(ch)
+        await asyncio.gather(*B.SHADOW)
+    rows = B.sh.latest_runs(B.sh.read_log(shadow_log))
+    check("shadow: every photo asked by the label model", sum(r["model"] == B.sh.LABEL_MODEL for r in rows), 4)
+    check("shadow: 💸 photos asked by every model", sum(r["flagged"] for r in rows), 2 * (1 + len(B.sh.LOC_MODELS)))
+    check("shadow: photos sent as JPEG", set(asked), {True})
+    check("shadow: rerun not counted twice", B.sh.counts(B.sh.read_log(shadow_log)), (1, 2))
+    check("shadow: no note before 3 💸 photos", len(ERRORS.sent), errors_before)
+    await run(folder(88, name="Q185", flags=2))
+    await asyncio.gather(*B.SHADOW)
+    check("shadow: one note at 3+ 💸 photos", len(ERRORS.sent), errors_before + 1)
+    check("shadow: note mentions the owner", ERRORS.sent[-1][0].startswith("<@123>"), True)
+    check("shadow: note says how much", "4 💸 photos" in ERRORS.sent[-1][0], True)
+    await run(folder(89, name="Q186", flags=1))
+    await asyncio.gather(*B.SHADOW)
+    check("shadow: no second note until 6", len(ERRORS.sent), errors_before + 1)
 
 asyncio.run(main())
 if fails:

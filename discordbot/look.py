@@ -310,6 +310,17 @@ def bot_started(max_runs, sim=None, version=None):
                         footer=f"BEAR {version}" if version else None))
 
 
+def shadow_ping(folders, parts, log_path, user_id=None):
+    """The shadow test (shadow.py) has enough new data to look at."""
+    lines = [f"The shadow test has logged **{_plural(parts, '💸 photo')}** from **{_plural(folders, 'folder')}**. "
+             "Time to look at whether a model could find the part-number photos and read the locations.",
+             f"On the server: `/opt/bear/.venv/bin/python /opt/bear/discordbot/shadow_report.py {log_path}`, "
+             "or send that file to Claude.",
+             "It keeps collecting. Turn it off with `BEAR_SHADOW=0` in `.env` (no restart)."]
+    return _post(_embed(AMBER, "\N{TEST TUBE} Shadow test: time to look at the data", "\n\n".join(lines)),
+                 content=f"<@{user_id}>" if user_id else None)
+
+
 # --- /status -------------------------------------------------------------------------------------
 
 def status_card(active, max_runs, now, dev=False):
