@@ -161,9 +161,10 @@ def open_folder_warning(previous):
 # the next state. done_card / problem_card are the last edit.
 
 def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=None,
-             wait_seconds=None, max_runs=None, dev=False):
+             wait_seconds=None, max_runs=None, dev=False, photos=None):
     """state: checking | waiting | downloading | queued | running. folder is None while /run is
-    still looking for it."""
+    still looking for it. photos: how many photos are being saved (every photo in the folder);
+    parts if not given."""
     p = _plural(parts, "part") if parts is not None else None
     if state == "checking":
         title = f"{FOLDER} {folder} · Checking the folder" if folder else f"{FOLDER} Checking the folder"
@@ -174,7 +175,7 @@ def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=N
                 f"{wait_seconds or 30} seconds.")
     elif state == "downloading":
         title, colour = f"{FOLDER} {folder} · Running {p}", GREY
-        line = f"Saving the photos ... {got or 0}/{parts}"
+        line = f"Saving the photos ... {got or 0}/{photos if photos is not None else parts}"
     elif state == "queued":
         title, colour = f"{FOLDER} {folder} · Running {p}", AMBER
         ahead = f"{_plural(queue_ahead, 'folder')} ahead" if queue_ahead else "next in line"
@@ -379,8 +380,7 @@ def guide(error_channel_id=None):
     )
     tips = ("Text messages are removed: car channels are photos only.\n"
             "**/run** again re-does the whole folder.\n"
-            "**/run** also offers to rename every photo to `SKU-1`, `SKU-2` ... and posts them as a zip "
-            "after the spreadsheet. **/rename** does only that.\n"
+            "**/rename** renames every photo to `SKU-1`, `SKU-2` ... and posts them as a zip.\n"
             "**/quit** stops whatever is running in the channel.\n"
             "**/status** shows what BEAR is working on.")
     if error_channel_id:

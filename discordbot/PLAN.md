@@ -18,8 +18,9 @@ stay exactly as they are on `main`; this branch (`discord-bear`) is the server e
    message: **📁 Folder Q184**. Everything after it belongs to Q184.
 3. **Upload the photos** in any groups you like. The **part-number photo goes on its own**
    (one photo in its own message) and gets the **💸 `:money_with_wings:`** reaction.
-   That photo is the only one BEAR sees. Every other photo is ignored.
-4. **`/run`** ends the folder and runs every 💸 photo in it through BEAR.
+   That photo is the only one BEAR prices. Every other photo is saved on the server with the run
+   (`all_photos/`) but not priced.
+4. **`/run`** ends the folder, saves every photo in it, and runs every 💸 photo through BEAR.
 5. The bot replies **"Running x parts"**. If you uploaded 20 parts and it says 4, flags are
    missing. It does not wait for a GO; it just runs.
 6. The bot posts **one spreadsheet for the folder**, e.g. `Q184-ford-fiesta-mk7.xlsx`,
@@ -27,7 +28,8 @@ stay exactly as they are on `main`; this branch (`discord-bear`) is the server e
 7. Anything that goes wrong is posted in the **error channel**:
    "**Q184** encountered an issue — `BEAR-D04` — fix: …".
 
-8. **Renaming (optional).** Next to the run card, `/run` posts **🏷️ Rename the photos?** with a
+8. **Renaming (dormant since 2026-10-25).** `/run` no longer offers it; `BEAR_RENAME_OFFER=1` in
+   `.env` brings the offer back. When on: next to the run card, `/run` posts **🏷️ Rename the photos?** with a
    **Rename photos** button. Tapping it opens a box to type a SKU, e.g. `MYSKU`. People have
    **1 minute** (`BEAR_RENAME_WAIT`); left blank, the photos aren't renamed and the card says so.
    With a SKU, **every photo** in the folder (from the 📁 marker to `/run`, 💸 or not, in upload
@@ -135,9 +137,10 @@ in the filename, `bear2/assemble.py:image_no`):
    - A 💸 message with more than one photo = error `BEAR-D04` (the flag can't tell which).
    - A file BEAR can't read (HEIC etc.) = error `BEAR-D05`.
 5. Post **"Running x parts"**.
-6. Download each flagged photo straight away (Discord links expire after 24 h) into
-   `<storage>/<channel>/<folder>-<time>/photos/` as `001.jpg`, `002.jpg`, …
-   A failed download = error `BEAR-D06`.
+6. Download every photo in the folder straight away (Discord links expire after 24 h) into
+   `<storage>/<channel>/<folder>-<time>/all_photos/` as `001.jpg`, `002.jpg`, … in upload order,
+   listed in `all_photos.tsv`. The flagged ones also go in `photos/` as `001.jpg`, … (the folder
+   BEAR reads). A failed download of any photo = error `BEAR-D06`.
 7. Run `bear2/run.py` as a separate process. It can take longer than Discord's 15-minute
    window for replying to a command, so the result is posted as a **normal bot message**,
    not as a reply to `/run`.

@@ -24,8 +24,8 @@ BEAR runs live on the VM; the Mac is not involved. Takes about 30 minutes.
 | Options | Start at boot: **Yes**; QEMU Guest Agent: **on** |
 
 Why that size: BEAR mostly waits on OpenRouter and eBay, so CPU barely matters. Each run opens
-up to 6 photos at once (~300 MB peak), two runs plus the bot fit easily in 4 GB. Flagged photos
-are ~3 MB each, so 32 GB holds about 100 big folders before old runs need deleting (§6).
+up to 6 photos at once (~300 MB peak), two runs plus the bot fit easily in 4 GB. Every photo in a
+folder is kept (~3 MB each), so watch the disk and delete old runs (§6).
 
 The VM only connects **out** (to Discord, OpenRouter, eBay): no port forwarding, no public IP.
 
@@ -155,8 +155,9 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Live log | `journalctl -u bear-bot -f` (Ctrl+C to stop watching) |
 | Restart | `systemctl restart bear-bot` (a running folder is lost; `/run` it again) |
 | Update to the latest `discord-bear` | `/status` in Discord first (updating restarts the bot), then `bash /opt/bear/discordbot/deploy/setup.sh` |
-| Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
-| Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60). No restart. |
+| Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM`, `BEAR_RENAME_OFFER`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
+| Bring back `/run`'s rename offer (off since 2026-10-25) | In `.env`: `BEAR_RENAME_OFFER=1`. No restart. `/rename` works either way. |
+| Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60; only with the offer on). No restart. |
 | What was renamed | `cat /var/lib/bear/runs/renames/renames.log` (one line per rename: when, channel, folder, SKU, what happened, photos, zips) |
 | Shadow test results | `/opt/bear/.venv/bin/python /opt/bear/discordbot/shadow_report.py /var/lib/bear/runs/shadow/shadow.jsonl`. Add `--review /tmp/review.csv` for a sheet of 💸 photos to fill in the right location, then `--truth /tmp/review.csv` to score the models. |
 | Turn the shadow test off | In `.env`: `BEAR_SHADOW=0`. No restart. `BEAR_SHADOW_PING_PARTS=300` sets how often it reminds you; `BEAR_SHADOW_PING_USER=<your user ID>` @mentions you. |
@@ -165,9 +166,11 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Delete runs older than 60 days | `find /var/lib/bear/runs -mindepth 2 -maxdepth 2 -type d -mtime +60 -exec rm -rf {} +` |
 
 **Where things are:** each run is in
-`/var/lib/bear/runs/<channel>-<id>/<folder>-<date-time>/`: `photos/` (`001.jpg`, … in upload
-order), `photos.tsv` (which Discord message each photo came from, so a spreadsheet row can be
-traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
+`/var/lib/bear/runs/<channel>-<id>/<folder>-<date-time>/`: `all_photos/` (every photo in the
+folder, `001.jpg`, … in upload order), `all_photos.tsv` (original name, Discord message, and the
+`photos/` name if it is a 💸 photo), `photos/` (the 💸 photos BEAR priced, `001.jpg`, … in upload
+order; the same files as in `all_photos/`, not copies), `photos.tsv` (which Discord message each
+of those came from, so a spreadsheet row can be traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
 `spend.jsonl` (what that folder cost).
 
 Renames are in `/var/lib/bear/runs/renames/<channel>-<id>/<SKU>-<date-time>/`, on the same disk

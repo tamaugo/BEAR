@@ -25,7 +25,7 @@ ERRORS = {
                  "Post the part-number photo on its own, flag that one with 💸, then /run again."),
     "BEAR-D05": ("A 💸 file is not a photo BEAR can read (e.g. HEIC).",
                  "Re-upload it as JPG, PNG or WEBP, flag it with 💸, then /run again."),
-    "BEAR-D06": ("A 💸 photo couldn't be downloaded from Discord.",
+    "BEAR-D06": ("A photo in the folder couldn't be downloaded from Discord.",
                  "/run again. If it keeps failing, re-upload that photo."),
     "BEAR-D07": ("The photos couldn't be renamed: one didn't download, or a zip couldn't be posted.",
                  "/rename again with the same SKU. If it keeps failing, re-upload that photo or look at the bot's log."),
