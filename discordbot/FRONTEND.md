@@ -95,7 +95,7 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 | In `#bear-errors` | `**Q184** encountered an issue — \`BEAR-D04\` — fix: …` + red card with meaning, car, link to the folder, log excerpt (+ log file) | `error_report` |
 | Bot starts | Grey *BEAR is online* card in `#bear-errors` | `bot_started` |
 | `/status` | *1 of 2 running*, one line per folder with a channel link | `status_card` |
-| `/run` (beside the run card) | Amber *🏷️ Rename the photos?* + **Rename photos** button (opens a SKU box), *closes in 1 minute* | `rename_card("offer")` |
+| `/run` (beside the run card; only with `BEAR_RENAME_OFFER=1`, off since 2026-10-25) | Amber *🏷️ Rename the photos?* + **Rename photos** button (opens a SKU box), *closes in 1 minute* | `rename_card("offer")` |
 | …left blank | Same card, grey: *No SKU given, photos not renamed* | `rename_card("skipped")` |
 | …SKU typed | Same card: *Renaming 23 photos*, saving 10/23, then *Zip ready. It's posted after the spreadsheet* | `rename_card("saving"/"posting")` |
 | After the spreadsheet | `🏷️ **MYSKU-1.zip** (1 of 2): MYSKU-1.jpg to MYSKU-14.jpg` + the zip; the card turns green | `zip_post`, `rename_card("done")` |

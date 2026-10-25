@@ -30,7 +30,7 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 | Command | Where | Visible reply | Effect |
 |---|---|---|---|
 | `/newfolder name:<str>` | a car channel | `look.folder_card` (public). Extra notes are ephemeral: `open_folder_warning`, `reply("topic_order")` | Starts a folder. The marker content line is exactly `📁 Folder **<name>**` (`folders.MARKER`): **the front end must not change this line**; `/run` finds the folder by it. |
-| `/run` | a car channel | ephemeral `reply("on_it")`, then **one run card** (a normal channel message) edited through the states, ending in `done_card` + the `.xlsx` attached, or `problem_card` | Reads the folder, downloads the 💸 photos, queues, runs BEAR, posts the result. |
+| `/run` | a car channel | ephemeral `reply("on_it")`, then **one run card** (a normal channel message) edited through the states, ending in `done_card` + the `.xlsx` attached, or `problem_card` | Reads the folder, downloads every photo, queues, runs BEAR on the 💸 photos, posts the result. |
 | `/status` | anywhere | `look.status_card` (ephemeral) | Lists running and queued folders. |
 
 **Rules for `name`**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`; anything else → `reply("bad_name")`.
@@ -58,7 +58,7 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 |---|---|---|
 | `checking` | /run starts (folder `None`), then again once the folder is known | `folder`, `car`, `dev` |
 | `waiting` | the newest upload is younger than `BEAR_UPLOAD_WAIT` | `wait_seconds` |
-| `downloading` | after the 💸 photos are picked; then every 5 photos | `parts`, `got` |
+| `downloading` | after the 💸 photos are picked; then every 5 photos | `parts`, `photos` (every photo being saved), `got` |
 | `queued` | all `BEAR_MAX_RUNS` slots are busy | `parts`, `queue_ahead`, `max_runs` |
 | `running` | a slot is free and BEAR starts | `parts`, `since` (unix time) |
 
@@ -79,7 +79,7 @@ downloads), because Discord rate-limits edits.
 | Function | Notes |
 |---|---|
 | `folder_card(name, car, dev)` | `content` **must equal** `folders.marker(name)`; `bot.py` enforces it |
-| `run_card(state, folder\|None, car, parts, got, queue_ahead, since, wait_seconds, max_runs, dev)` | state: `checking`, `waiting`, `downloading`, `queued` or `running` |
+| `run_card(state, folder\|None, car, parts, got, queue_ahead, since, wait_seconds, max_runs, dev, photos)` | state: `checking`, `waiting`, `downloading`, `queued` or `running` |
 | `done_card(folder, car, parts, priced, filename, minutes, dev)` | |
 | `problem_card(folder\|None, code, error_channel_id, photo_links, dev, partial)` | |
 | `error_report(folder, code, meaning, fix, channel_id, car, detail, jump_url, dev)` | |
@@ -119,7 +119,9 @@ VM, `BEAR_STORAGE=/var/lib/bear/runs`, which is on the BEAR SSD.
 
 | Path | Written by | Contents |
 |---|---|---|
-| `photos/001.jpg …` | bot | the 💸 photos in upload order; the extension is kept (`.jpg .jpeg .png .webp`) |
+| `all_photos/001.jpg …` | bot | every photo in the folder (💸 or not) in upload order; the extension is kept (HEIC too) |
+| `all_photos.tsv` | bot | `001.jpg <TAB> original filename <TAB> message link <TAB> photos/ name if 💸, else blank` |
+| `photos/001.jpg …` | bot | the 💸 photos in upload order (hard links to their `all_photos/` files); the extension is kept (`.jpg .jpeg .png .webp`). BEAR reads only this folder |
 | `photos.tsv` | bot | `001.jpg <TAB> original filename <TAB> message link`, one line per photo |
 | `bear.log` | BEAR (stdout + stderr) | the whole run log |
 | `spend.jsonl` | BEAR | this folder's spend only (`BEAR_SPEND_LEDGER`) |
@@ -197,7 +199,7 @@ told". **Every code must exist in all three**:
 | D03 | no 💸 | yes |
 | D04 | 💸 on a message with more than one file (links to the messages) | yes |
 | D05 | 💸 file not jpg/png/webp (links) | yes |
-| D06 | download failed 3 times (link) | yes |
+| D06 | a photo (💸 or not) failed to download 3 times (link) | yes |
 | N01 / N02 / N03 | name model rate-limited / not answering / unusable names | no |
 | K01 | OpenRouter 402 | no |
 | K02 | BEAR spend cap | no |

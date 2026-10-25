@@ -1,11 +1,11 @@
 """Discord BEAR bot. One channel per car (the vehicle text is the channel topic):
-/newfolder name:<x> starts a folder, 💸 flags each part-number photo, /run downloads the flagged
-photos and runs BEAR on them as a separate process, then posts the spreadsheet. Up to
+/newfolder name:<x> starts a folder, 💸 flags each part-number photo, /run downloads every photo
+in the folder, runs BEAR on the flagged ones as a separate process, then posts the spreadsheet. Up to
 BEAR_MAX_RUNS folders (default 2) run at once; more wait in a queue. Errors go to the error
 channel with a code and a fix (folders.ERRORS). /status lists what is running.
-Renaming (renames.py) is separate from BEAR: /run offers to rename every photo in the folder to
-SKU-1, SKU-2 ... for BEAR_RENAME_WAIT seconds, and posts them as zips after the spreadsheet;
-/rename does only that. /quit stops everything /run or /rename is doing in the channel.
+Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
+SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
+/quit stops everything /run or /rename is doing in the channel.
 After each /run, the shadow test (shadow.py) quietly asks Decisions models about every photo in
 the folder and logs the answers next to staff's 💸 flags; nothing is posted until there is enough
 data to look at.
@@ -19,8 +19,9 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_UPLOAD_WAIT     seconds with no new upload before /run starts (30)
   BEAR_RUN_TIMEOUT     seconds before a run is stopped (7200)
   BEAR_STORAGE         where photos, results and logs are kept (<repo>/runs); renames go in its renames/
-  BEAR_RENAME_WAIT     seconds /run gives people to type a SKU (60); read at each /run, no restart
-  BEAR_RENAME_DOWNLOADS  photos downloaded at once for renaming, across all channels (6)
+  BEAR_RENAME_OFFER    1 brings back /run's offer to rename the photos (off); read at each /run
+  BEAR_RENAME_WAIT     seconds that offer gives people to type a SKU (60); read at each /run, no restart
+  BEAR_RENAME_DOWNLOADS  photos downloaded at once by /run and /rename, across all channels (6)
   BEAR_ZIP_MB          biggest zip posted, in MiB (10: Discord's limit without server boosts)
   BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent
   BEAR_SHADOW          0 turns the shadow test off (on by default, never in dev mode); read at each /run
@@ -99,9 +100,9 @@ ZIP_MB = max(1, number("BEAR_ZIP_MB", 10))
 NO_CAR = "No car in the topic"
 
 SLOTS = asyncio.Semaphore(MAX_RUNS)
-# Renames have no limit on how many run at once. What keeps CPU and memory down is that photos
-# are downloaded RENAME_DOWNLOADS at a time across all of them (each is held in memory while it
-# is saved) and zips are written two at a time (stored, not compressed: disk work only).
+# Runs and renames download photos RENAME_DOWNLOADS at a time across all of them (each is held in
+# memory while it is saved). Renames have no limit on how many run at once; their zips are written
+# two at a time (stored, not compressed: disk work only).
 DOWNLOADS = asyncio.Semaphore(RENAME_DOWNLOADS)
 ZIPPING = asyncio.Semaphore(2)
 ACTIVE = {}   # channel id -> {"folder", "state", "parts", "since", "task"}: one /run per car channel at a time
@@ -113,6 +114,12 @@ SHADOW_CALLS = asyncio.Semaphore(4)   # photos asked about at once, across all f
 
 def dev():
     return bool(setting("BEAR_SIM"))
+
+
+def rename_offer_on():
+    """BEAR_RENAME_OFFER, read at each /run. Off by default: the renaming is kept but /run doesn't
+    offer it (owner, 2026-10-25). /rename still works."""
+    return setting("BEAR_RENAME_OFFER", "0").lower() in ("1", "on", "yes", "true")
 
 
 def rename_wait():
@@ -319,13 +326,13 @@ async def run(inter: discord.Interaction):
 
 
 async def whole_run(ch, card, a):
-    """Everything one /run does: BEAR on the 💸 photos, and beside it the offer to rename every
-    photo in the folder, whose zip is posted after the spreadsheet. The two don't depend on each
-    other: either can fail on its own. Cancelling this task (/quit) stops both."""
+    """Everything one /run does: BEAR on the 💸 photos, and, if BEAR_RENAME_OFFER is on, beside it
+    the offer to rename every photo in the folder, whose zip is posted after the spreadsheet. The
+    two don't depend on each other: either can fail on its own. Cancelling this task (/quit) stops both."""
     car = (ch.topic or "").strip()
     await card.show(look.run_card("checking", None, car or NO_CAR, dev=dev()))
     ready, bear_done = asyncio.get_running_loop().create_future(), asyncio.Event()
-    renaming = asyncio.create_task(offer_rename(ch, ready, bear_done))
+    renaming = asyncio.create_task(offer_rename(ch, ready, bear_done)) if rename_offer_on() else None
     try:
         try:
             await run_folder(ch, card, a, ready)
@@ -343,11 +350,11 @@ async def whole_run(ch, card, a):
         got = ready.result() if ready.done() and not ready.cancelled() else None
         if got and shadow_on():
             start_shadow(ch, got[0], a.get("marker_id"), got[1])
-        if not renaming.done():
+        if renaming and not renaming.done():
             a.update(state="renaming photos")
-        await renaming
+            await renaming
     finally:
-        if not renaming.done():
+        if renaming and not renaming.done():
             renaming.cancel()
             await asyncio.gather(renaming, return_exceptions=True)
 
@@ -473,21 +480,31 @@ async def run_folder(ch, card, a, ready):
     if not car:
         raise fo.FolderError("BEAR-D01")
     picks = fo.flagged_photos(msgs)
+    every = rn.all_photos(msgs)[0]   # 💸 or not; the 💸 ones are among them
     a.update(state="downloading photos", parts=len(picks))
-    await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))
+    await card.show(look.run_card("downloading", folder, car, parts=len(picks), photos=len(every), got=0, dev=dev()))
 
-    # Download now: Discord's file links expire after 24 hours.
+    # Download now: Discord's file links expire after 24 hours. Every photo in the folder is kept
+    # in all_photos/; the 💸 ones are also put in photos/, the only folder BEAR reads (it prices
+    # each photo in it as one part).
     run_dir = new_dir(STORAGE / f"{fo.slug(ch.name)}-{ch.id}", folder)
-    photos, results = run_dir / "photos", run_dir / "results"
+    photos, kept, results = run_dir / "photos", run_dir / "all_photos", run_dir / "results"
     photos.mkdir(parents=True)
-    manifest = []
-    for i, (msg, att) in enumerate(picks, 1):
-        name = fo.photo_name(i, att.filename)
-        await download(att, photos / name, msg, "BEAR-D06")
-        manifest.append(f"{name}\t{att.filename}\t{msg.jump_url}")
-        if i % 5 == 0 and i < len(picks):   # not every photo: Discord limits how often a message is edited
-            await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=i, dev=dev()))
-    (run_dir / "photos.tsv").write_text("\n".join(manifest) + "\n")   # 001.jpg -> the Discord message
+    kept.mkdir()
+    bear_name = {id(att): fo.photo_name(i, att.filename) for i, (_, att) in enumerate(picks, 1)}
+    names = [fo.photo_name(i, att.filename) for i, (_, att) in enumerate(every, 1)]
+
+    async def progress(got):
+        await card.show(look.run_card("downloading", folder, car, parts=len(picks), photos=len(every), got=got,
+                                      dev=dev()))
+    await download_all([(m, att, kept / n) for n, (m, att) in zip(names, every)], "BEAR-D06", progress, every=5)
+    for n, (_, att) in zip(names, every):
+        if id(att) in bear_name:
+            link_or_copy(kept / n, photos / bear_name[id(att)])
+    (run_dir / "photos.tsv").write_text("".join(   # 001.jpg -> the Discord message
+        f"{bear_name[id(att)]}\t{att.filename}\t{m.jump_url}\n" for m, att in picks))
+    (run_dir / "all_photos.tsv").write_text("".join(   # ... and which photos/ name a 💸 photo has
+        f"{n}\t{att.filename}\t{m.jump_url}\t{bear_name.get(id(att), '')}\n" for n, (m, att) in zip(names, every)))
 
     started = time.time()
     if SLOTS.locked():
@@ -523,6 +540,33 @@ async def download(att, path, msg, code):
             if attempt == 2:
                 raise fo.FolderError(code, f"{att.filename}: {msg.jump_url}\n{type(e).__name__}: {e}")
             await asyncio.sleep(2 + attempt * 3)
+
+
+async def download_all(files, code, progress=None, every=10):
+    """Download [(message, attachment, path)], DOWNLOADS at a time across the server. progress(got)
+    is awaited every `every` photos (Discord limits how often a message is edited). The first
+    failure raises FolderError(code) and stops the rest."""
+    async def one(msg, att, path):
+        async with DOWNLOADS:
+            await download(att, path, msg, code)
+    tasks = [asyncio.create_task(one(*f)) for f in files]
+    try:
+        for got, t in enumerate(asyncio.as_completed(tasks), 1):
+            await t
+            if progress and got % every == 0 and got < len(tasks):
+                await progress(got)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def link_or_copy(src, dst):
+    """A second name for a saved photo (no extra disk space), or a copy where links don't work."""
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
 
 
 async def run_bear(photos, car, results, logfile):
@@ -681,20 +725,9 @@ async def rename_folder(ch, rcard, folder, msgs, sku, before_post=None):
     try:
         await rcard.show(look.rename_card("saving", sku, folder, photos=len(picks), got=0, dev=dev()))
 
-        async def one(i):
-            async with DOWNLOADS:
-                msg, att = picks[i]
-                await download(att, photos / names[i], msg, "BEAR-D07")
-        tasks = [asyncio.create_task(one(i)) for i in range(len(picks))]
-        try:
-            for got, t in enumerate(asyncio.as_completed(tasks), 1):
-                await t
-                if got % 10 == 0 and got < len(picks):   # Discord limits how often a message is edited
-                    await rcard.show(look.rename_card("saving", sku, folder, photos=len(picks), got=got, dev=dev()))
-        finally:
-            for t in tasks:
-                t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        async def progress(got):
+            await rcard.show(look.rename_card("saving", sku, folder, photos=len(picks), got=got, dev=dev()))
+        await download_all([(m, att, photos / n) for n, (m, att) in zip(names, picks)], "BEAR-D07", progress)
 
         plan, too_big = rn.plan_zips([(n, (photos / n).stat().st_size) for n in names], ZIP_MB * 1024 * 1024)
         made = []

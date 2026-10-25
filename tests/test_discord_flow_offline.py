@@ -5,9 +5,9 @@ discord.py (the server's .venv has it).
 Plays /run through the real bot code against a fake car channel, with BEAR's dev mode
 (bear2/simulate.py) as the run: the spreadsheet posted for a good folder, every BEAR-D error a
 person can cause, the name model failures (N01-N03) and a crash (R01) landing in the error
-channel, and three folders at once with two slots (one waits in the queue). Then the renaming:
-the SKU typed in /run's offer, the zip of every photo posted after the spreadsheet, /rename on its
-own, and /quit stopping a run. Last, the shadow test with its models faked: every photo logged,
+channel, and three folders at once with two slots (one waits in the queue). Then the renaming
+(/run's offer is off unless BEAR_RENAME_OFFER is on): the SKU typed in that offer, the zip of
+every photo posted after the spreadsheet, /rename on its own, and /quit stopping a run. Last, the shadow test with its models faked: every photo logged,
 reruns not counted twice, and the note in the error channel.
 
 usage: .venv/bin/python tests/test_discord_flow_offline.py
@@ -192,17 +192,25 @@ async def run_with_sku(ch, sku, sim="ok", late=False):
 
 
 async def main():
-    # A good folder: photos downloaded as 001.jpg, 002.webp; the simulated spreadsheet posted.
+    # A good folder: every photo saved in all_photos/, the 💸 ones also in photos/ as 001.jpg,
+    # 002.webp for BEAR; the simulated spreadsheet posted, and no rename offer.
     ch = await run(folder(10))
     text, fname = card(ch)
     check("spreadsheet posted", fname, "Q184-mitsubishi-shogun-2007.xlsx")
     check("parts counted", "priced **6 of 7** parts" in text, True)
     check("running shown", any("Running 2 parts" in t for t in ch.shown), True)
-    check("one run card and one rename card per run", len(ch.sent), 2)
-    check("no SKU: not renamed", "No SKU given" in rename_card(ch)[0], True)
+    check("one card per run, no rename offer", len(ch.sent), 1)
+    check("saving counts every photo", any("Saving the photos ... 0/4" in t for t in ch.shown), True)
     check("card ends done", "Done" in text, True)
     run_dir = next((TMP / "car-10-10").iterdir())
     check("photo names", sorted(p.name for p in (run_dir / "photos").iterdir()), ["001.jpg", "002.webp"])
+    check("every photo kept", sorted(p.name for p in (run_dir / "all_photos").iterdir()),
+          ["001.jpg", "002.jpg", "003.jpg", "004.webp"])
+    check("all_photos.tsv", [l.split("\t")[::3] for l in (run_dir / "all_photos.tsv").read_text().splitlines()],
+          [["001.jpg", ""], ["002.jpg", ""], ["003.jpg", "001.jpg"], ["004.webp", "002.webp"]])
+    check("BEAR's photo is the kept one", (run_dir / "photos" / "002.webp").samefile(run_dir / "all_photos" / "004.webp"), True)
+    check("photos.tsv", [l.split("\t")[:2] for l in (run_dir / "photos.tsv").read_text().splitlines()],
+          [["001.jpg", "IMG_10.jpg"], ["002.webp", "IMG_11.webp"]])
     check("own spend ledger used", (run_dir / "results" / "results.xlsx").exists(), True)
     check("no error posted", ERRORS.sent, [])
 
@@ -274,7 +282,13 @@ async def main():
     await B.status.callback(i)
     check("status card", "Nothing running" in i.replies[-1], True)
 
-    # Renaming in /run: every photo from the marker on (not only 💸), in upload order, posted as a
+    # Renaming in /run, with the dormant offer switched back on: no SKU, no rename.
+    os.environ["BEAR_RENAME_OFFER"] = "1"
+    ch = await run(folder(79))
+    check("offer on: one run card and one rename card", len(ch.sent), 2)
+    check("no SKU: not renamed", "No SKU given" in rename_card(ch)[0], True)
+
+    # With a SKU: every photo from the marker on (not only 💸), in upload order, posted as a
     # zip after the spreadsheet. Other files are left out; BEAR's own photos are untouched.
     ch = folder(80, extra=[dict(files=["two_a.png", "two_b.jpg"]), dict(files=["clip.mp4"])])
     i = await run_with_sku(ch, "MYSKU")
@@ -358,6 +372,7 @@ async def main():
     q = Inter(ch)
     await B.quit_cmd.callback(q)
     check("/quit with nothing running", any("Nothing is running" in r for r in q.replies), True)
+    os.environ.pop("BEAR_RENAME_OFFER")
 
     # Shadow test: never in dev mode; switched on here with the Decisions models faked (no network).
     shadow_log = TMP / "shadow" / "shadow.jsonl"
