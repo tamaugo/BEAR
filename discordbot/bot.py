@@ -1,14 +1,14 @@
 """Discord BEAR bot. One channel per car (the vehicle text is the channel topic):
-/newfolder name:<x> starts a folder, 💸 flags each part-number photo, /run downloads every photo
-in the folder, runs BEAR on the flagged ones as a separate process, then posts the spreadsheet. Up to
+/newfolder name:<x> starts a folder, people upload only part-number photos, /run downloads every
+photo in the folder and runs BEAR on them as a separate process (each photo is one part), then
+posts the spreadsheet. Up to
 BEAR_MAX_RUNS folders (default 2) run at once; more wait in a queue. Errors go to the error
 channel with a code and a fix (folders.ERRORS). /status lists what is running.
 Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
 SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
 /quit stops everything /run or /rename is doing in the channel.
-After each /run, the shadow test (shadow.py) quietly asks Decisions models about every photo in
-the folder and logs the answers next to staff's 💸 flags; nothing is posted until there is enough
-data to look at.
+After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
+every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -25,7 +25,7 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_ZIP_MB          biggest zip posted, in MiB (10: Discord's limit without server boosts)
   BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent
   BEAR_SHADOW          0 turns the shadow test off (on by default, never in dev mode); read at each /run
-  BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many 💸 photos (300)
+  BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many part photos (300)
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
@@ -208,7 +208,7 @@ class Bot(discord.Client):
         meaning, fix = fo.ERRORS[code]
         await self.to_errors(look.error_report(label, code, meaning, fix, ch.id, (ch.topic or "").strip() or None,
                                                detail, jump_url, dev()), files)
-        links = LINK.findall(detail) if code in ("BEAR-D04", "BEAR-D05", "BEAR-D06", "BEAR-D07") else []
+        links = LINK.findall(detail) if code in ("BEAR-D05", "BEAR-D06", "BEAR-D07") else []
         post = look.problem_card(folder, code, ERROR_CHANNEL_ID, links, dev(), partial)
         try:
             await (card or Card(ch)).show(post)
@@ -247,10 +247,10 @@ def car_channel_problem(ch):
 
 
 def never_run(msgs):
-    """True if a folder (messages after its marker) has 💸 photos but /run never posted a card."""
-    has_flags = any(not m.author.bot and m.attachments and fo.flagged(m) for m in msgs)
+    """True if a folder (messages after its marker) has photos but /run never posted a card."""
+    has_photos = any(not m.author.bot and any(fo.is_photo(att) for att in m.attachments) for m in msgs)
     has_card = any(m.author.bot and getattr(m, "embeds", None) for m in msgs)
-    return has_flags and not has_card
+    return has_photos and not has_card
 
 
 @bot.tree.command(name="newfolder", description=look.COMMANDS["newfolder"]["description"])
@@ -326,7 +326,7 @@ async def run(inter: discord.Interaction):
 
 
 async def whole_run(ch, card, a):
-    """Everything one /run does: BEAR on the 💸 photos, and, if BEAR_RENAME_OFFER is on, beside it
+    """Everything one /run does: BEAR on the folder's photos, and, if BEAR_RENAME_OFFER is on, beside it
     the offer to rename every photo in the folder, whose zip is posted after the spreadsheet. The
     two don't depend on each other: either can fail on its own. Cancelling this task (/quit) stops both."""
     car = (ch.topic or "").strip()
@@ -479,32 +479,21 @@ async def run_folder(ch, card, a, ready):
     ready.set_result((folder, msgs))
     if not car:
         raise fo.FolderError("BEAR-D01")
-    picks = fo.flagged_photos(msgs)
-    every = rn.all_photos(msgs)[0]   # 💸 or not; the 💸 ones are among them
+    picks = fo.part_photos(msgs)   # every photo in the folder: each one is a part
     a.update(state="downloading photos", parts=len(picks))
-    await card.show(look.run_card("downloading", folder, car, parts=len(picks), photos=len(every), got=0, dev=dev()))
+    await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))
 
-    # Download now: Discord's file links expire after 24 hours. Every photo in the folder is kept
-    # in all_photos/; the 💸 ones are also put in photos/, the only folder BEAR reads (it prices
-    # each photo in it as one part).
+    # Download now: Discord's file links expire after 24 hours.
     run_dir = new_dir(STORAGE / f"{fo.slug(ch.name)}-{ch.id}", folder)
-    photos, kept, results = run_dir / "photos", run_dir / "all_photos", run_dir / "results"
+    photos, results = run_dir / "photos", run_dir / "results"
     photos.mkdir(parents=True)
-    kept.mkdir()
-    bear_name = {id(att): fo.photo_name(i, att.filename) for i, (_, att) in enumerate(picks, 1)}
-    names = [fo.photo_name(i, att.filename) for i, (_, att) in enumerate(every, 1)]
+    names = [fo.photo_name(i, att.filename) for i, (_, att) in enumerate(picks, 1)]
 
     async def progress(got):
-        await card.show(look.run_card("downloading", folder, car, parts=len(picks), photos=len(every), got=got,
-                                      dev=dev()))
-    await download_all([(m, att, kept / n) for n, (m, att) in zip(names, every)], "BEAR-D06", progress, every=5)
-    for n, (_, att) in zip(names, every):
-        if id(att) in bear_name:
-            link_or_copy(kept / n, photos / bear_name[id(att)])
+        await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=got, dev=dev()))
+    await download_all([(m, att, photos / n) for n, (m, att) in zip(names, picks)], "BEAR-D06", progress, every=5)
     (run_dir / "photos.tsv").write_text("".join(   # 001.jpg -> the Discord message
-        f"{bear_name[id(att)]}\t{att.filename}\t{m.jump_url}\n" for m, att in picks))
-    (run_dir / "all_photos.tsv").write_text("".join(   # ... and which photos/ name a 💸 photo has
-        f"{n}\t{att.filename}\t{m.jump_url}\t{bear_name.get(id(att), '')}\n" for n, (m, att) in zip(names, every)))
+        f"{n}\t{att.filename}\t{m.jump_url}\n" for n, (m, att) in zip(names, picks)))
 
     started = time.time()
     if SLOTS.locked():
@@ -559,14 +548,6 @@ async def download_all(files, code, progress=None, every=10):
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-
-
-def link_or_copy(src, dst):
-    """A second name for a saved photo (no extra disk space), or a copy where links don't work."""
-    try:
-        os.link(src, dst)
-    except OSError:
-        shutil.copyfile(src, dst)
 
 
 async def run_bear(photos, car, results, logfile):
@@ -802,26 +783,26 @@ def shadow_on():
 
 def start_shadow(ch, folder, marker_id, msgs):
     """Start the shadow test for a folder in the background: /run doesn't wait for it, and /quit
-    doesn't stop it. Skipped when the 💸 flags were unusable (D03-D05): no right answers to compare."""
+    doesn't stop it. Skipped when the folder had no usable photos (D03, D05)."""
     try:
-        flagged = {m.id for m, _ in fo.flagged_photos(msgs)}
+        photos = fo.part_photos(msgs)
     except fo.FolderError:
         return
-    task = asyncio.create_task(shadow_folder(ch, folder, marker_id, msgs, flagged))
+    task = asyncio.create_task(shadow_folder(ch, folder, marker_id, photos))
     SHADOW.add(task)
     task.add_done_callback(SHADOW.discard)
 
 
-async def shadow_folder(ch, folder, marker_id, msgs, flagged):
-    """Ask the Decisions models about every photo in the folder and log the answers. Never raises."""
+async def shadow_folder(ch, folder, marker_id, photos):
+    """Ask the Decisions models about every photo in the folder and log the answers. Every photo is
+    a part-number photo now, so each is logged as flagged (the log's old name for that) and asked
+    the location by every model. Never raises."""
     try:
-        photos = [(m, att) for m, att in rn.all_photos(msgs)[0] if fo.is_photo(att)]
         base = {"channel": f"{ch.name}-{ch.id}", "folder": folder, "marker": marker_id,
                 "run": datetime.now().strftime("%Y%m%d-%H%M%S-%f"), "of": len(photos)}
 
         async def one(n, msg, att):
-            is_flagged = msg.id in flagged
-            models = [sh.LABEL_MODEL, *sh.LOC_MODELS] if is_flagged else [sh.LABEL_MODEL]
+            models = [sh.LABEL_MODEL, *sh.LOC_MODELS]
             async with SHADOW_CALLS:
                 try:
                     uri = await asyncio.to_thread(sh.data_uri, await att.read())
@@ -829,7 +810,7 @@ async def shadow_folder(ch, folder, marker_id, msgs, flagged):
                     results = {m: {"error": f"photo: {type(e).__name__}: {e}"[:300]} for m in models}
                 else:
                     results = {m: await asyncio.to_thread(sh.check, m, uri, m == sh.LABEL_MODEL) for m in models}
-            return [sh.record(base, n, att.filename, msg.jump_url, is_flagged, m, r) for m, r in results.items()]
+            return [sh.record(base, n, att.filename, msg.jump_url, True, m, r) for m, r in results.items()]
         done = await asyncio.gather(*(one(n, m, att) for n, (m, att) in enumerate(photos, 1)))
         path = SHADOW_DIR / "shadow.jsonl"
         sh.append(path, [r for rows in done for r in rows])
@@ -842,7 +823,7 @@ async def shadow_folder(ch, folder, marker_id, msgs, flagged):
 
 
 async def shadow_ping(path):
-    """Tell the error channel to look at the data each time another BEAR_SHADOW_PING_PARTS 💸 photos
+    """Tell the error channel to look at the data each time another BEAR_SHADOW_PING_PARTS part photos
     have been logged. The number of notes so far is kept in shadow/pinged."""
     v = setting("BEAR_SHADOW_PING_PARTS", str(sh.PING_EVERY))
     every = int(v) if v.isdigit() and int(v) > 0 else sh.PING_EVERY

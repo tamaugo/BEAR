@@ -16,23 +16,22 @@ stay exactly as they are on `main`; this branch (`discord-bear`) is the server e
    first word as the make for eBay matching).
 2. **`/newfolder name: Q184`** starts a folder (a box of parts). The bot posts a marker
    message: **📁 Folder Q184**. Everything after it belongs to Q184.
-3. **Upload the photos** in any groups you like. The **part-number photo goes on its own**
-   (one photo in its own message) and gets the **💸 `:money_with_wings:`** reaction.
-   That photo is the only one BEAR prices. Every other photo is saved on the server with the run
-   (`all_photos/`) but not priced.
-4. **`/run`** ends the folder, saves every photo in it, and runs every 💸 photo through BEAR.
-5. The bot replies **"Running x parts"**. If you uploaded 20 parts and it says 4, flags are
+3. **Upload the part-number photos** in any groups you like. Only part-number photos: **every
+   photo is one part**. (Until 2026-10-27 people also posted other photos and flagged the
+   part-number one with 💸; the owner dropped both, so no reaction is needed.)
+4. **`/run`** ends the folder and runs every photo in it through BEAR.
+5. The bot replies **"Running x parts"**. If you uploaded 20 parts and it says 4, photos are
    missing. It does not wait for a GO; it just runs.
 6. The bot posts **one spreadsheet for the folder**, e.g. `Q184-ford-fiesta-mk7.xlsx`,
    with "BEAR found x listings".
 7. Anything that goes wrong is posted in the **error channel**:
-   "**Q184** encountered an issue — `BEAR-D04` — fix: …".
+   "**Q184** encountered an issue — `BEAR-D05` — fix: …".
 
 8. **Renaming (dormant since 2026-10-25).** `/run` no longer offers it; `BEAR_RENAME_OFFER=1` in
    `.env` brings the offer back. When on: next to the run card, `/run` posts **🏷️ Rename the photos?** with a
    **Rename photos** button. Tapping it opens a box to type a SKU, e.g. `MYSKU`. People have
    **1 minute** (`BEAR_RENAME_WAIT`); left blank, the photos aren't renamed and the card says so.
-   With a SKU, **every photo** in the folder (from the 📁 marker to `/run`, 💸 or not, in upload
+   With a SKU, **every photo** in the folder (from the 📁 marker to `/run`, in upload
    order) is named `MYSKU-1.jpg`, `MYSKU-2.jpg` ... and posted as `MYSKU-1.zip` (more zips,
    `MYSKU-2.zip` ..., if it doesn't fit Discord's 10 MB limit) **after the spreadsheet**, even if
    BEAR failed. **`/rename sku: MYSKU`** does only this, with no BEAR run.
@@ -66,7 +65,7 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 | Hosting | One always-on bot on a **Debian 13** VM (Proxmox): 2 cores, 4 GB RAM, 32 GB disk. Outbound connection to Discord; no port forwarding. See [SETUP.md](SETUP.md) §1. |
 | Car name | From the **channel topic**. Empty topic = refuse to run. |
 | Folders | `/newfolder name:<x>` starts one; `/run` ends and runs it. **One spreadsheet per folder.** |
-| Part-number photo | Posted **alone**, reacted with **💸**. Only flagged photos go to BEAR. If this proves unreliable, switch to "first/last photo of a part". |
+| Part-number photo | Only part-number photos are uploaded; **every photo goes to BEAR as one part** (since 2026-10-27; before that, 💸 picked them out of all the photos). |
 | Chat text | Never read; text-only messages deleted. |
 | "Running x parts" | Information only, no GO button. |
 | First-line name check | **Not used in Discord runs.** No automatic model fallback. If Qwen keeps failing, the owner swaps the name model by hand: set `BEAR_NAME_MODEL` in the server's `.env` (applies on the next `/run`, no restart). |
@@ -79,8 +78,8 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 | Parallel runs | **One VM, one bot**, up to 2 BEAR runs at once (`BEAR_MAX_RUNS`, default 2). A 3rd `/run` waits in a queue and the bot says it is queued. Never the same car twice at once: one folder per car channel. |
 | Status command | `/status` lists running and queued folders. |
 | Same part number twice in a folder | No special handling for now. Add a "DUPLICATE? check" mark only if it becomes a problem. |
-| Location (NSF/NSR/OSF/OSR) | **Being tested.** Staff write NF/OF/NR/OR in marker on the part, so it is in the 💸 photo. The shadow test (below) logs what Decisions models read there; four custom emojis on the 💸 photo stay the fallback. |
-| Shadow test | After each `/run`, every photo goes to `openai/gpt-6-luna-decisions` (is it the part-number photo? which location?), and the 💸 photos also to `typesafe/jev-1.13` and `cloudflare/clef` (location). Logged next to the 💸 flags, never posted. 💸 stays: it is the only thing that says where one part ends. A note in the error channel every 300 💸 photos (`BEAR_SHADOW_PING_PARTS`); then `shadow_report.py`. About 1p per folder. |
+| Location (NSF/NSR/OSF/OSR) | **Being tested.** Staff write NF/OF/NR/OR in marker on the part, so it is in the part-number photo. The shadow test (below) logs what Decisions models read there; four custom emoji reactions on the photo stay the fallback. |
+| Shadow test | After each `/run`, every photo goes to `openai/gpt-6-luna-decisions`, `typesafe/jev-1.13` and `cloudflare/clef` (which location?). Logged, never posted. Folders from before 2026-10-27 also logged whether Luna could find the 💸 photo; with no 💸 any more, new folders add location data only. A note in the error channel every 300 part photos (`BEAR_SHADOW_PING_PARTS`); then `shadow_report.py`. |
 | Image column in the spreadsheet | Kept as it is for now. |
 | Channel limit (500/server, 50/category) | Fine for now; archive or delete finished cars. |
 
@@ -132,15 +131,14 @@ in the filename, `bear2/assemble.py:image_no`):
 2. Find the latest 📁 marker in the channel. None = error `BEAR-D02`.
 3. If the newest photo is under ~30 s old, say "please wait, images are still uploading"
    and check again.
-4. Read every message after the marker. Keep the ones with a 💸 reaction.
+4. Read every message after the marker. Keep every photo, several to a message is fine; videos
+   and other files are left out.
    - None = error `BEAR-D03`.
-   - A 💸 message with more than one photo = error `BEAR-D04` (the flag can't tell which).
-   - A file BEAR can't read (HEIC etc.) = error `BEAR-D05`.
+   - A photo BEAR can't read (HEIC etc.) = error `BEAR-D05`.
 5. Post **"Running x parts"**.
-6. Download every photo in the folder straight away (Discord links expire after 24 h) into
-   `<storage>/<channel>/<folder>-<time>/all_photos/` as `001.jpg`, `002.jpg`, … in upload order,
-   listed in `all_photos.tsv`. The flagged ones also go in `photos/` as `001.jpg`, … (the folder
-   BEAR reads). A failed download of any photo = error `BEAR-D06`.
+6. Download every photo straight away (Discord links expire after 24 h), 6 at a time, into
+   `<storage>/<channel>/<folder>-<time>/photos/` as `001.jpg`, `002.jpg`, … in upload order.
+   A failed download = error `BEAR-D06`.
 7. Run `bear2/run.py` as a separate process. It can take longer than Discord's 15-minute
    window for replying to a command, so the result is posted as a **normal bot message**,
    not as a reply to `/run`.
@@ -167,10 +165,11 @@ channel and the run's log. The fixes below are a first draft, to be refined late
 |---|---|---|
 | `BEAR-D01` | Channel has no topic (no car name) | Put the vehicle text in the channel topic, then `/run` again. |
 | `BEAR-D02` | `/run` with no folder started | Use `/newfolder` first. |
-| `BEAR-D03` | No 💸 photos in the folder | Add 💸 to each part-number photo, then `/run`. |
-| `BEAR-D04` | A 💸 message holds more than one photo | Post the part-number photo on its own, flag it, `/run` again. |
-| `BEAR-D05` | A flagged file BEAR can't read (e.g. HEIC) | Re-upload as JPG/PNG/WEBP. |
-| `BEAR-D06` | A flagged photo couldn't be downloaded | `/run` again. |
+| `BEAR-D03` | No photos in the folder | Upload the part-number photos, then `/run`. |
+| `BEAR-D05` | A photo BEAR can't read (e.g. HEIC) | Re-upload as JPG/PNG/WEBP, delete the original. |
+| `BEAR-D06` | A photo couldn't be downloaded | `/run` again. |
+
+`BEAR-D04` (a 💸 message with more than one photo) was retired with 💸 on 2026-10-27.
 | `BEAR-D07` | Renaming failed: a photo didn't download or a zip wasn't posted | `/rename` again with the same SKU. |
 | `BEAR-N01` | Name model rate limited | Wait and finish the names, or swap the name model. |
 | `BEAR-N02` | Name model not responding | Same as N01. |
@@ -251,7 +250,7 @@ The accuracy rule applies: Discord runs must be as accurate as the current flow.
 
 ## 10. Later
 
-- Location from the 💸 photo or reactions (NF → `003_NSF.jpg`), once the shadow test shows which works.
+- Location from the part-number photo or reactions (NF → `003_NSF.jpg`), once the shadow test shows which works.
   Only a model answer above a cut-off (or confirmed by a second model) is used; otherwise blank.
 - "DUPLICATE? check" for the same part number twice in a folder, if needed.
 - Which name model replaces Qwen if it keeps failing.

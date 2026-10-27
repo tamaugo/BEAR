@@ -66,14 +66,13 @@ def bot(post, used=None, who="Sam", ephemeral=False, file=None, when="Today at 1
             f'<div class="text">{body}</div>{embeds}{att}{eph}</div></div></div>')
 
 
-def person(photos=0, money=False, who="Sam", text=None, when="Today at 13:58", note=None, struck=False):
-    tiles = "".join(f'<div class="ph">{"🏷️ label" if money else "📷"}</div>' for _ in range(photos))
-    react = f'<div class="react">{look.MONEY} 1</div>' if money else ""
+def person(photos=0, who="Sam", text=None, when="Today at 13:58", note=None, struck=False):
+    tiles = "".join('<div class="ph">🏷️ label</div>' for _ in range(photos))
     t = f'<div class="text{" struck" if struck else ""}">{html.escape(text)}</div>' if text else ""
     n = f'<div class="note">{note}</div>' if note else ""
     return (f'{n}<div class="msg"><div class="row"><div class="av">{who[0]}</div><div class="mbody">'
             f'<div class="who"><span class="uname">{who}</span><span class="when">{when}</span></div>'
-            f'{t}<div class="photos">{tiles}</div>{react}</div></div></div>')
+            f'{t}<div class="photos">{tiles}</div></div></div></div>')
 
 
 def scenes():
@@ -85,9 +84,8 @@ def scenes():
     s["ford-fiesta-mk7-2012"] = (
         "The normal flow. Topic: " + CAR,
         bot(folder, used="/newfolder name: Q184", when="Today at 13:50")
-        + person(5, when="Today at 13:51")
-        + person(1, money=True, when="Today at 13:52", note="Part-number photo on its own, then 💸")
-        + person(6, when="Today at 13:53")
+        + person(5, when="Today at 13:51", note="Only part-number photos; each photo is one part")
+        + person(7, when="Today at 13:53")
         + person(text="that's the box done", when="Today at 13:54", struck=True,
                  note="Text is removed by the bot (a 10-second notice tells them why)")
         + bot({"content": look.reply("text_removed"), "embeds": []}, when="Today at 13:54",
@@ -103,7 +101,7 @@ def scenes():
               note="Final state: the same card, green, with the spreadsheet"))
     s["vw-golf-mk6-2010"] = (
         "Problems as the uploader sees them. Topic: " + CAR2,
-        bot(look.problem_card("Q190", "BEAR-D04", ERRORS_ID, ["https://discord.com/x/1"]), used="/run",
+        bot(look.problem_card("Q190", "BEAR-D05", ERRORS_ID, ["https://discord.com/x/1"]), used="/run",
             note="Uploader can fix it: what to do + a tap-able link to the exact photo")
         + bot(look.problem_card("Q190", "BEAR-D03", ERRORS_ID), used="/run")
         + bot(look.problem_card("Q191", "BEAR-N01", ERRORS_ID), used="/run",
@@ -119,10 +117,10 @@ def scenes():
     s["bear-errors"] = (
         "Owner's channel. Read-only for staff; the bot posts here.",
         bot(look.bot_started(2, version="0.4"), when="Today at 08:00")
-        + bot(look.error_report("Q190", "BEAR-D04",
-                                "A 💸 message holds more than one photo, so BEAR can't tell which is the part number.",
-                                "Post the part-number photo on its own, flag that one with 💸, then /run again.",
-                                CAR2_ID, CAR2, "3 files: https://discord.com/channels/1/202/9", "#"))
+        + bot(look.error_report("Q190", "BEAR-D05",
+                                "A photo in the folder is a type BEAR can't read (e.g. HEIC).",
+                                "Re-upload it as JPG, PNG or WEBP, delete the original, then /run again.",
+                                CAR2_ID, CAR2, "IMG_5.HEIC: https://discord.com/channels/1/202/9", "#"))
         + bot(look.error_report("Q191", "BEAR-N01", "The name model is rate limited.",
                                 "Wait a few minutes and /run again, or set BEAR_NAME_MODEL in the server's .env.",
                                 CAR2_ID, CAR2, "qwen/qwen3-... is unavailable: HTTP 429", "#"),

@@ -20,7 +20,6 @@ RED = 0xFF8A80
 AMBER = 0xF0B232
 GREY = 0x4E5058
 
-MONEY = "\N{MONEY WITH WINGS}"
 BEAR = "\N{BEAR FACE}"
 FOLDER = "\N{FILE FOLDER}"
 TAG = "\N{LABEL}\N{VARIATION SELECTOR-16}"
@@ -33,7 +32,7 @@ COMMANDS = {
         "options": {"name": "Folder name, e.g. Q184"},
     },
     "run": {
-        "description": "Finish the folder and price every 💸 photo in it",
+        "description": "Finish the folder and price every photo in it",
         "options": {},
     },
     "status": {
@@ -56,11 +55,10 @@ UPLOADER_FIX = {
     "BEAR-D01": "This channel has no car yet. Put the car in the **channel topic**, make first "
                 "(e.g. `FORD FIESTA MK7 2012 1.4 DIESEL`), then try again.",
     "BEAR-D02": "There's no folder open here. Start one with **/newfolder**, upload the photos, then **/run**.",
-    "BEAR-D03": f"No photo has a {MONEY} yet. React {MONEY} on each **part-number photo**, then **/run** again.",
-    "BEAR-D04": f"A {MONEY} message has more than one photo, so BEAR can't tell which is the part number. "
-                f"Post that part-number photo **on its own**, {MONEY} it, then **/run** again.",
-    "BEAR-D05": f"A {MONEY} file isn't a photo BEAR can read (iPhone HEIC?). Re-send it as a normal photo, "
-                f"{MONEY} it, then **/run** again.",
+    "BEAR-D03": "There are no photos in this folder yet. Upload the **part-number photos** below the folder, "
+                "then **/run** again.",
+    "BEAR-D05": "A photo below isn't one BEAR can read (iPhone HEIC?). Re-send it as a normal photo, "
+                "**delete the original**, then **/run** again.",
     "BEAR-D06": "Discord didn't hand over a photo. **/run** again; if it keeps happening, re-send that photo.",
     "BEAR-D07": "The photos couldn't be renamed. **/rename** again with the same SKU; if it keeps happening, "
                 "re-send the photo below.",
@@ -72,8 +70,7 @@ UPLOADER_FIX = {
 TITLES = {
     "BEAR-D01": "No car in the channel topic",
     "BEAR-D02": "No folder open",
-    "BEAR-D03": f"No {MONEY} photos",
-    "BEAR-D04": f"{MONEY} on a message with several photos",
+    "BEAR-D03": "No photos in the folder",
     "BEAR-D05": "Photo type BEAR can't read",
     "BEAR-D06": "A photo didn't download",
     "BEAR-D07": "Photos couldn't be renamed",
@@ -142,18 +139,16 @@ def kwargs(post):
 def folder_card(name, car, dev=False):
     """The /newfolder reply. The content line must stay exactly "📁 Folder **<name>**": /run finds the
     folder by reading it back (folders.MARKER)."""
-    how = (f"**1.** Upload the photos, any way you like\n"
-           f"**2.** Post each **part-number photo on its own** and react {MONEY}\n"
-           f"**3.** **/run** when the folder is done")
-    return _post(_embed(BRAND, description=f"**{car}**\n\n{how}", footer=_footer(dev, "Only 💸 photos go to BEAR")),
+    how = ("**1.** Upload the **part-number photos**, any way you like\n"
+           "**2.** **/run** when the folder is done")
+    return _post(_embed(BRAND, description=f"**{car}**\n\n{how}", footer=_footer(dev, "Every photo is one part")),
                  content=f"{FOLDER} Folder **{name}**")
 
 
 def open_folder_warning(previous):
     """Ephemeral note on /newfolder when the folder before it was never /run (its photos would be skipped)."""
     return (f"Heads up: folder **{previous}** was never run. **/run** now uses this new folder. "
-            f"To price the earlier photos, upload them again below this folder's marker, "
-            f"react {MONEY} on each part-number photo, then **/run**.")
+            f"To price the earlier photos, upload them again below this folder's marker, then **/run**.")
 
 
 # --- The live run card ---------------------------------------------------------------------------
@@ -161,21 +156,20 @@ def open_folder_warning(previous):
 # the next state. done_card / problem_card are the last edit.
 
 def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=None,
-             wait_seconds=None, max_runs=None, dev=False, photos=None):
+             wait_seconds=None, max_runs=None, dev=False):
     """state: checking | waiting | downloading | queued | running. folder is None while /run is
-    still looking for it. photos: how many photos are being saved (every photo in the folder);
-    parts if not given."""
+    still looking for it."""
     p = _plural(parts, "part") if parts is not None else None
     if state == "checking":
         title = f"{FOLDER} {folder} · Checking the folder" if folder else f"{FOLDER} Checking the folder"
-        colour, line = GREY, f"Looking for {MONEY} photos ..."
+        colour, line = GREY, "Looking for photos ..."
     elif state == "waiting":
         title, colour = f"{FOLDER} {folder} · Waiting for uploads", AMBER
         line = (f"Photos are still arriving. BEAR starts once none have come in for "
                 f"{wait_seconds or 30} seconds.")
     elif state == "downloading":
         title, colour = f"{FOLDER} {folder} · Running {p}", GREY
-        line = f"Saving the photos ... {got or 0}/{photos if photos is not None else parts}"
+        line = f"Saving the photos ... {got or 0}/{parts}"
     elif state == "queued":
         title, colour = f"{FOLDER} {folder} · Running {p}", AMBER
         ahead = f"{_plural(queue_ahead, 'folder')} ahead" if queue_ahead else "next in line"
@@ -187,7 +181,7 @@ def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=N
         raise ValueError(f"unknown run state {state!r}")
     desc = f"**{car}**\n{line}"
     if parts is not None and state in ("downloading", "queued", "running"):
-        desc += (f"\n\n*Uploaded more than {p}? Some {MONEY} are missing. "
+        desc += (f"\n\n*Uploaded more than {p}? Some photos aren't in this folder. "
                  f"Add them and **/run** again once this one is done.*")
     return _post(_embed(colour, title, desc, footer=_footer(dev)))
 
@@ -206,7 +200,7 @@ def done_card(folder, car, parts, priced, filename, minutes=None, dev=False):
 
 def problem_card(folder, code, error_channel_id, photo_links=(), dev=False, partial=False):
     """Last edit of the run card (or a new message) when something went wrong.
-    photo_links: jump URLs of the exact photos that caused a D04/D05, so a phone user can tap to them.
+    photo_links: jump URLs of the exact photos that caused a D05/D06, so a phone user can tap to them.
     partial=True: the spreadsheet was posted but some parts were lost to this problem."""
     fix = UPLOADER_FIX.get(code)
     if fix is None:
@@ -291,7 +285,7 @@ def zip_post(sku, n, total, first, last):
 def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", jump_url=None, dev=False):
     """The error channel post. meaning/fix are the owner-facing text (folders.ERRORS). The content
     line keeps the agreed format so it reads right in notifications and search:
-    **Q184** encountered an issue — `BEAR-D04` — fix: ..."""
+    **Q184** encountered an issue — `BEAR-D05` — fix: ..."""
     content = f"**{folder}** encountered an issue — `{code}` — fix: {fix}"
     fields = [("Car channel", f"<#{channel_id}>" + (f" · [jump to the folder]({jump_url})" if jump_url else ""), True)]
     if car:
@@ -313,8 +307,8 @@ def bot_started(max_runs, sim=None, version=None):
 
 def shadow_ping(folders, parts, log_path, user_id=None):
     """The shadow test (shadow.py) has enough new data to look at."""
-    lines = [f"The shadow test has logged **{_plural(parts, '💸 photo')}** from **{_plural(folders, 'folder')}**. "
-             "Time to look at whether a model could find the part-number photos and read the locations.",
+    lines = [f"The shadow test has logged **{_plural(parts, 'part photo')}** from **{_plural(folders, 'folder')}**. "
+             "Time to look at whether a model could read the locations.",
              f"On the server: `/opt/bear/.venv/bin/python /opt/bear/discordbot/shadow_report.py {log_path}`, "
              "or send that file to Claude.",
              "It keeps collecting. Turn it off with `BEAR_SHADOW=0` in `.env` (no restart)."]
@@ -351,7 +345,7 @@ REPLIES = {
     "on_it": "On it: the card below shows how it's going.",
     "oops": "Something went wrong on BEAR's side (`BEAR-R01`). The owner can see it in the bot's log.",
     "text_removed": "Only photos stay in car channels, so your message was removed. "
-                    "Use **/newfolder**, photos, {money} and **/run**.",
+                    "Use **/newfolder**, photos and **/run**.",
     "bad_sku": "SKUs are letters, numbers, `-` and `_` only, up to 40, e.g. `MYSKU`.",
     "too_late": "Too late: renaming closed after {wait} seconds. Use **/rename** to rename the photos.",
     "sku_ok": "Got it: the photos will be named **{sku}-1**, **{sku}-2** ...",
@@ -362,7 +356,7 @@ REPLIES = {
 
 
 def reply(key, **values):
-    return REPLIES[key].format(money=MONEY, **values)
+    return REPLIES[key].format(**values)
 
 
 # --- Pinned guide --------------------------------------------------------------------------------
@@ -373,10 +367,10 @@ def guide(error_channel_id=None):
         "**1. One channel per car.** The **channel topic** is the car, make first:\n"
         "`FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL`\n\n"
         "**2. /newfolder** `Q184` opens a folder. Everything after it belongs to that folder.\n\n"
-        "**3. Upload the photos** in any groups you like.\n\n"
-        f"**4. Part-number photo on its own**, then react {MONEY}. Only {MONEY} photos are priced.\n\n"
-        "**5. /run** when the folder is done. BEAR says how many parts it found, then posts the "
-        "spreadsheet. If that number is lower than you expect, a " + MONEY + " is missing."
+        "**3. Upload the part-number photos** in any groups you like. Only part-number photos: "
+        "every photo is priced as one part.\n\n"
+        "**4. /run** when the folder is done. BEAR says how many parts it found, then posts the "
+        "spreadsheet. If that number is lower than you expect, a photo is missing."
     )
     tips = ("Text messages are removed: car channels are photos only.\n"
             "**/run** again re-does the whole folder.\n"

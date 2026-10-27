@@ -1,4 +1,4 @@
-"""Discord BEAR: the bot's own rules (folders, 💸 photos, file names, error codes), kept free of
+"""Discord BEAR: the bot's own rules (folders, which photos BEAR gets, file names, error codes), kept free of
 discord.py so they can be tested offline (tests/test_discord_offline.py).
 
 Messages are anything shaped like a discord.py Message: .author (.id, .bot), .attachments
@@ -8,7 +8,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import PurePath
 
-MONEY = "\N{MONEY WITH WINGS}"   # 💸 flags the part-number photo
+from renames import is_image
+
 MARKER = re.compile(r"^\N{FILE FOLDER} Folder \*\*([A-Za-z0-9][A-Za-z0-9_-]{0,39})\*\*")
 FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")   # same as bear2/common.py PHOTO_EXT
@@ -19,12 +20,10 @@ ERRORS = {
                  "Put the vehicle text in the channel topic (make first, e.g. FORD FIESTA MK7 2012 1.4 DIESEL), then /run again."),
     "BEAR-D02": ("/run was used but no folder was started in this channel.",
                  "Use /newfolder first, upload the photos, then /run."),
-    "BEAR-D03": ("No photo in the folder has the 💸 reaction.",
-                 "Add 💸 to each part-number photo, then /run again."),
-    "BEAR-D04": ("A 💸 message holds more than one photo, so BEAR can't tell which is the part number.",
-                 "Post the part-number photo on its own, flag that one with 💸, then /run again."),
-    "BEAR-D05": ("A 💸 file is not a photo BEAR can read (e.g. HEIC).",
-                 "Re-upload it as JPG, PNG or WEBP, flag it with 💸, then /run again."),
+    "BEAR-D03": ("There are no photos in the folder.",
+                 "Upload the part-number photos below the folder marker, then /run again."),
+    "BEAR-D05": ("A photo in the folder is a type BEAR can't read (e.g. HEIC).",
+                 "Re-upload it as JPG, PNG or WEBP, delete the original, then /run again."),
     "BEAR-D06": ("A photo in the folder couldn't be downloaded from Discord.",
                  "/run again. If it keeps failing, re-upload that photo."),
     "BEAR-D07": ("The photos couldn't be renamed: one didn't download, or a zip couldn't be posted.",
@@ -78,29 +77,24 @@ def split_folder(newest_first, bot_id):
     return None, None, []
 
 
-def flagged(msg):
-    return any(str(r.emoji) == MONEY for r in msg.reactions)
-
-
 def is_photo(att):
     return PurePath(att.filename).suffix.lower() in PHOTO_EXT
 
 
-def flagged_photos(messages):
-    """[(message, attachment)] for every 💸 photo, oldest first. Raises FolderError D03/D04/D05.
-    Bot messages and 💸 on messages with no file are ignored."""
-    picks, many, unreadable = [], [], []
+def part_photos(messages):
+    """[(message, attachment)] for every photo people posted, oldest first, in the order Discord
+    shows them within a message. Each one is a part: only part-number photos are uploaded (owner,
+    2026-10-27; no 💸 needed). Raises FolderError D05 for an image BEAR can't read (HEIC), D03 if
+    there are no photos. Bot messages and files that aren't images (videos, PDFs) are left out."""
+    picks, unreadable = [], []
     for msg in messages:
-        if msg.author.bot or not msg.attachments or not flagged(msg):
+        if msg.author.bot:
             continue
-        if len(msg.attachments) > 1:
-            many.append(msg)
-        elif not is_photo(msg.attachments[0]):
-            unreadable.append((msg, msg.attachments[0].filename))
-        else:
-            picks.append((msg, msg.attachments[0]))
-    if many:
-        raise FolderError("BEAR-D04", "\n".join(f"{len(m.attachments)} files: {m.jump_url}" for m in many))
+        for att in msg.attachments:
+            if is_photo(att):
+                picks.append((msg, att))
+            elif is_image(att):
+                unreadable.append((msg, att.filename))
     if unreadable:
         raise FolderError("BEAR-D05", "\n".join(f"{fn}: {m.jump_url}" for m, fn in unreadable))
     if not picks:
@@ -166,7 +160,7 @@ def partial_problem(trace_text):
 
 
 def error_report(folder, code, where, detail=""):
-    """The error channel message: **Q184** encountered an issue — `BEAR-D04` — fix: ..."""
+    """The error channel message: **Q184** encountered an issue — `BEAR-D05` — fix: ..."""
     meaning, fix = ERRORS[code]
     text = f"**{folder}** encountered an issue — `{code}` — fix: {fix}\n{meaning} Channel: {where}"
     if detail:
