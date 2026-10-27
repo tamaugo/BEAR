@@ -2,7 +2,7 @@
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
 folder, picking the photos BEAR gets, the BEAR-D errors, photo and spreadsheet names, the upload wait,
 which error code a failed run gets, renaming (every photo, SKU names, splitting the zips), and
-the shadow test's log, note and report, and the up/down monitor's URLs and notes, and the update log.
+the shadow test's log, note and report, and the up/down monitor's URLs and notes, and the update log, and bear-send.
 
 usage: python3 tests/test_discord_offline.py
 """
@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "bear2"))
 import folders as fo  # noqa: E402
 import heartbeat as hb  # noqa: E402
 import renames as rn  # noqa: E402
+import send as sd  # noqa: E402
 import shadow as sh  # noqa: E402
 
 BOT, ALICE = NS(id=1, bot=True), NS(id=2, bot=False)
@@ -260,6 +261,27 @@ with tempfile.TemporaryDirectory() as d:
     state.write_text(g("rev-parse", "HEAD") + "\n")
     check("same code: nothing posted", hb.update_log(state), False)
     hb.REPO, hb.update_channel = _repo, _channel
+
+# bear-send: the last @word is the channel, the rest is the message; nothing is posted unless both are there.
+check("send: message and channel", sd.parse(["my", "message", "here", "@Example-Channel"]), ("my message here", "example-channel"))
+check("send: one quoted argument", sd.parse(["my message here @example-channel"]), ("my message here", "example-channel"))
+check("send: # works too", sd.parse(["hi", "#general"]), ("hi", "general"))
+check("send: an @ in the middle is just text", sd.parse(["ask", "@bob", "later", "@general"]), ("ask @bob later", "general"))
+check("send: no channel", sd.parse(["just", "words"]), ("just words", None))
+check("send: no message", sd.parse(["@general"]), (None, "general"))
+check("send: nothing typed", sd.parse([]), (None, None))
+check("send: no channel is the usage line", sd.send(["just", "words"]), (sd.USAGE, False))
+check("send: too long is refused before Discord", sd.send(["x" * 2001, "@general"])[1], False)
+_channels, sd.text_channels = sd.text_channels, lambda: None
+check("send: Discord out of reach", sd.send(["hi", "@general"])[1], False)
+sd.text_channels = lambda: {"general": "1", "update-log": "2"}
+check("send: unknown channel lists the real ones", sd.send(["hi", "@nope"]),
+      ("No channel called nope. The channels are: general, update-log", False))
+_post, hb._discord = hb._discord, lambda path, body=None, token=None: (posted.append((path, body)) or True)
+posted = []
+check("send: posts", sd.send(["hi", "there", "@update-log"]), ("Sent to #update-log.", True))
+check("send: posted plain, nobody mentioned", posted, [("/channels/2/messages", {"content": "hi there", "allowed_mentions": {"parse": []}})])
+sd.text_channels, hb._discord = _channels, _post
 
 if fails:
     print("\n".join(fails))

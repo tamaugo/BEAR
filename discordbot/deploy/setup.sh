@@ -3,7 +3,7 @@
 #   first time:  wget -qO setup.sh https://raw.githubusercontent.com/tamaugo/BEAR/discord-bear/discordbot/deploy/setup.sh && bash setup.sh
 #   update:      bash /opt/bear/discordbot/deploy/setup.sh      (restarts the bot: check /status first)
 # Installs: git + Python, a "bear" user, the code in /opt/bear (branch discord-bear), a Python venv,
-# /opt/bear/.env from discordbot/deploy/env.example, the bear-bot systemd service, then runs the offline tests.
+# /opt/bear/.env from discordbot/deploy/env.example, the bear-send command, the bear-bot systemd service, then runs the offline tests.
 # The error channel hears about it (discordbot/heartbeat.py): the outside monitor says "down" just before
 # the bot restarts and "up" once it is back; an update that stops part way says which step failed.
 set -euo pipefail
@@ -62,6 +62,10 @@ if ! as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_discord_flow_offline.py" >
   exit 1
 fi
 tail -n 1 "$DATA/flow-test.log"
+
+step "bear-send command"
+install -m 755 "$DIR/discordbot/deploy/bear-send" /usr/local/bin/bear-send
+ln -sf bear-send /usr/local/bin/bear-send:   # so "bear-send: my message @channel" works as typed
 
 step "Service"
 install -m 644 "$DIR/discordbot/deploy/bear-bot.service" /etc/systemd/system/bear-bot.service

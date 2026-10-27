@@ -11,6 +11,7 @@ BEAR runs live on the VM; the Mac is not involved. Takes about 30 minutes.
 6. Everyday jobs and fixing problems
 7. Is BEAR up? (down/up messages in the error channel)
 8. Update log (#update-log)
+9. Say something from the terminal (`bear-send:`)
 
 ---
 
@@ -256,3 +257,22 @@ once (it adds `#update-log` next to `#bear-errors`, read-only, and writes `UPDAT
 or make a text channel called exactly `update-log` by hand. With neither, nothing is posted and
 the changes wait for the next start that has somewhere to post them.
 
+---
+
+## 9. Say something from the terminal (`bear-send:`)
+
+On the VM, type the message, then the channel's name with an `@`:
+
+```
+bear-send: my message here @example-channel
+```
+
+The BEAR bot posts "my message here" in `#example-channel` (any text channel in the server; the
+last word is the channel). It posts plain text, so nobody is @mentioned, and works even when the
+bot is stopped. `setup.sh` installs the command; it asks for `su -` if you are not root and have no
+`sudo`, because only the `bear` user can read the token in `.env`.
+
+If the message has `'` `"` `!` `(` `)` `;` `&` `<` or `>` in it, put it in quotes, because the
+shell reads those first: `bear-send: 'all done! (really)' @general` (single quotes; a `'` inside the
+message can't go in single quotes, so write it with double quotes and no `!`). `bear-send` without the colon does
+the same. A wrong channel name lists the real ones.
