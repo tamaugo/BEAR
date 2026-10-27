@@ -3,7 +3,8 @@
 photo in the folder and runs BEAR on them as a separate process (each photo is one part), then
 posts the spreadsheet. Up to
 BEAR_MAX_RUNS folders (default 2) run at once; more wait in a queue. Errors go to the error
-channel with a code and a fix (folders.ERRORS). /status lists what is running.
+channel with a code and a fix (folders.ERRORS). /status lists what is running. Every 10 minutes
+the bot checks in with an outside monitor that says in the error channel when BEAR is down (heartbeat.py).
 Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
 SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
 /quit stops everything /run or /rename is doing in the channel.
@@ -27,6 +28,7 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_SHADOW          0 turns the shadow test off (on by default, never in dev mode); read at each /run
   BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many part photos (300)
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
+  BEAR_HEARTBEAT_URL   the healthchecks.io ping URL checked in with every 10 minutes (blank: off)
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
 
@@ -43,6 +45,7 @@ import jev_client  # noqa: E402  (the .env reader BEAR itself uses)
 import discord  # noqa: E402
 from discord import app_commands  # noqa: E402
 import folders as fo  # noqa: E402
+import heartbeat as hb  # noqa: E402
 import look  # noqa: E402
 import renames as rn  # noqa: E402
 import shadow as sh  # noqa: E402
@@ -187,6 +190,7 @@ class Bot(discord.Client):
         if self.started:   # on_ready fires again after reconnects
             return
         self.started = True
+        self.heartbeat = asyncio.create_task(heartbeat())
         await self.to_errors(look.bot_started(MAX_RUNS, setting("BEAR_SIM"), version()))
 
     async def error_channel(self):
@@ -840,6 +844,14 @@ async def shadow_ping(path):
     user = setting("BEAR_SHADOW_PING_USER")
     user = user if user and user.isdigit() else None
     await bot.to_errors(look.shadow_ping(folders, parts, path, user), mention=bool(user))
+
+
+async def heartbeat():
+    """Check in with the outside monitor every 10 minutes (heartbeat.py); it posts in the error
+    channel only when check-ins stop or start again. BEAR_HEARTBEAT_URL is read each time."""
+    while True:
+        await asyncio.to_thread(hb.ping)
+        await asyncio.sleep(hb.EVERY)
 
 
 @bot.tree.error

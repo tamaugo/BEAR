@@ -2,11 +2,11 @@
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
 folder, picking the photos BEAR gets, the BEAR-D errors, photo and spreadsheet names, the upload wait,
 which error code a failed run gets, renaming (every photo, SKU names, splitting the zips), and
-the shadow test's log, note and report.
+the shadow test's log, note and report, and the up/down monitor's URLs and notes.
 
 usage: python3 tests/test_discord_offline.py
 """
-import sys
+import os, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "discordbot"))
 sys.path.insert(0, str(ROOT / "bear2"))
 import folders as fo  # noqa: E402
+import heartbeat as hb  # noqa: E402
 import renames as rn  # noqa: E402
 import shadow as sh  # noqa: E402
 
@@ -213,6 +214,25 @@ with tempfile.TemporaryDirectory() as d:
     check("report: confirmed by Jev", "| jev-1.13 | 2 | 0 | 0 |" in out.stdout, True)
     if out.returncode:
         print(out.stderr)
+
+# Up/down monitor (heartbeat.py): healthchecks.io URLs, and nothing is sent when it isn't set up.
+URL = "https://hc-ping.com/abc"
+check("heartbeat up URL", hb.ping_url(URL + "/"), URL)
+check("heartbeat down URL", hb.ping_url(URL, "fail"), URL + "/fail")
+check("heartbeat every 10 minutes", hb.EVERY, 600)
+check("update failed names the step", "Python packages" in hb.update_failed_text("Python packages"), True)
+_saved = {k: os.environ.pop(k, None) for k in ("BEAR_HEARTBEAT_URL", "DISCORD_TOKEN", "ERROR_CHANNEL_ID")}
+_env_file = hb.jev_client.ENV_FILE
+with tempfile.TemporaryDirectory() as d:
+    hb.jev_client.ENV_FILE = Path(d) / ".env"
+    hb.jev_client.ENV_FILE.write_text("BEAR_HEARTBEAT_URL=PASTE_HERE\nDISCORD_TOKEN=\n")
+    check("heartbeat placeholder is off", hb.setting("BEAR_HEARTBEAT_URL"), None)
+    check("heartbeat off: no ping", hb.ping(), False)
+    check("no token: nothing posted", hb.post_error("x"), False)
+    hb.jev_client.ENV_FILE.write_text(f"BEAR_HEARTBEAT_URL={URL}\n")
+    check("heartbeat URL read from .env", hb.setting("BEAR_HEARTBEAT_URL"), URL)
+hb.jev_client.ENV_FILE = _env_file
+os.environ.update({k: v for k, v in _saved.items() if v is not None})
 
 if fails:
     print("\n".join(fails))
