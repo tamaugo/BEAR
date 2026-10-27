@@ -74,7 +74,18 @@ check("done says 2 not priced", "2 not priced" in look.done_card("Q", CAR, 12, 1
 check("done all priced has no 'not priced'", "not priced" not in look.done_card("Q", CAR, 5, 5, "f.xlsx")["embeds"][0]["description"])
 fits("status empty", look.status_card([], 2, 1000))
 fits("status", look.status_card([{"folder": "Q1", "channel_id": 5, "state": "running", "parts": 3, "since": 0}] * 40, 2, 600))
-fits("started", look.bot_started(2, "all_ok", "0.4"))
+fits("started", look.bot_started(2, "all_ok", "0.4.12"))
+up = look.bot_started(2, None, "0.4.12")["embeds"][0]
+check("up card: green, version shown, no footer", up["color"] == look.GREEN and "0.4.12" in up["description"]
+      and "footer" not in up and "Dev mode" not in up["description"])
+check("up card: dev mode said", "Dev mode" in look.bot_started(2, "ok")["embeds"][0]["description"])
+log_post = look.update_log([(40, "Down/up messages"), (None, "A direct commit")], "0.4.13", more=3)
+fits("update log", log_post)
+e = log_post["embeds"][0]
+check("update log: version in title", e["title"].endswith("updated to 0.4.13"))
+check("update log: PR linked", "[#40](https://github.com/tamaugo/BEAR/pull/40) Down/up messages" in e["description"])
+check("update log: older ones counted", "3 older changes" in e["description"])
+fits("update log, long", look.update_log([(i, "x" * 300) for i in range(15)], "0.4.13", more=40))
 fits("guide", look.guide(9))
 for key in look.REPLIES:
     text = look.reply(key, folder="Q1", state="running", name="Q1", first="2012", wait=60, sku="MYSKU", what="Q1")

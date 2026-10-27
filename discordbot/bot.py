@@ -4,7 +4,8 @@ photo in the folder and runs BEAR on them as a separate process (each photo is o
 posts the spreadsheet. Up to
 BEAR_MAX_RUNS folders (default 2) run at once; more wait in a queue. Errors go to the error
 channel with a code and a fix (folders.ERRORS). /status lists what is running. Every 10 minutes
-the bot checks in with an outside monitor that says in the error channel when BEAR is down (heartbeat.py).
+the bot checks in with an outside monitor that says in the error channel when BEAR is down, and after
+an update it lists what changed in #update-log (heartbeat.py).
 Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
 SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
 /quit stops everything /run or /rename is doing in the channel.
@@ -29,6 +30,7 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many part photos (300)
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
   BEAR_HEARTBEAT_URL   the healthchecks.io ping URL checked in with every 10 minutes (blank: off)
+  UPDATE_CHANNEL_ID    where the update log goes (blank: the channel named update-log; none: no log)
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
 
@@ -136,10 +138,7 @@ def rename_wait():
 
 
 def version():
-    try:
-        return (REPO / "VERSION").read_text().strip()
-    except OSError:
-        return None
+    return hb.version()   # VERSION plus the merges since it changed, e.g. 0.4.12
 
 
 class Card:
@@ -192,6 +191,8 @@ class Bot(discord.Client):
         self.started = True
         self.heartbeat = asyncio.create_task(heartbeat())
         await self.to_errors(look.bot_started(MAX_RUNS, setting("BEAR_SIM"), version()))
+        # First start on new code: say what changed in #update-log (nothing when the code is the same)
+        await asyncio.to_thread(hb.update_log, STORAGE / "update-log.last")
 
     async def error_channel(self):
         return self.get_channel(ERROR_CHANNEL_ID) or await self.fetch_channel(ERROR_CHANNEL_ID)

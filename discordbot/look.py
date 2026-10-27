@@ -297,12 +297,26 @@ def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", ju
 
 
 def bot_started(max_runs, sim=None, version=None):
-    lines = [f"Pricing up to {_plural(max_runs, 'folder')} at once."]
-    if sim:
-        lines.append(f"**Dev mode**: runs are simulated (`{sim}`), no credit is spent.")
-    lines.append("A folder that was running when the bot stopped needs **/run** again.")
-    return _post(_embed(GREY, f"{BEAR} BEAR is online", "\n".join(lines),
-                        footer=f"BEAR {version}" if version else None))
+    """Error channel, each time the bot starts (after an update, a restart or a crash)."""
+    lines = [f"**Version {version}**" if version else None,
+             f"Ready to price {_plural(max_runs, 'folder')} at once.",
+             f"**Dev mode**: runs are simulated (`{sim}`), no credit is spent." if sim else None,
+             "Anything that was running before this needs **/run** again."]
+    return _post(_embed(GREEN, "\N{LARGE GREEN CIRCLE} BEAR is up", "\n".join(l for l in lines if l)))
+
+
+REPO_URL = "https://github.com/tamaugo/BEAR"
+
+
+def update_log(changes, version=None, more=0):
+    """#update-log, after setup.sh updated the bot (heartbeat.py). changes: [(pull request number
+    or None, title)], newest first; more: how many older ones didn't fit."""
+    lines = [f"\N{BULLET} [#{n}]({REPO_URL}/pull/{n}) {title}" if n else f"\N{BULLET} {title}"
+             for n, title in changes]
+    if more:
+        lines.append(f"... and {_plural(more, 'older change')}")
+    return _post(_embed(GREEN, f"{BEAR} BEAR updated" + (f" to {version}" if version else ""),
+                        "\n".join(lines) or "Nothing new in the code."))
 
 
 def shadow_ping(folders, parts, log_path, user_id=None):

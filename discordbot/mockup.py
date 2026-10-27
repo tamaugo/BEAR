@@ -116,7 +116,7 @@ def scenes():
             2, NOW), used="/status"))
     s["bear-errors"] = (
         "Owner's channel. Read-only for staff; the bot posts here.",
-        bot(look.bot_started(2, version="0.4"), when="Today at 08:00")
+        bot(look.bot_started(2, version="0.4.12"), when="Today at 08:00")
         + bot(look.error_report("Q190", "BEAR-D05",
                                 "A photo in the folder is a type BEAR can't read (e.g. HEIC).",
                                 "Re-upload it as JPG, PNG or WEBP, delete the original, then /run again.",

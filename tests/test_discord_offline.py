@@ -2,11 +2,11 @@
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
 folder, picking the photos BEAR gets, the BEAR-D errors, photo and spreadsheet names, the upload wait,
 which error code a failed run gets, renaming (every photo, SKU names, splitting the zips), and
-the shadow test's log, note and report, and the up/down monitor's URLs and notes.
+the shadow test's log, note and report, and the up/down monitor's URLs and notes, and the update log.
 
 usage: python3 tests/test_discord_offline.py
 """
-import os, sys
+import os, subprocess, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -233,6 +233,33 @@ with tempfile.TemporaryDirectory() as d:
     check("heartbeat URL read from .env", hb.setting("BEAR_HEARTBEAT_URL"), URL)
 hb.jev_client.ENV_FILE = _env_file
 os.environ.update({k: v for k, v in _saved.items() if v is not None})
+
+# Update log: what changed since the last commit posted, a pull request under its own title, and
+# the automatic version (VERSION's major.minor + merges since it last changed).
+with tempfile.TemporaryDirectory() as d:
+    g = lambda *a: subprocess.run(["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+    g("init", "-q", "-b", "main")
+    Path(d, "VERSION").write_text("0.4.0\n")
+    g("add", "VERSION"); g("commit", "-q", "-m", "Bump version to 0.4")
+    first = g("rev-parse", "HEAD")
+    for n, title in ((41, "Update log"), (42, "Faster runs")):
+        g("checkout", "-q", "-b", f"pr{n}")
+        Path(d, f"f{n}").write_text("x"); g("add", "."); g("commit", "-q", "-m", "work in progress")
+        g("checkout", "-q", "main")
+        g("merge", "-q", "--no-ff", f"pr{n}", "-m", f"Merge pull request #{n} from tamaugo/pr{n}\n\n{title}")
+    Path(d, "g").write_text("x"); g("add", "."); g("commit", "-q", "-m", "A direct commit")
+    _repo, hb.REPO = hb.REPO, Path(d)
+    check("changes since last posted", hb.changes(first, "HEAD"), [(None, "A direct commit"), (42, "Faster runs"), (41, "Update log")])
+    check("first update log: just the latest", hb.changes(None, "HEAD"), [(None, "A direct commit")])
+    check("automatic version", hb.version(), "0.4.3")
+    _channel, hb.update_channel = hb.update_channel, lambda: None
+    state = Path(d) / "last"
+    check("nowhere to post: nothing posted", hb.update_log(state), False)
+    check("nowhere to post: kept for next time", state.exists(), False)
+    state.write_text(g("rev-parse", "HEAD") + "\n")
+    check("same code: nothing posted", hb.update_log(state), False)
+    hb.REPO, hb.update_channel = _repo, _channel
 
 if fails:
     print("\n".join(fails))

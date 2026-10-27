@@ -3,12 +3,13 @@
 it finds what's already there and only adds what's missing, then updates the pinned guide.
 
     🐻 BEAR     #how-to-bear (guide, pinned; read-only)   #bear-errors (the error channel; read-only)
+               #update-log (what changed in each update; read-only)
     🚗 Cars     one channel per car, the topic is the car  (text-only messages are deleted here)
     🗄️ Done     finished cars, dragged here by hand         (read-only, commands refused)
 
 Needs DISCORD_TOKEN and DISCORD_GUILD_ID in .env, and the bot invited with Manage Channels and
 Manage Roles (the setup invite link in discordbot/SETUP.md). Prints the three IDs the bot needs;
-with --write-env it also puts them in .env (ERROR_CHANNEL_ID, CARS_CATEGORY_ID).
+with --write-env it also puts them in .env (ERROR_CHANNEL_ID, CARS_CATEGORY_ID, UPDATE_CHANNEL_ID).
 
 usage: .venv/bin/python discordbot/setup_server.py [--write-env]
 """
@@ -24,7 +25,7 @@ import look  # noqa: E402
 
 ENV = jev_client.ENV_FILE
 BEAR_CAT, CARS_CAT, DONE_CAT = "🐻 BEAR", "🚗 Cars", "🗄️ Done"
-GUIDE_CH, ERRORS_CH = "how-to-bear", "bear-errors"
+GUIDE_CH, ERRORS_CH, UPDATES_CH = "how-to-bear", "bear-errors", "update-log"
 GUIDE_TITLE = look.guide()["embeds"][0]["title"]
 O = discord.PermissionOverwrite
 
@@ -114,11 +115,14 @@ async def lay_out(client, guild_id, write):
                                 {everyone: read_only, me: bot_can}, int(setting("ERROR_CHANNEL_ID") or 0) or None)
     guide = await text_channel(guild, bear, GUIDE_CH, "How to use BEAR. Read the pinned message.",
                                {everyone: read_only, me: bot_can})
+    updates = await text_channel(guild, bear, UPDATES_CH, "What changed each time BEAR is updated. Only the bot posts here.",
+                                 {everyone: read_only, me: bot_can}, int(setting("UPDATE_CHANNEL_ID") or 0) or None)
     cars = await category(guild, CARS_CAT, int(setting("CARS_CATEGORY_ID") or 0) or None, {me: bot_can})
     await category(guild, DONE_CAT, None, {everyone: read_only, me: O(view_channel=True, read_message_history=True)})
     await pin_guide(guide, me, errors.id)
 
-    ids = {"DISCORD_GUILD_ID": guild.id, "ERROR_CHANNEL_ID": errors.id, "CARS_CATEGORY_ID": cars.id}
+    ids = {"DISCORD_GUILD_ID": guild.id, "ERROR_CHANNEL_ID": errors.id, "CARS_CATEGORY_ID": cars.id,
+           "UPDATE_CHANNEL_ID": updates.id}
     print("\nThe bot's settings:")
     for k, v in ids.items():
         print(f"  {k}={v}")
