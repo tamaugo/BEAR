@@ -9,6 +9,7 @@ BEAR runs live on the VM; the Mac is not involved. Takes about 30 minutes.
 4. Rehearse in dev mode (no credits spent)
 5. Go live
 6. Everyday jobs and fixing problems
+7. Is BEAR up? (down/up messages in the error channel)
 
 ---
 
@@ -154,7 +155,7 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Is it running? | `systemctl status bear-bot` |
 | Live log | `journalctl -u bear-bot -f` (Ctrl+C to stop watching) |
 | Restart | `systemctl restart bear-bot` (a running folder is lost; `/run` it again) |
-| Update to the latest `discord-bear` | `/status` in Discord first (updating restarts the bot), then `bash /opt/bear/discordbot/deploy/setup.sh` |
+| Update to the latest `discord-bear` | `/status` in Discord first (updating restarts the bot), then `bash /opt/bear/discordbot/deploy/setup.sh`. With §7 set up the error channel says 🔴 down, then 🟢 up; a failed update says which step failed. |
 | Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM`, `BEAR_RENAME_OFFER`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
 | Bring back `/run`'s rename offer (off since 2026-10-25) | In `.env`: `BEAR_RENAME_OFFER=1`. No restart. `/rename` works either way. |
 | Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60; only with the offer on). No restart. |
@@ -196,3 +197,43 @@ Error codes in the error channel (fixes are in each message):
 read (HEIC) · `D06` download failed · `D07` renaming failed (a photo or zip) · `N01`/`N02`/`N03` name model rate limited / not responding /
 unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap · `T01` run took over
 2 hours · `R01` anything else (log attached).
+
+---
+
+## 7. Is BEAR up? (down/up messages in the error channel)
+
+A VM that is down can't say so itself, so a free outside monitor (healthchecks.io) watches it.
+The bot checks in every 10 minutes. If a check-in is missed, healthchecks posts 🔴 **down** in
+the error channel, and 🟢 **up** once check-ins start again. Updates use it too: `setup.sh` says
+down just before it restarts the bot, and the bot's first check-in says up. Nothing is posted
+while all is well. (`discordbot/heartbeat.py`)
+
+One-time setup, about 5 minutes:
+
+1. Sign up at https://healthchecks.io (free).
+2. **Add Check.** Name: `BEAR`. Period: **10 minutes**. Grace: **5 minutes** (so "down" means no
+   check-in for 15 minutes; a slow minute never sets it off).
+3. **Integrations > Add Integration > Discord.** Discord asks for a server and channel: pick
+   your server and the error channel (`#bear-errors`), then Authorize.
+4. Open the `BEAR` check. Under **Notification Methods** turn Discord **on** and Email **off**,
+   so every down/up message goes to the error channel and nowhere else.
+5. Copy the check's ping URL (`https://hc-ping.com/...`) and on the VM:
+
+   ```
+   nano /opt/bear/.env          # add:  BEAR_HEARTBEAT_URL=https://hc-ping.com/...
+   systemctl restart bear-bot
+   ```
+
+   Within a minute the check turns green on healthchecks.io.
+6. Try it: `python3 /opt/bear/discordbot/heartbeat.py down` posts 🔴 down in the error channel,
+   then `systemctl restart bear-bot` posts 🟢 up.
+
+| What you see in the error channel | Meaning |
+|---|---|
+| 🔴 BEAR is down, right after you ran `setup.sh` | The update is restarting the bot. 🟢 up follows within a minute. |
+| 🔴 BEAR is down, out of the blue | No check-in for 15 minutes: the VM, its internet or the bot stopped. `systemctl status bear-bot` on the VM, or check the VM in Proxmox. |
+| 🟢 BEAR is up | Check-ins started again. |
+| 🔴 Update failed at: *step* | `setup.sh` stopped part way. The bot wasn't restarted and still runs the version from before. The full output is in the terminal that ran it. |
+
+To turn it off, delete the `BEAR_HEARTBEAT_URL` line and restart the bot (pause the check on
+healthchecks.io, or it will say down).
