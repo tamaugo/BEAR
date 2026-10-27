@@ -115,17 +115,17 @@ If not, see §6.
 ## 4. Rehearse in dev mode (no credits spent)
 
 With `BEAR_SIM=ok` every run is BEAR's simulation (`bear2/simulate.py`): the Discord side is
-real (folders, 💸, downloads, queue, errors) but the photo reads, eBay results and names are fake
+real (folders, downloads, queue, errors) but the photo reads, eBay results and names are fake
 (a Mitsubishi Shogun), so it costs nothing.
 
 1. In Cars, make a channel `test-car` with topic `MITSUBISHI SHOGUN 2007 3.2 DI-D`.
 2. `/newfolder name: T1` → the bot posts **📁 Folder T1**.
-3. Upload a few photos. Post one on its own and react to it with 💸. Type some text: it is deleted.
-4. `/run` → one card that changes as it goes: "Checking the folder", "Running 1 part", then green
+3. Upload two photos. Type some text: it is deleted.
+4. `/run` → one card that changes as it goes: "Checking the folder", "Running 2 parts", then green
    "Done" with the spreadsheet `T1-mitsubishi-shogun-2007.xlsx` attached. The footer says DEV MODE.
-5. Try the mistakes: `/run` with no 💸 (→ `BEAR-D03`), 💸 on a message with two photos
-   (→ `BEAR-D04`), a channel with no topic (→ `BEAR-D01`). Each one turns the card red with what to
-   do (D04 links to the photo), and the error channel gets the code, the fix and the details.
+5. Try the mistakes: `/run` in a new folder with no photos (→ `BEAR-D03`), an iPhone HEIC photo
+   (→ `BEAR-D05`), a channel with no topic (→ `BEAR-D01`). Each one turns the card red with what to
+   do (D05 links to the photo), and the error channel gets the code, the fix and the details.
 6. Two at once: make a second car channel, start a folder in each, `/run` both, then `/status`.
    With three channels, the third says "queued" and starts when one finishes.
 7. Error scenarios: in `.env` change `BEAR_SIM=ok` to `rate-limit`, `no-response`, `unusable` or
@@ -166,11 +166,9 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Delete runs older than 60 days | `find /var/lib/bear/runs -mindepth 2 -maxdepth 2 -type d -mtime +60 -exec rm -rf {} +` |
 
 **Where things are:** each run is in
-`/var/lib/bear/runs/<channel>-<id>/<folder>-<date-time>/`: `all_photos/` (every photo in the
-folder, `001.jpg`, … in upload order), `all_photos.tsv` (original name, Discord message, and the
-`photos/` name if it is a 💸 photo), `photos/` (the 💸 photos BEAR priced, `001.jpg`, … in upload
-order; the same files as in `all_photos/`, not copies), `photos.tsv` (which Discord message each
-of those came from, so a spreadsheet row can be traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
+`/var/lib/bear/runs/<channel>-<id>/<folder>-<date-time>/`: `photos/` (every photo in the folder,
+each one a part, `001.jpg`, … in upload order), `photos.tsv` (which Discord message each photo
+came from, so a spreadsheet row can be traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
 `spend.jsonl` (what that folder cost).
 
 Renames are in `/var/lib/bear/runs/renames/<channel>-<id>/<SKU>-<date-time>/`, on the same disk
@@ -194,7 +192,7 @@ with a link to its message) and counts its reminders in `shadow/pinged`. It runs
 | Setup stops at "flow test failed" | The last lines show why; the full output is in `/var/lib/bear/flow-test.log`. |
 
 Error codes in the error channel (fixes are in each message):
-`D01` no topic · `D02` no folder · `D03` no 💸 · `D04` two photos on one 💸 · `D05` file BEAR can't
+`D01` no topic · `D02` no folder · `D03` no photos · `D05` photo BEAR can't
 read (HEIC) · `D06` download failed · `D07` renaming failed (a photo or zip) · `N01`/`N02`/`N03` name model rate limited / not responding /
 unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap · `T01` run took over
 2 hours · `R01` anything else (log attached).

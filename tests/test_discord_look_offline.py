@@ -50,7 +50,7 @@ for code, fix in look.UPLOADER_FIX.items():
     check(f"{code}: uploader text mentions settings", fix is None or (".env" not in fix and "log" not in fix))
     check(f"{code}: D codes need uploader text", (fix is not None) == code.startswith("BEAR-D"))
 check("owner problem says nothing to do", "Nothing for you to do" in look.problem_card("Q1", "BEAR-N01", 9)["embeds"][0]["description"])
-check("photo links capped at 10", look.problem_card("Q1", "BEAR-D04", 9, ["u"] * 14)["embeds"][0]["description"].count("[Photo") == 10)
+check("photo links capped at 10", look.problem_card("Q1", "BEAR-D05", 9, ["u"] * 14)["embeds"][0]["description"].count("[Photo") == 10)
 
 m = MARKER.match(look.folder_card("Q184", CAR)["content"])
 check("marker exactly matches the backend", look.folder_card("Q184", CAR)["content"] == marker("Q184"))

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
-folder, picking the 💸 photos, the BEAR-D errors, photo and spreadsheet names, the upload wait,
+folder, picking the photos BEAR gets, the BEAR-D errors, photo and spreadsheet names, the upload wait,
 which error code a failed run gets, renaming (every photo, SKU names, splitting the zips), and
 the shadow test's log, note and report.
 
@@ -22,11 +22,11 @@ NOW = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
 _n = [0]
 
 
-def msg(author=ALICE, files=(), money=False, content="", ago=120):
+def msg(author=ALICE, files=(), content="", ago=120):
     _n[0] += 1
     return NS(author=author, content=content, created_at=NOW - timedelta(seconds=ago),
               attachments=[NS(filename=f) for f in files], jump_url=f"https://discord.com/x/{_n[0]}",
-              reactions=[NS(emoji=fo.MONEY)] if money else [NS(emoji="\N{THUMBS UP SIGN}")])
+              reactions=[NS(emoji="\N{THUMBS UP SIGN}")])
 
 
 fails = []
@@ -49,29 +49,29 @@ def raises(what, fn, code):
 old = msg(BOT, content=fo.marker("Q183"))
 fake = msg(ALICE, content=fo.marker("FAKE"))
 mark = msg(BOT, content=fo.marker("Q184"))
-p1, label, p2 = msg(files=["IMG_1.jpg", "IMG_2.jpg"]), msg(files=["IMG_4821.JPG"], money=True), msg(files=["b.png"])
+p1, label, p2 = msg(files=["IMG_1.jpg", "IMG_2.jpg"]), msg(files=["IMG_4821.JPG"]), msg(files=["b.png"])
 reply = msg(BOT, content="Checking the folder ...", files=[])
-history = [old, msg(files=["x.jpg"], money=True), fake, mark, p1, label, p2, reply]
+history = [old, msg(files=["x.jpg"]), fake, mark, p1, label, p2, reply]
 name, m, after = fo.split_folder(history[::-1], BOT.id)
 check("folder name", name, "Q184")
 check("folder messages", after, [p1, label, p2, reply])
 check("no folder", fo.split_folder([p1, fake][::-1], BOT.id)[0], None)
 check("marker round trip", fo.marker_name(msg(BOT, content=fo.marker("Box_7-a")), BOT.id), "Box_7-a")
 
-# Picking the 💸 photos.
-picks = fo.flagged_photos(after)
-check("only the flagged photo", [(x is label, a.filename) for x, a in picks], [(True, "IMG_4821.JPG")])
-two = msg(files=["a.jpg", "b.webp"], money=True), msg(files=["c.webp"], money=True)
-check("webp accepted, order kept", [a.filename for _, a in fo.flagged_photos([two[1], label])], ["c.webp", "IMG_4821.JPG"])
-check("bot's own flagged file ignored", len(fo.flagged_photos([msg(BOT, files=["r.jpg"], money=True), label])), 1)
-check("money on a text message ignored", len(fo.flagged_photos([msg(content="hi", money=True), label])), 1)
-raises("nothing flagged", lambda: fo.flagged_photos([p1, p2]), "BEAR-D03")
-raises("two photos on one flag", lambda: fo.flagged_photos([label, two[0]]), "BEAR-D04")
-raises("HEIC flagged", lambda: fo.flagged_photos([label, msg(files=["IMG_9.HEIC"], money=True)]), "BEAR-D05")
+# Picking the photos: every photo people posted is a part, in order, several to a message too.
+picks = fo.part_photos(after)
+check("every photo, in order", [a.filename for _, a in picks], ["IMG_1.jpg", "IMG_2.jpg", "IMG_4821.JPG", "b.png"])
+check("webp accepted", [a.filename for _, a in fo.part_photos([msg(files=["c.webp"])])], ["c.webp"])
+check("bot's own files ignored", len(fo.part_photos([msg(BOT, files=["r.jpg", "results.xlsx"]), label])), 1)
+check("videos and other files ignored", len(fo.part_photos([msg(files=["clip.mov", "notes.pdf"]), label])), 1)
+raises("no photos", lambda: fo.part_photos([reply, msg(content="hi")]), "BEAR-D03")
+raises("only a video", lambda: fo.part_photos([msg(files=["clip.mp4"])]), "BEAR-D03")
+heic = msg(files=["IMG_9.HEIC"])
+raises("HEIC", lambda: fo.part_photos([label, heic]), "BEAR-D05")
 try:
-    fo.flagged_photos([two[0]])
+    fo.part_photos([label, heic])
 except fo.FolderError as e:
-    check("D04 says which message", two[0].jump_url in e.detail, True)
+    check("D05 says which message", heic.jump_url in e.detail, True)
 check("BEAR and the bot read the same photo types", fo.PHOTO_EXT, __import__("common").PHOTO_EXT)
 
 # Upload wait: the newest file from a person counts, not the bot's messages.
@@ -105,8 +105,8 @@ for text, code in LOGS:
     check(f"classify {code}", fo.classify("5 photos to price.\nReading part numbers 4/4\n" + text), code)
 check("partial: cap", fo.partial_problem('{"003.jpg": {"error": "RuntimeError: spend cap reached: $1"}}'), "BEAR-K02")
 check("partial: clean", fo.partial_problem('{"003.jpg": {"s1": {}}}'), None)
-rep = fo.error_report("Q184", "BEAR-D04", "<#9>", "x" * 5000)
-check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D04` — fix: "), len(rep) <= 2000), (True, True))
+rep = fo.error_report("Q184", "BEAR-D05", "<#9>", "x" * 5000)
+check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D05` — fix: "), len(rep) <= 2000), (True, True))
 check("every code has a meaning and a fix", all(len(v) == 2 and all(v) for v in fo.ERRORS.values()), True)
 
 # Renaming: every photo people posted, in order, flags or not; other files and the bot's left out.

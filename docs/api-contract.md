@@ -30,7 +30,7 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 | Command | Where | Visible reply | Effect |
 |---|---|---|---|
 | `/newfolder name:<str>` | a car channel | `look.folder_card` (public). Extra notes are ephemeral: `open_folder_warning`, `reply("topic_order")` | Starts a folder. The marker content line is exactly `📁 Folder **<name>**` (`folders.MARKER`): **the front end must not change this line**; `/run` finds the folder by it. |
-| `/run` | a car channel | ephemeral `reply("on_it")`, then **one run card** (a normal channel message) edited through the states, ending in `done_card` + the `.xlsx` attached, or `problem_card` | Reads the folder, downloads every photo, queues, runs BEAR on the 💸 photos, posts the result. |
+| `/run` | a car channel | ephemeral `reply("on_it")`, then **one run card** (a normal channel message) edited through the states, ending in `done_card` + the `.xlsx` attached, or `problem_card` | Reads the folder, downloads every photo (each one is a part), queues, runs BEAR, posts the result. |
 | `/status` | anywhere | `look.status_card` (ephemeral) | Lists running and queued folders. |
 
 **Rules for `name`**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$`; anything else → `reply("bad_name")`.
@@ -58,7 +58,7 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 |---|---|---|
 | `checking` | /run starts (folder `None`), then again once the folder is known | `folder`, `car`, `dev` |
 | `waiting` | the newest upload is younger than `BEAR_UPLOAD_WAIT` | `wait_seconds` |
-| `downloading` | after the 💸 photos are picked; then every 5 photos | `parts`, `photos` (every photo being saved), `got` |
+| `downloading` | after the photos are picked; then every 5 photos | `parts`, `got` |
 | `queued` | all `BEAR_MAX_RUNS` slots are busy | `parts`, `queue_ahead`, `max_runs` |
 | `running` | a slot is free and BEAR starts | `parts`, `since` (unix time) |
 
@@ -79,7 +79,7 @@ downloads), because Discord rate-limits edits.
 | Function | Notes |
 |---|---|
 | `folder_card(name, car, dev)` | `content` **must equal** `folders.marker(name)`; `bot.py` enforces it |
-| `run_card(state, folder\|None, car, parts, got, queue_ahead, since, wait_seconds, max_runs, dev, photos)` | state: `checking`, `waiting`, `downloading`, `queued` or `running` |
+| `run_card(state, folder\|None, car, parts, got, queue_ahead, since, wait_seconds, max_runs, dev)` | state: `checking`, `waiting`, `downloading`, `queued` or `running` |
 | `done_card(folder, car, parts, priced, filename, minutes, dev)` | |
 | `problem_card(folder\|None, code, error_channel_id, photo_links, dev, partial)` | |
 | `error_report(folder, code, meaning, fix, channel_id, car, detail, jump_url, dev)` | |
@@ -119,9 +119,7 @@ VM, `BEAR_STORAGE=/var/lib/bear/runs`, which is on the BEAR SSD.
 
 | Path | Written by | Contents |
 |---|---|---|
-| `all_photos/001.jpg …` | bot | every photo in the folder (💸 or not) in upload order; the extension is kept (HEIC too) |
-| `all_photos.tsv` | bot | `001.jpg <TAB> original filename <TAB> message link <TAB> photos/ name if 💸, else blank` |
-| `photos/001.jpg …` | bot | the 💸 photos in upload order (hard links to their `all_photos/` files); the extension is kept (`.jpg .jpeg .png .webp`). BEAR reads only this folder |
+| `photos/001.jpg …` | bot | every photo in the folder in upload order, one part each (no 💸 since 2026-10-27); the extension is kept (`.jpg .jpeg .png .webp`) |
 | `photos.tsv` | bot | `001.jpg <TAB> original filename <TAB> message link`, one line per photo |
 | `bear.log` | BEAR (stdout + stderr) | the whole run log |
 | `spend.jsonl` | BEAR | this folder's spend only (`BEAR_SPEND_LEDGER`) |
@@ -196,10 +194,11 @@ told". **Every code must exist in all three**:
 |---|---|---|
 | D01 | no channel topic | yes |
 | D02 | no folder | yes |
-| D03 | no 💸 | yes |
-| D04 | 💸 on a message with more than one file (links to the messages) | yes |
-| D05 | 💸 file not jpg/png/webp (links) | yes |
-| D06 | a photo (💸 or not) failed to download 3 times (link) | yes |
+| D03 | no photos in the folder | yes |
+| D05 | a photo that isn't jpg/png/webp, e.g. HEIC (links) | yes |
+| D06 | a photo failed to download 3 times (link) | yes |
+
+D04 (💸 on a message with more than one file) was retired with 💸 on 2026-10-27.
 | N01 / N02 / N03 | name model rate-limited / not answering / unusable names | no |
 | K01 | OpenRouter 402 | no |
 | K02 | BEAR spend cap | no |
@@ -223,13 +222,13 @@ Run against the **VM bot** in the real server, one bot online.
 | # | Check | Pass when |
 |---|---|---|
 | C1 | Start | the `bot_started` card is in #bear-errors; `/newfolder`, `/run`, `/status` show in the command list |
-| C2 | Dev run | `/newfolder T1`, 2 photos, 1 💸, `/run` → one card goes checking → running → green, with `T1-<car>.xlsx` attached |
-| C3 | Person error | `/run` with no 💸 → red D03 card in the channel, and an `error_report` in #bear-errors |
+| C2 | Dev run | `/newfolder T1`, 2 photos, `/run` → one card goes checking → running → green, with `T1-<car>.xlsx` attached |
+| C3 | Person error | `/run` in a folder with no photos → red D03 card in the channel, and an `error_report` in #bear-errors |
 | C4 | Parallel | 3 car channels `/run` together → two run, one shows queued; `/status` lists them; all three finish |
 | C5 | Text | typed text in a car channel is deleted, and the notice appears and goes after 10 s |
 | C6 | Restart | after a VM reboot, the bot is back (C1) with no manual step |
 | C7 | Live | with `BEAR_SIM` off, one real part-number photo → green card with a real part number and price |
-| C8 | D04 links | 💸 on a 2-photo message → red D04 card whose photo link jumps to that message |
+| C8 | D05 links | a HEIC photo in the folder → red D05 card whose photo link jumps to that message |
 | C9 | Unrun folder | `/newfolder` while the previous folder was never `/run` → a private warning |
 
 **Who checks what**:

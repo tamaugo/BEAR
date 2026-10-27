@@ -55,8 +55,8 @@ BEAR Parts
 
 **Folder names:** the yard's own box label, e.g. `Q184`. Letters, numbers, `-`, `_`.
 
-**Emoji:** 💸 marks the part-number photo; nothing else is needed. Later: four custom emojis
-for location (`:nsf:` `:nsr:` `:osf:` `:osr:`). Upload them as server emojis so they look the
+**Emoji:** none needed: only part-number photos are uploaded and every photo is a part (💸
+was dropped on 2026-10-27). Later, maybe: four custom emojis for location (`:nsf:` `:nsr:` `:osf:` `:osr:`). Upload them as server emojis so they look the
 same on every phone.
 
 **Roles and permissions**
@@ -79,20 +79,20 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 
 | When | What people see | `look.py` |
 |---|---|---|
-| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every 💸 photo in it*, `/status` *See which folders BEAR is working on*, `/rename` *Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip*, `/quit` *Stop everything /run or /rename is doing in this channel* | `COMMANDS` |
+| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every photo in it*, `/status` *See which folders BEAR is working on*, `/rename` *Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip*, `/quit` *Stop everything /run or /rename is doing in this channel* | `COMMANDS` |
 | `/newfolder Q184` | `📁 Folder **Q184**` + a brand-red card: the car, then the three steps | `folder_card` |
 | `/newfolder` while the last folder was never run | Only you: *"Heads up: folder Q183 was never run…"* | `open_folder_warning` |
 | Someone types text | Their message disappears; a notice explains why, then deletes itself after 10 s | `reply("text_removed")` |
 | `/run` | One card: *Checking the folder* | `run_card("checking")` |
 | …photos still arriving | Same card, amber: *Waiting for uploads* | `run_card("waiting")` |
-| …photos found | Same card: **Running 12 parts**, saving 7/12, with *"uploaded more? a 💸 is missing"* | `run_card("downloading")` |
+| …photos found | Same card: **Running 12 parts**, saving 7/12, with *"uploaded more? some photos aren't in this folder"* | `run_card("downloading")` |
 | …2 folders already running | Same card, amber: *Queued: 1 folder ahead* | `run_card("queued")` |
 | …BEAR running | Same card: *BEAR is pricing the parts (started 4 minutes ago)* | `run_card("running")` |
 | Done | Same card, green: *BEAR priced 10 of 12 parts (2 not priced)* + the `.xlsx` | `done_card` |
 | Problem the uploader can fix | Same card, red: title, what to do, links to the photo(s) | `problem_card` |
 | Problem the owner fixes | Same card, red: *"Nothing for you to do: the owner has been told in #bear-errors"* | `problem_card` |
 | Spreadsheet posted but parts lost to money | Amber: *Some parts not priced* | `problem_card(partial=True)` |
-| In `#bear-errors` | `**Q184** encountered an issue — \`BEAR-D04\` — fix: …` + red card with meaning, car, link to the folder, log excerpt (+ log file) | `error_report` |
+| In `#bear-errors` | `**Q184** encountered an issue — \`BEAR-D05\` — fix: …` + red card with meaning, car, link to the folder, log excerpt (+ log file) | `error_report` |
 | Bot starts | Grey *BEAR is online* card in `#bear-errors` | `bot_started` |
 | `/status` | *1 of 2 running*, one line per folder with a channel link | `status_card` |
 | `/run` (beside the run card; only with `BEAR_RENAME_OFFER=1`, off since 2026-10-25) | Amber *🏷️ Rename the photos?* + **Rename photos** button (opens a SKU box), *closes in 1 minute* | `rename_card("offer")` |
@@ -115,7 +115,7 @@ Wording choices:
 every post goes through `look.py`. Other changes:
 - One live run card per `/run`, with the spreadsheet attached to its final edit.
 - Owner-side fixes are kept out of car channels.
-- D04/D05/D06 cards link to the exact photos.
+- D05/D06 cards link to the exact photos.
 - "priced X of Y parts".
 - A private heads-up on `/newfolder` when the previous folder was never run, or when the topic
   doesn't start with the make.
@@ -130,7 +130,7 @@ every post goes through `look.py`. Other changes:
 | # | Change | Why it matters for the feel | Size |
 |---|---|---|---|
 | B1 | **Progress while running.** If BEAR printed per-photo progress to `bear.log` (the `progress-output` branch did), the bot could tail it every ~15 s and edit the card to "Pricing 7/12". | A 10-minute run that looks frozen feels broken. | M |
-| B2 | **⚠️ reaction on the offending photos** for D04/D05. `flagged_photos` would need to hand back the message objects, not just their links in the detail text. | They stand out when scrolling, not only via the link. | S |
+| B2 | **⚠️ reaction on the offending photos** for D05. `part_photos` would need to hand back the message objects, not just their links in the detail text. | They stand out when scrolling, not only via the link. | S |
 | B3 | **Restart leaves a grey "Running" card behind.** On startup the bot could find cards still in a running state (bot messages whose embed colour is grey/amber) and turn them red: "The bot restarted, /run again". | Otherwise a card says "running" forever. | M |
 | B4 | **Folder marker gets a ✅ after a successful run** so it's easy to see which folders are done when scrolling back. | Scanning a busy car channel | S |
 | B5 | **Cost on the done card** ("cost 3p") from the run's `spend.jsonl`. `done_card` has a footer slot for it. | Owner sees spend without the VM | S |

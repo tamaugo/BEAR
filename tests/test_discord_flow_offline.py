@@ -70,10 +70,9 @@ class Channel:
         self.zips = {}     # zip name -> names inside it, read as it is posted
         self.view = None   # the buttons last put on a message
 
-    def add(self, author=PERSON, content="", files=(), money=False, ago=300, embeds=()):
+    def add(self, author=PERSON, content="", files=(), ago=300, embeds=()):
         m = NS(id=self.id * 1000 + len(self.msgs), author=author, content=content,
-               attachments=[Att(f) for f in files], embeds=list(embeds),
-               reactions=[NS(emoji=fo.MONEY)] if money else [],
+               attachments=[Att(f) for f in files], embeds=list(embeds), reactions=[],
                created_at=datetime.now(timezone.utc) - timedelta(seconds=ago),
                jump_url=f"https://discord.com/channels/1/{self.id}/{len(self.msgs)}")
         self.msgs.append(m)
@@ -130,12 +129,14 @@ class Inter:
             self.channel.add(ME, content or "", ago=0, embeds=embeds or [])
 
 
-def folder(cid, name="Q184", flags=2, topic=CAR, extra=()):
+def folder(cid, name="Q184", parts=4, topic=CAR, extra=()):
+    """A folder of part-number photos: the first two in one message, the rest one per message."""
     ch = Channel(cid, topic)
     ch.add(ME, fo.marker(name))
-    ch.add(files=["IMG_1.jpg", "IMG_2.jpg"])
-    for i in range(flags):
-        ch.add(files=[f"IMG_{10 + i}.{'webp' if i % 2 else 'jpg'}"], money=True)
+    if parts:
+        ch.add(files=["IMG_1.jpg", "IMG_2.jpg"][:parts])
+    for i in range(parts - 2):
+        ch.add(files=[f"IMG_{10 + i}.{'webp' if i % 2 else 'jpg'}"])
     for kw in extra:
         ch.add(**kw)
     return ch
@@ -192,25 +193,20 @@ async def run_with_sku(ch, sku, sim="ok", late=False):
 
 
 async def main():
-    # A good folder: every photo saved in all_photos/, the 💸 ones also in photos/ as 001.jpg,
-    # 002.webp for BEAR; the simulated spreadsheet posted, and no rename offer.
+    # A good folder: every photo saved in photos/ as 001.jpg ... for BEAR, each one a part; the
+    # simulated spreadsheet posted, and no rename offer.
     ch = await run(folder(10))
     text, fname = card(ch)
     check("spreadsheet posted", fname, "Q184-mitsubishi-shogun-2007.xlsx")
     check("parts counted", "priced **6 of 7** parts" in text, True)
-    check("running shown", any("Running 2 parts" in t for t in ch.shown), True)
+    check("running shown", any("Running 4 parts" in t for t in ch.shown), True)
     check("one card per run, no rename offer", len(ch.sent), 1)
-    check("saving counts every photo", any("Saving the photos ... 0/4" in t for t in ch.shown), True)
     check("card ends done", "Done" in text, True)
     run_dir = next((TMP / "car-10-10").iterdir())
-    check("photo names", sorted(p.name for p in (run_dir / "photos").iterdir()), ["001.jpg", "002.webp"])
-    check("every photo kept", sorted(p.name for p in (run_dir / "all_photos").iterdir()),
+    check("every photo goes to BEAR", sorted(p.name for p in (run_dir / "photos").iterdir()),
           ["001.jpg", "002.jpg", "003.jpg", "004.webp"])
-    check("all_photos.tsv", [l.split("\t")[::3] for l in (run_dir / "all_photos.tsv").read_text().splitlines()],
-          [["001.jpg", ""], ["002.jpg", ""], ["003.jpg", "001.jpg"], ["004.webp", "002.webp"]])
-    check("BEAR's photo is the kept one", (run_dir / "photos" / "002.webp").samefile(run_dir / "all_photos" / "004.webp"), True)
     check("photos.tsv", [l.split("\t")[:2] for l in (run_dir / "photos.tsv").read_text().splitlines()],
-          [["001.jpg", "IMG_10.jpg"], ["002.webp", "IMG_11.webp"]])
+          [["001.jpg", "IMG_1.jpg"], ["002.jpg", "IMG_2.jpg"], ["003.jpg", "IMG_10.jpg"], ["004.webp", "IMG_11.webp"]])
     check("own spend ledger used", (run_dir / "results" / "results.xlsx").exists(), True)
     check("no error posted", ERRORS.sent, [])
 
@@ -218,9 +214,8 @@ async def main():
     cases = [
         ("no folder", Channel(11), "BEAR-D02"),
         ("no topic", folder(12, topic=""), "BEAR-D01"),
-        ("no flags", folder(13, flags=0), "BEAR-D03"),
-        ("two photos flagged", folder(14, extra=[dict(files=["a.jpg", "b.jpg"], money=True)]), "BEAR-D04"),
-        ("HEIC flagged", folder(15, extra=[dict(files=["IMG_5.HEIC"], money=True)]), "BEAR-D05"),
+        ("no photos", folder(13, parts=0), "BEAR-D03"),
+        ("a HEIC photo", folder(15, extra=[dict(files=["IMG_5.HEIC"])]), "BEAR-D05"),
     ]
     for what, ch, code in cases:
         await run(ch)
@@ -235,7 +230,7 @@ async def main():
 
     # Upload still arriving: /run waits for a quiet spell, then runs.
     ch = folder(30)
-    ch.add(files=["IMG_99.jpg"], money=True, ago=0)
+    ch.add(files=["IMG_99.jpg"], ago=0)
     await run(ch)
     check("waited for uploads", any("Waiting for uploads" in t for t in ch.shown), True)
     check("ran after waiting", card(ch)[1], "Q184-mitsubishi-shogun-2007.xlsx")
@@ -256,11 +251,11 @@ async def main():
     check("second /run refused", any("here is still" in r for r in second.replies), True)
     check("only one spreadsheet", sum(1 for _, f in ch.sent if f), 1)
 
-    # Owner-side problems don't tell the uploader to edit .env; D04 links to the photo.
+    # Owner-side problems don't tell the uploader to edit .env; D05 links to the photo.
     ch = await run(folder(60), "rate-limit")
     check("N01 card hides the fix", ".env" not in card(ch)[0] and "Nothing for you to do" in card(ch)[0], True)
-    ch = await run(folder(61, extra=[dict(files=["a.jpg", "b.jpg"], money=True)]))
-    check("D04 links the photo", "[Photo 1](https://discord.com/channels/1/61/" in card(ch)[0], True)
+    ch = await run(folder(61, extra=[dict(files=["IMG_5.HEIC"])]))
+    check("D05 links the photo", "[Photo 1](https://discord.com/channels/1/61/" in card(ch)[0], True)
 
     # /newfolder: the marker card, and a heads-up when the folder before was never run.
     ch = folder(70, name="OLD")
@@ -288,7 +283,7 @@ async def main():
     check("offer on: one run card and one rename card", len(ch.sent), 2)
     check("no SKU: not renamed", "No SKU given" in rename_card(ch)[0], True)
 
-    # With a SKU: every photo from the marker on (not only 💸), in upload order, posted as a
+    # With a SKU: every photo from the marker on, in upload order, posted as a
     # zip after the spreadsheet. Other files are left out; BEAR's own photos are untouched.
     ch = folder(80, extra=[dict(files=["two_a.png", "two_b.jpg"]), dict(files=["clip.mp4"])])
     i = await run_with_sku(ch, "MYSKU")
@@ -303,15 +298,15 @@ async def main():
     check("only the list stays on disk", sorted(p.name for p in job.iterdir()), ["renamed.tsv"])
     check("list maps names back", (job / "renamed.tsv").read_text().splitlines()[0].split("\t")[:2], ["MYSKU-1.jpg", "IMG_1.jpg"])
     check("BEAR's photos untouched", sorted(p.name for p in (next((TMP / "car-80-80").iterdir()) / "photos").iterdir()),
-          ["001.jpg", "002.webp"])
+          ["001.jpg", "002.jpg", "003.jpg", "004.webp", "005.png", "006.jpg"])
     logged = (TMP / "renames" / "renames.log").read_text()
     check("rename logged", "\tQ184\tMYSKU\tposted\t6\t1\t" in logged, True)
 
-    # The rename doesn't need BEAR: no 💸 at all still gets the zip (after the error card).
-    ch = folder(81, flags=0)
-    await run_with_sku(ch, "NOFLAGS")
-    check("BEAR fails D03", look.TITLES["BEAR-D03"] in card(ch)[0], True)
-    check("zip without BEAR", ch.zips.get("NOFLAGS-1.zip"), ["NOFLAGS-1.jpg", "NOFLAGS-2.jpg"])
+    # The rename doesn't need BEAR: a HEIC BEAR can't read still gets the zip (after the error card).
+    ch = folder(81, parts=2, extra=[dict(files=["IMG_5.HEIC"])])
+    await run_with_sku(ch, "NOBEAR")
+    check("BEAR fails D05", look.TITLES["BEAR-D05"] in card(ch)[0], True)
+    check("zip without BEAR", ch.zips.get("NOBEAR-1.zip"), ["NOBEAR-1.jpg", "NOBEAR-2.jpg", "NOBEAR-3.heic"])
 
     # A bad SKU is refused (the button stays); a SKU after the minute is too late.
     ch = folder(82)
@@ -385,22 +380,22 @@ async def main():
     B.sh.check, B.shadow_on = fake_check, lambda: True
     os.environ.update({"BEAR_SHADOW_PING_PARTS": "3", "BEAR_SHADOW_PING_USER": "123"})
     errors_before = len(ERRORS.sent)
-    ch = folder(87, flags=2)
+    ch = folder(87, parts=2)
     for _ in range(2):   # the second /run of the same folder replaces the first one's answers
         await run(ch)
         await asyncio.gather(*B.SHADOW)
     rows = B.sh.latest_runs(B.sh.read_log(shadow_log))
-    check("shadow: every photo asked by the label model", sum(r["model"] == B.sh.LABEL_MODEL for r in rows), 4)
-    check("shadow: 💸 photos asked by every model", sum(r["flagged"] for r in rows), 2 * (1 + len(B.sh.LOC_MODELS)))
+    check("shadow: every photo asked by every model", len(rows), 2 * (1 + len(B.sh.LOC_MODELS)))
+    check("shadow: every photo is a part", all(r["flagged"] for r in rows), True)
     check("shadow: photos sent as JPEG", set(asked), {True})
     check("shadow: rerun not counted twice", B.sh.counts(B.sh.read_log(shadow_log)), (1, 2))
-    check("shadow: no note before 3 💸 photos", len(ERRORS.sent), errors_before)
-    await run(folder(88, name="Q185", flags=2))
+    check("shadow: no note before 3 part photos", len(ERRORS.sent), errors_before)
+    await run(folder(88, name="Q185", parts=2))
     await asyncio.gather(*B.SHADOW)
-    check("shadow: one note at 3+ 💸 photos", len(ERRORS.sent), errors_before + 1)
+    check("shadow: one note at 3+ part photos", len(ERRORS.sent), errors_before + 1)
     check("shadow: note mentions the owner", ERRORS.sent[-1][0].startswith("<@123>"), True)
-    check("shadow: note says how much", "4 💸 photos" in ERRORS.sent[-1][0], True)
-    await run(folder(89, name="Q186", flags=1))
+    check("shadow: note says how much", "4 part photos" in ERRORS.sent[-1][0], True)
+    await run(folder(89, name="Q186", parts=1))
     await asyncio.gather(*B.SHADOW)
     check("shadow: no second note until 6", len(ERRORS.sent), errors_before + 1)
 

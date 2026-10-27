@@ -6,6 +6,8 @@ NR or OR, as staff write it). On the 💸 photos two more Decisions models answe
 question, to test using a second model to confirm the first. Staff's 💸 reactions are the right
 answers to the first question, so after enough folders shadow_report.py can say whether a model
 could find the part-number photos on its own, and which model reads the locations best.
+Since 2026-10-27 people upload only part-number photos and there is no 💸: every photo is logged
+as flagged and asked by every model, so new folders add location data only.
 
 One line per photo per model goes in <storage>/shadow/shadow.jsonl. Nothing is posted, except a
 note in the error channel each time another BEAR_SHADOW_PING_PARTS 💸 photos have been logged
