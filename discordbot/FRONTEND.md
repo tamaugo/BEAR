@@ -38,7 +38,7 @@ is in [PLAN.md](PLAN.md), and setting up the VM and the bot is in [SETUP.md](SET
 BEAR Parts
 ├── 🐻 BEAR
 │   ├── #how-to-bear       read-only; the bot posts and pins the guide (look.guide)
-│   └── #bear-errors       read-only for staff; bot posts problems + "BEAR is online"
+│   └── #bear-errors       read-only for staff; bot posts problems + "BEAR is up"
 ├── 🚗 Cars                (CARS_CATEGORY_ID) one channel per car
 │   ├── #ford-fiesta-mk7-2012     topic: FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL
 │   └── #vw-golf-mk6-2010         topic: VW GOLF MK6 2010 ESTATE 1.6 TDI
@@ -93,7 +93,8 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 | Problem the owner fixes | Same card, red: *"Nothing for you to do: the owner has been told in #bear-errors"* | `problem_card` |
 | Spreadsheet posted but parts lost to money | Amber: *Some parts not priced* | `problem_card(partial=True)` |
 | In `#bear-errors` | `**Q184** encountered an issue — \`BEAR-D05\` — fix: …` + red card with meaning, car, link to the folder, log excerpt (+ log file) | `error_report` |
-| Bot starts | Grey *BEAR is online* card in `#bear-errors` | `bot_started` |
+| Bot starts | Green *🟢 BEAR is up* card in `#bear-errors`, with the version (automatic: `VERSION` + merges since, e.g. 0.4.12) | `bot_started` |
+| After an update | Green *🐻 BEAR updated to 0.4.13* in `#update-log`: the merged pull requests, linked | `update_log` |
 | `/status` | *1 of 2 running*, one line per folder with a channel link | `status_card` |
 | `/run` (beside the run card; only with `BEAR_RENAME_OFFER=1`, off since 2026-10-25) | Amber *🏷️ Rename the photos?* + **Rename photos** button (opens a SKU box), *closes in 1 minute* | `rename_card("offer")` |
 | …left blank | Same card, grey: *No SKU given, photos not renamed* | `rename_card("skipped")` |

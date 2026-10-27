@@ -10,6 +10,7 @@ BEAR runs live on the VM; the Mac is not involved. Takes about 30 minutes.
 5. Go live
 6. Everyday jobs and fixing problems
 7. Is BEAR up? (down/up messages in the error channel)
+8. Update log (#update-log)
 
 ---
 
@@ -106,7 +107,7 @@ systemctl restart bear-bot
 systemctl status bear-bot        # should say "active (running)"
 ```
 
-Within a few seconds `#bear-errors` shows a grey **🐻 BEAR is online** card that mentions dev mode.
+Within a few seconds `#bear-errors` shows a green **🟢 BEAR is up** card with the version, that mentions dev mode.
 If not, see §6.
 
 `.env` is only readable by root and the `bear` user and never leaves the VM.
@@ -137,7 +138,7 @@ real (folders, downloads, queue, errors) but the photo reads, eBay results and n
 ## 5. Go live
 
 1. `nano /opt/bear/.env`, put `#` in front of `BEAR_SIM=ok`, save, `systemctl restart bear-bot`.
-   The "BEAR is online" card no longer mentions dev mode, and the cards lose the DEV MODE footer.
+   The "BEAR is up" card no longer mentions dev mode, and the cards lose the DEV MODE footer.
 2. **Photo quality check first** (PLAN §8): Discord's phone app may shrink photos. Upload a few
    test-set photos from the phone, run a small folder, and compare the part numbers with the
    Mac run of the same photos. Only switch over once they match.
@@ -237,3 +238,21 @@ One-time setup, about 5 minutes:
 
 To turn it off, delete the `BEAR_HEARTBEAT_URL` line and restart the bot (pause the check on
 healthchecks.io, or it will say down).
+
+---
+
+## 8. Update log (#update-log)
+
+The first time the bot starts on new code (after `setup.sh`), it posts **🐻 BEAR updated to
+0.4.13** in `#update-log` with the pull requests that came in, each linked to GitHub. A restart
+with no new code posts nothing there.
+
+The version is automatic: the number in `VERSION` plus how many changes were merged since it was
+last changed (0.4.13 = the 13th merge after 0.4). Bump `VERSION` to 0.5 and it starts again at 0.5.0.
+The **🟢 BEAR is up** card in the error channel shows the same number.
+
+The channel: run `/opt/bear/.venv/bin/python /opt/bear/discordbot/setup_server.py --write-env`
+once (it adds `#update-log` next to `#bear-errors`, read-only, and writes `UPDATE_CHANNEL_ID`),
+or make a text channel called exactly `update-log` by hand. With neither, nothing is posted and
+the changes wait for the next start that has somewhere to post them.
+
