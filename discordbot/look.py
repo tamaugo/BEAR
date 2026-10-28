@@ -63,7 +63,7 @@ UPLOADER_FIX = {
     "BEAR-D07": "The photos couldn't be renamed. **/rename** again with the same SKU; if it keeps happening, "
                 "re-send the photo below.",
     "BEAR-N01": None, "BEAR-N02": None, "BEAR-N03": None,
-    "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None,
+    "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None, "BEAR-C01": None,
 }
 
 # Short titles for the problem card, so the code means something at a glance.
@@ -81,6 +81,7 @@ TITLES = {
     "BEAR-K02": "Folder hit BEAR's spend cap",
     "BEAR-T01": "Run took too long",
     "BEAR-R01": "BEAR run failed",
+    "BEAR-C01": "Part check couldn't read a photo",
 }
 
 # Discord's limits: title 256, description 4096, field name 256, value 1024, footer 2048,
@@ -282,6 +283,52 @@ def zip_post(sku, n, total, first, last):
 
 # --- Error channel -------------------------------------------------------------------------------
 
+# --- Part check ----------------------------------------------------------------------------------
+# One reply per photo posted in any channel: BEAR reads the part number off it, people tap ✅ or fix
+# it, and the answer is saved (discordbot/partcheck.py). Edited through reading -> ask (or none) ->
+# done, or failed / unreadable.
+
+CHECK_FOOTER = "Part check"   # must match folders.CHECK_FOOTER: /run tells these cards apart by it
+SEARCH = "\N{LEFT-POINTING MAGNIFYING GLASS}"
+TICK = "\N{WHITE HEAVY CHECK MARK}"
+PENCIL = "\N{PENCIL}\N{VARIATION SELECTOR-16}"
+CHECK_BUTTONS = {"ok": "Correct", "fix": "Fix", "type": "Type it"}   # labels; other readings show their number
+CHECK_BOX = {"title": "Fix the part number", "label": "Part number, as printed on the part"}
+
+
+def check_card(state, number=None, alts=(), photo=None, of=None, who=None, how=None, read=None,
+               seconds=None, dev=False):
+    """state: reading | ask | none | done | failed | unreadable. photo/of number the photo when one
+    message had several. who is a Discord mention; how is ok | alt | fix (done); read is what BEAR
+    read (done, when someone changed it); seconds is how long BEAR took (ask, none)."""
+    which = f" · photo {photo} of {of}" if of and of > 1 else ""
+    took = f"read in {seconds:.1f} s" if seconds is not None else None
+    if state == "reading":
+        colour, title, desc = GREY, f"{SEARCH} Reading the part number{which}", "One moment ..."
+    elif state == "ask":
+        colour, title = AMBER, f"{SEARCH} Part number{which}"
+        desc = f"# `{number}`\nRight? Tap **{TICK} {CHECK_BUTTONS['ok']}**"
+        desc += (", **another reading** below," if alts else "") + f" or **{PENCIL} {CHECK_BUTTONS['fix']}**."
+    elif state == "none":
+        colour, title = AMBER, f"{SEARCH} No part number found{which}"
+        desc = (f"If you can read it, tap **{PENCIL} {CHECK_BUTTONS['type']}**. "
+                "Or send a closer, sharper photo of the label.")
+    elif state == "done":
+        colour, title = GREEN, f"{TICK} Part number saved{which}"
+        desc = f"# `{number}`\n" + {"ok": f"Checked by {who}.",
+                                    "alt": f"{who} picked another reading. BEAR read `{read}`.",
+                                    "fix": f"Typed by {who}." + (f" BEAR read `{read}`." if read else "")}[how]
+    elif state == "failed":
+        colour, title = RED, f"Couldn't read this photo{which}"
+        desc = "**Send the photo again.** If it keeps happening, the owner has been told."
+    elif state == "unreadable":
+        colour, title = RED, f"{TITLES['BEAR-D05']}{which}"
+        desc = "Re-send it as a normal photo (iPhone HEIC?)."
+    else:
+        raise ValueError(f"unknown check state {state!r}")
+    return _post(_embed(colour, title, desc, footer=_footer(dev, " · ".join(b for b in (CHECK_FOOTER, took) if b))))
+
+
 def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", jump_url=None, dev=False):
     """The error channel post. meaning/fix are the owner-facing text (folders.ERRORS). The content
     line keeps the agreed format so it reads right in notifications and search:
@@ -366,6 +413,9 @@ REPLIES = {
     "rename_on_it": "Renaming the photos as **{sku}-1**, **{sku}-2** ...: the card below shows how it's going.",
     "quit_none": "Nothing is running in this channel.",
     "quit_done": "Stopping {what}.",
+    "check_answered": "Someone already answered this one.",
+    "check_bad_number": "That doesn't look like a part number: letters, numbers, spaces, `-`, `.` and `/`, "
+                        "up to 40. Tap **Fix** to try again.",
 }
 
 
@@ -386,7 +436,9 @@ def guide(error_channel_id=None):
         "**4. /run** when the folder is done. BEAR says how many parts it found, then posts the "
         "spreadsheet. If that number is lower than you expect, a photo is missing."
     )
-    tips = ("Text messages are removed: car channels are photos only.\n"
+    tips = ("**Every photo** gets a reply with the part number BEAR reads: tap **Correct**, another "
+            "reading, or **Fix** to type it.\n"
+            "Text messages are removed: car channels are photos only.\n"
             "**/run** again re-does the whole folder.\n"
             "**/rename** renames every photo to `SKU-1`, `SKU-2` ... and posts them as a zip.\n"
             "**/quit** stops whatever is running in the channel.\n"

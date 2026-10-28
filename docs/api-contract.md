@@ -44,6 +44,17 @@ Names are fixed; descriptions come from `look.COMMANDS`.
 | `busy` | a `/run` is already active in this channel; it gets `folder` (or `(checking)`) and `state` |
 | `oops` | an unhandled command error (logged) |
 
+**Part check** (any channel but `ERROR_CHANNEL_ID` and `#update-log`; off with `BEAR_PART_CHECK=0`):
+- Every image in a person's message gets **one reply card** (`look.check_card`), edited
+  `reading` → `ask` (or `none`) → `done`, or `failed` / `unreadable` (HEIC).
+- Buttons (`bearcheck:ok`, `bearcheck:alt:<i>`, `bearcheck:fix`) are a `discord.ui.DynamicItem`, so
+  they work after a restart; the read behind each card is in `<storage>/checks/pending/<card id>.json`
+  until someone answers. ✏️ opens a box filled with BEAR's read. The first answer wins; a later tap
+  gets `reply("check_answered")`.
+- Each answer is one tab-separated line in `<storage>/checks/part-numbers.txt` (`partcheck.LOG_HEADER`).
+- Every card's footer starts with `Part check` (`look.CHECK_FOOTER` = `folders.CHECK_FOOTER`), so
+  `/newfolder`'s "never run" warning doesn't take it for a run card.
+
 **Car channel behaviour**:
 - A message with no file, in a channel under `CARS_CATEGORY_ID`, is deleted.
 - `reply("text_removed")` is posted at most once per 60 s per channel and deletes itself after 10 s.
@@ -160,6 +171,8 @@ They never go in chat, logs or git.
 | `OPENROUTER_API_KEY`, `EBAY_APP_ID`, `EBAY_CERT_ID` | for live runs | not needed in dev mode |
 | `BEAR_MAX_RUNS` (2), `BEAR_UPLOAD_WAIT` (30), `BEAR_RUN_TIMEOUT` (7200) | no | read at start |
 | `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM` | no | read at each run |
+| `BEAR_PART_CHECK` (on) | no | read for each photo; `0` turns the part check off |
+| `BEAR_CHECKS` (6), `BEAR_CHECK_TIMEOUT` (60) | no | part check: photos read at once, seconds before giving up; read at start |
 
 Behaviour:
 - `PASTE_HERE`, blank or missing counts as unset.
@@ -204,6 +217,7 @@ D04 (💸 on a message with more than one file) was retired with 💸 on 2026-10
 | K02 | BEAR spend cap | no |
 | T01 | timeout | no |
 | R01 | anything else | no |
+| C01 | a part check couldn't read a photo (posted at most once per 10 minutes; the card itself tells the person to send it again) | no |
 
 ## 6. Deployment (back end)
 

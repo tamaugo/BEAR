@@ -14,7 +14,8 @@ MARKER = re.compile(r"^\N{FILE FOLDER} Folder \*\*([A-Za-z0-9][A-Za-z0-9_-]{0,39
 FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")   # same as bear2/common.py PHOTO_EXT
 
-# code: (what went wrong, how to fix it). D = Discord side, N = name model, K = credit, R = anything else.
+# code: (what went wrong, how to fix it). D = Discord side, N = name model, K = credit, C = part check,
+# R = anything else.
 ERRORS = {
     "BEAR-D01": ("The channel has no topic, so BEAR doesn't know the car.",
                  "Put the vehicle text in the channel topic (make first, e.g. FORD FIESTA MK7 2012 1.4 DIESEL), then /run again."),
@@ -42,7 +43,19 @@ ERRORS = {
                  "/run again. If it happens again, the owner looks at the log."),
     "BEAR-R01": ("The BEAR run failed.",
                  "The owner looks at the attached log."),
+    "BEAR-C01": ("A part check couldn't read a photo: the read model failed or took too long.",
+                 "Usually nothing: the person sends the photo again. If it keeps happening, look at the bot's log "
+                 "(journalctl -u bear-bot) and the read model on OpenRouter."),
 }
+
+
+CHECK_FOOTER = "Part check"   # every part-check card's footer starts with this (look.check_card)
+
+
+def is_check_card(msg):
+    """True for the bot's part-check replies (one per photo), which aren't /run cards."""
+    return any((getattr(getattr(e, "footer", None), "text", None) or "").startswith(CHECK_FOOTER)
+               for e in getattr(msg, "embeds", None) or [])
 
 
 class FolderError(Exception):

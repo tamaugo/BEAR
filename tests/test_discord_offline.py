@@ -2,7 +2,8 @@
 """Offline checks for the Discord bot's own rules (no Discord, no network, no cost): finding the
 folder, picking the photos BEAR gets, the BEAR-D errors, photo and spreadsheet names, the upload wait,
 which error code a failed run gets, renaming (every photo, SKU names, splitting the zips), and
-the shadow test's log, note and report, and the up/down monitor's URLs and notes, and the update log.
+the shadow test's log, note and report, and the up/down monitor's URLs and notes, and the update log,
+and the part check's choices (which number to show, the other readings, typed numbers, its text file).
 
 usage: python3 tests/test_discord_offline.py
 """
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ROOT / "discordbot"))
 sys.path.insert(0, str(ROOT / "bear2"))
 import folders as fo  # noqa: E402
 import heartbeat as hb  # noqa: E402
+import partcheck as pc  # noqa: E402
 import renames as rn  # noqa: E402
 import shadow as sh  # noqa: E402
 
@@ -260,6 +262,44 @@ with tempfile.TemporaryDirectory() as d:
     state.write_text(g("rev-parse", "HEAD") + "\n")
     check("same code: nothing posted", hb.update_log(state), False)
     hb.REPO, hb.update_channel = _repo, _channel
+
+# Part check: the number shown is the first "primary" reading; the others become buttons, each
+# number once, at most MAX_ALTS.
+read = {"candidates": [
+    {"text": "39R293-1200", "role": "secondary", "alt_readings": []},
+    {"text": "92631-3Z000", "role": "primary", "alt_readings": ["92631-3ZO00", "926313Z000"]},
+    {"text": "92631-3Z000RY", "role": "unclear", "alt_readings": ["92631-3Z000-RY", "92631-3Z000R"]}]}
+check("check: primary shown", pc.answer(read)[0], "92631-3Z000")
+check("check: other readings, each once", pc.answer(read)[1], ["92631-3ZO00", "39R293-1200", "92631-3Z000RY"])
+check("check: no primary, first one", pc.answer({"candidates": [{"text": " 3C0 015 404 ", "role": "unclear"}]}),
+      ("3C0 015 404", []))
+check("check: nothing read", pc.answer({"candidates": [{"text": "  "}]}), (None, []))
+check("check: typed tidied", pc.typed("  3c0  015 404 "), "3C0 015 404")
+check("check: typed refused", [pc.typed(t) for t in ("", "92631/3Z000 drop table;", "x" * 41)], [None, None, None])
+check("check: dev-mode read has buttons", pc.answer(pc.SIM_READ), ("82481-3Z000", ["82481-3Z0O0", "82481-3Z010"]))
+
+with tempfile.TemporaryDirectory() as d:
+    pending, txt = Path(d) / "pending", Path(d) / "part-numbers.txt"
+    rec = {"read": "92631-3Z000", "alts": [], "channel": "#ford-fiesta", "photo_url": "https://discord.com/x/1",
+           "saved": "/x/1.jpg", "read_s": 3.2, "wait_s": 4.1}
+    pc.save_pending(pending, 55, rec)
+    check("check: peek leaves it", (pc.peek(pending, 55), pc.peek(pending, 55)), (rec, rec))
+    check("check: answered once", (pc.take(pending, 55), pc.take(pending, 55)), (rec, None))
+    pc.log_answer(txt, rec, "92631-3Z000", "ok", "Alfie", NOW)
+    pc.log_answer(txt, {**rec, "channel": "#tabs\there"}, "92631-3Z0O0", "fix", "Sam\nJones", NOW)
+    lines = txt.read_text().splitlines()
+    check("check: header once", (lines[0], len(lines)), (pc.LOG_HEADER.strip(), 3))
+    rows = pc.read_lines(txt)
+    check("check: line", [rows[0][k] for k in ("who", "part_number", "bear_read", "how", "wait_s", "read_s")],
+          ["Alfie", "92631-3Z000", "92631-3Z000", "correct", "4.1", "3.2"])
+    check("check: tabs and newlines can't break a line", [rows[1][k] for k in ("channel", "who", "how")],
+          ["#tabs here", "Sam Jones", "typed"])
+
+# /run's "never run" warning must not mistake a part-check reply for a run card.
+card = lambda footer: NS(footer=NS(text=footer))   # noqa: E731
+check("check card spotted", fo.is_check_card(NS(embeds=[card("Part check · read in 2.1 s")])), True)
+check("run card isn't one", [fo.is_check_card(NS(embeds=e)) for e in ([card(None)], [card("took 3 min")], [])],
+      [False, False, False])
 
 if fails:
     print("\n".join(fails))

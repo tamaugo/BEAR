@@ -117,6 +117,27 @@ try:
 except ValueError:
     pass
 
+# Part check cards.
+import folders  # noqa: E402
+check("check footer matches the backend", look.CHECK_FOOTER == folders.CHECK_FOOTER)
+for state in ("reading", "ask", "none", "done", "failed", "unreadable"):
+    for how in ("ok", "alt", "fix"):
+        p = look.check_card(state, "92631-3Z000", ["92631-3ZO00"], 2, 3, "<@5>", how, "92631-3ZO00", 3.24, dev=True)
+        fits(f"check {state}", p)
+        check(f"check {state}: footer marks it", p["embeds"][0]["footer"]["text"].startswith(look.CHECK_FOOTER))
+        check(f"check {state}: says which photo", "photo 2 of 3" in p["embeds"][0]["title"])
+ask = look.check_card("ask", "92631-3Z000", seconds=3.24)["embeds"][0]
+check("check ask: number big, amber, timing", "# `92631-3Z000`" in ask["description"] and ask["color"] == look.AMBER
+      and "read in 3.2 s" in ask["footer"]["text"] and "another reading" not in ask["description"])
+check("check: one photo isn't numbered", "photo" not in look.check_card("reading", photo=1, of=1)["embeds"][0]["title"])
+check("check typed, nothing read", "BEAR read" not in look.check_card("done", "X1", who="<@5>", how="fix")["embeds"][0]["description"])
+check("check done green", look.check_card("done", "X1", who="<@5>", how="ok")["embeds"][0]["color"] == look.GREEN)
+try:
+    look.check_card("bogus")
+    fails.append("unknown check state accepted")
+except ValueError:
+    pass
+
 if fails:
     print("\n".join("FAIL " + f for f in fails))
     sys.exit(1)

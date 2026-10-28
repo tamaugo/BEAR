@@ -8,7 +8,9 @@ person can cause, the name model failures (N01-N03) and a crash (R01) landing in
 channel, and three folders at once with two slots (one waits in the queue). Then the renaming
 (/run's offer is off unless BEAR_RENAME_OFFER is on): the SKU typed in that offer, the zip of
 every photo posted after the spreadsheet, /rename on its own, and /quit stopping a run. Last, the shadow test with its models faked: every photo logged,
-reruns not counted twice, and the note in the error channel.
+reruns not counted twice, and the note in the error channel. And the part check: a photo posted
+gets a reply with the number partcheck.py read (dev mode: a made-up read, through the real process),
+✅ / another reading / ✏️ save it in part-numbers.txt once, and the cases with nothing to show.
 
 usage: .venv/bin/python tests/test_discord_flow_offline.py
 """
@@ -89,7 +91,7 @@ class Channel:
                 self.zips[file.filename] = zipfile.ZipFile(file.fp).namelist()
 
     async def send(self, content=None, embeds=None, file=None, files=None, delete_after=None, view=None,
-                   allowed_mentions=None):
+                   allowed_mentions=None, reference=None):
         text = flat(content, embeds)
         self.sent.append((text, file.filename if file else None))
         self.shown.append(text)
@@ -98,6 +100,7 @@ class Channel:
             self.view = view
         m = self.add(ME, content or "", ago=0, embeds=embeds or [])
         i, ch = len(self.sent) - 1, self
+        m.view, m.channel, m.reply_to = view, self, reference
 
         async def edit(content=None, embeds=None, attachments=None, view=False):
             text = flat(content, embeds)
@@ -105,6 +108,8 @@ class Channel:
             ch.shown.append(text)
             ch.posted(attachments[0] if attachments else None)
             m.content, m.embeds = content or "", embeds or []
+            if view is not False:
+                m.view = view
         m.edit = edit
         return m
 
@@ -398,6 +403,117 @@ async def main():
     await run(folder(89, name="Q186", parts=1))
     await asyncio.gather(*B.SHADOW)
     check("shadow: no second note until 6", len(ERRORS.sent), errors_before + 1)
+
+    await part_check()
+
+
+
+class Click:
+    """A tap on a part-check card's button, or the ✏️ box sent: what the bot answered."""
+
+    def __init__(self, card, user="Sam"):
+        self.message, self.channel = card, card.channel
+        self.user = NS(display_name=user, mention=f"<@{user}>")
+        self.said, self.modal = [], None
+        self.response = NS(send_message=self.say, send_modal=self.open, edit_message=card.edit)
+
+    async def say(self, content=None, ephemeral=False):
+        self.said.append(content)
+
+    async def open(self, modal):
+        self.modal = modal
+
+
+def photo_msg(ch, *files, mid=None):
+    m = ch.add(files=files, ago=2)
+    m.id = mid or m.id
+    m.guild, m.channel, m.type = True, ch, B.discord.MessageType.default
+    m.to_reference = lambda **kw: "ref"
+    return m
+
+
+async def post(ch, *files):
+    """A person posts photos; returns the bot's part-check cards for them, once they are done."""
+    before = len(ch.msgs)
+    await B.bot.on_message(photo_msg(ch, *files))
+    await asyncio.gather(*B.CHECKING)
+    return [m for m in ch.msgs[before:] if m.author is ME]
+
+
+async def part_check():
+    os.environ.update({"BEAR_SIM": "ok", "BEAR_SIM_PAUSE": "0.02"})
+    txt = TMP / "checks" / "part-numbers.txt"
+    ch = Channel(120)
+    started = time.time()
+    a, b = await post(ch, "IMG_7.jpg", "IMG_8.png")
+    check("check: one reply per photo", [m.reply_to for m in (a, b)], ["ref", "ref"])
+    check("check: reading shown first", any("Reading the part number" in t for t in ch.shown), True)
+    check("check: answer shown", "# `82481-3Z000`" in flat(a.content, a.embeds) and "photo 1 of 2" in flat(a.content, a.embeds), True)
+    check("check: buttons", [i.item.label for i in a.view.children], ["Correct", "82481-3Z0O0", "82481-3Z010", "Fix"])
+    check("check: fast in dev mode", time.time() - started < 15, True)
+    pid = ch.msgs[0].id
+    check("check: photos kept", sorted(p.name for p in (TMP / "checks" / "photos" / "car-120-120").iterdir()),
+          [f"{pid}-1.jpg", f"{pid}-2.png"])
+
+    ok = Click(a)
+    await a.view.children[0].callback(ok)
+    check("check ✅: card green", "Checked by <@Sam>" in flat(a.content, a.embeds) and a.view is None, True)
+    again = Click(a, "Alfie")
+    await B.check_answer(again, "ok", None)
+    check("check ✅ twice: told, not saved twice", (again.said, len(B.pc.read_lines(txt))),
+          ([look.reply("check_answered")], 1))
+
+    fix = Click(b)
+    await b.view.children[-1].callback(fix)
+    check("check ✏️: box filled with BEAR's read", fix.modal.number.default, "82481-3Z000")
+    fix.modal.number._value = "nonsense; drop"
+    await fix.modal.on_submit(fix)
+    check("check ✏️: bad number refused", fix.said, [look.reply("check_bad_number")])
+    fix.modal.number._value = " 82481 3z000x "
+    await fix.modal.on_submit(fix)
+    check("check ✏️: typed number saved", "# `82481 3Z000X`" in flat(b.content, b.embeds) and "Typed by" in flat(b.content, b.embeds), True)
+
+    (c,) = await post(ch, "IMG_9.jpg")
+    check("check: a single photo isn't numbered", "photo 1" in flat(c.content, c.embeds), False)
+    await c.view.children[2].callback(Click(c))
+    rows = B.pc.read_lines(txt)
+    check("check: text file", [(r["part_number"], r["bear_read"], r["how"], r["who"]) for r in rows],
+          [("82481-3Z000", "82481-3Z000", "correct", "Sam"), ("82481 3Z000X", "82481-3Z000", "typed", "Sam"),
+           ("82481-3Z010", "82481-3Z000", "picked another reading", "Sam")])
+    check("check: timings logged", all(float(r["wait_s"]) >= 0 and float(r["read_s"]) >= 0 for r in rows), True)
+    check("check: links logged", rows[0]["photo"].startswith("https://discord.com/channels/"), True)
+    check("check: nothing left waiting", list((TMP / "checks" / "pending").iterdir()), [])
+
+    os.environ["BEAR_SIM"] = "no_number"
+    (d,) = await post(ch, "IMG_10.jpg")
+    check("check: no number", "No part number found" in flat(d.content, d.embeds)
+          and [i.item.label for i in d.view.children] == ["Type it"], True)
+    await d.view.children[0].callback(box := Click(d))
+    check("check: nothing read, box empty", box.modal.number.default, None)
+
+    os.environ["BEAR_SIM"] = "read_fails"
+    errors = len(ERRORS.sent)
+    (e,) = await post(ch, "IMG_11.jpg")
+    await post(ch, "IMG_12.jpg")
+    check("check: failure on the card", "Couldn't read this photo" in flat(e.content, e.embeds) and e.view is None, True)
+    check("check: error channel told once", (len(ERRORS.sent) - errors, "`BEAR-C01`" in last_error()), (1, True))
+
+    os.environ["BEAR_SIM"] = "ok"
+    (h,) = await post(ch, "IMG_13.heic")
+    check("check: HEIC", look.TITLES["BEAR-D05"] in flat(h.content, h.embeds), True)
+    check("check: nothing in the error channel", await post(ERRORS, "IMG_14.jpg"), [])
+    log_ch = Channel(121)
+    log_ch.name = "update-log"
+    check("check: nothing in update-log", await post(log_ch, "IMG_14.jpg"), [])
+    os.environ["BEAR_PART_CHECK"] = "0"
+    check("check: switched off", await post(ch, "IMG_15.jpg"), [])
+    os.environ.pop("BEAR_PART_CHECK")
+
+    # A folder whose photos got part checks but was never /run: still warned about on /newfolder.
+    f = folder(124, parts=0)
+    await post(f, "IMG_16.jpg")
+    check("check cards aren't run cards", B.never_run(f.msgs[1:]), True)
+
 
 asyncio.run(main())
 if fails:

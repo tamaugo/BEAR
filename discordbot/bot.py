@@ -9,6 +9,9 @@ an update it lists what changed in #update-log (heartbeat.py).
 Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
 SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
 /quit stops everything /run or /rename is doing in the channel.
+Part check (partcheck.py): any photo posted in any channel (not the error or update-log channels) gets
+a reply with the part number Agent 1 reads off it, with buttons to say it is right, pick another
+reading or type it; the answer goes in <storage>/checks/part-numbers.txt. BEAR_PART_CHECK=0 turns it off.
 After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
 every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
@@ -25,7 +28,11 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_RENAME_WAIT     seconds that offer gives people to type a SKU (60); read at each /run, no restart
   BEAR_RENAME_DOWNLOADS  photos downloaded at once by /run and /rename, across all channels (6)
   BEAR_ZIP_MB          biggest zip posted, in MiB (10: Discord's limit without server boosts)
-  BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent
+  BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent (part checks
+                       get a made-up read; no_number / read_fails try the other outcomes)
+  BEAR_PART_CHECK      0 turns the part check off (on by default); read for each photo
+  BEAR_CHECKS          photos the part check reads at once, across all channels (6)
+  BEAR_CHECK_TIMEOUT   seconds before a part check gives up on a photo (60)
   BEAR_SHADOW          0 turns the shadow test off (on by default, never in dev mode); read at each /run
   BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many part photos (300)
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
@@ -36,7 +43,7 @@ and read again for each run, so changing them needs no restart. The token is nev
 
 usage: python3 discordbot/bot.py       (systemd runs this: discordbot/deploy/bear-bot.service)
 """
-import asyncio, logging, os, shutil, signal, sys, time, traceback
+import asyncio, json, logging, os, shutil, signal, sys, time, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,10 +57,12 @@ import folders as fo  # noqa: E402
 import heartbeat as hb  # noqa: E402
 import look  # noqa: E402
 import renames as rn  # noqa: E402
+import partcheck as pc  # noqa: E402
 import shadow as sh  # noqa: E402
 
 log = logging.getLogger("bear-bot")
 RUN_PY = REPO / "bear2" / "run.py"
+CHECK_PY = HERE / "partcheck.py"
 SIM_PY = REPO / "bear2" / "simulate.py"
 HISTORY_LIMIT = 5000      # messages read back looking for the folder marker
 MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this many seconds
@@ -100,8 +109,12 @@ RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
 STORAGE = Path(setting("BEAR_STORAGE", str(REPO / "runs")))
 RENAMES_DIR = STORAGE / "renames"   # on the same disk as the runs (the SSD on the VM)
 SHADOW_DIR = STORAGE / "shadow"
+CHECK_DIR = STORAGE / "checks"   # part-numbers.txt, the photos, pending/ (cards nobody has answered yet)
+CHECK_LOG = CHECK_DIR / pc.LOG_NAME
+CHECK_PENDING = CHECK_DIR / "pending"
 RENAME_DOWNLOADS = max(1, number("BEAR_RENAME_DOWNLOADS", 6))
 ZIP_MB = max(1, number("BEAR_ZIP_MB", 10))
+CHECK_TIMEOUT = max(5, number("BEAR_CHECK_TIMEOUT", 60))
 NO_CAR = "No car in the topic"
 
 SLOTS = asyncio.Semaphore(MAX_RUNS)
@@ -115,6 +128,11 @@ RENAMES = {}  # channel id -> set of /rename tasks, so /quit can stop them
 NOTICED = {}  # channel id -> when the last "text was removed" notice was posted
 SHADOW = set()   # running shadow tests (kept so they aren't garbage collected mid-way)
 SHADOW_CALLS = asyncio.Semaphore(4)   # photos asked about at once, across all folders
+# Part checks have their own limit, so a photo never waits behind a folder's /run.
+CHECKS = asyncio.Semaphore(max(1, number("BEAR_CHECKS", 6)))
+CHECKING = set()   # running part checks (kept so they aren't garbage collected mid-way)
+CHECK_ERROR_GAP = 600   # seconds between error-channel posts about failed part checks
+CHECK_ERRORED = {}      # code -> when the error channel last heard about it
 
 
 def dev():
@@ -180,6 +198,7 @@ class Bot(discord.Client):
         self.started = False
 
     async def setup_hook(self):
+        self.add_dynamic_items(CheckButton)   # part-check buttons keep working after a restart
         guild = discord.Object(GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)   # this server only, so commands appear at once
@@ -221,7 +240,10 @@ class Bot(discord.Client):
             log.exception("can't post in %s", ch)
 
     async def on_message(self, msg):
-        """Text is never read: in car channels a message without a file is deleted."""
+        """Photos get a part check (any channel); text is never read: in car channels a message
+        without a file is deleted."""
+        if msg.attachments and not msg.author.bot and msg.guild and part_check_here(msg):
+            start_check(msg)
         if (CARS_CATEGORY_ID is None or msg.author.bot or not msg.guild or msg.attachments
                 or getattr(msg.channel, "category_id", None) != CARS_CATEGORY_ID
                 or msg.channel.id == ERROR_CHANNEL_ID
@@ -254,7 +276,7 @@ def car_channel_problem(ch):
 def never_run(msgs):
     """True if a folder (messages after its marker) has photos but /run never posted a card."""
     has_photos = any(not m.author.bot and any(fo.is_photo(att) for att in m.attachments) for m in msgs)
-    has_card = any(m.author.bot and getattr(m, "embeds", None) for m in msgs)
+    has_card = any(m.author.bot and getattr(m, "embeds", None) and not fo.is_check_card(m) for m in msgs)
     return has_photos and not has_card
 
 
@@ -579,6 +601,195 @@ async def run_bear(photos, car, results, logfile):
             if isinstance(e, asyncio.CancelledError):
                 raise
             return None
+
+
+# --- Part check ---------------------------------------------------------------------------------
+
+def part_check_here(msg):
+    """BEAR_PART_CHECK (on unless 0), read for each photo; never in the error or update-log channels."""
+    if setting("BEAR_PART_CHECK", "1").lower() in ("0", "off", "no", "false"):
+        return False
+    ch = msg.channel
+    return (msg.type in (discord.MessageType.default, discord.MessageType.reply)
+            and ch.id != ERROR_CHANNEL_ID and str(ch.id) != setting("UPDATE_CHANNEL_ID")
+            and getattr(ch, "name", None) != hb.UPDATE_CH)
+
+
+def start_check(msg):
+    """A part check for every photo in the message, in the background."""
+    photos = [att for att in msg.attachments if rn.is_image(att)]
+    for n, att in enumerate(photos, 1):
+        task = asyncio.create_task(check_photo(msg, att, n, len(photos)))
+        CHECKING.add(task)
+        task.add_done_callback(CHECKING.discard)
+
+
+def check_car(ch):
+    """The car Agent 1 is told about: the topic in a car channel, else unknown."""
+    car = (getattr(ch, "topic", None) or "").strip()
+    return car if car and car_channel_problem(ch) is None else "unknown (not given)"
+
+
+class CheckButton(discord.ui.DynamicItem[discord.ui.Button],
+                  template=r"bearcheck:(?P<what>ok|alt|fix)(?::(?P<i>\d))?"):
+    """A button under a part-check card. Its id says only what it does (and which other reading):
+    the read itself is in CHECK_PENDING under the card's message id, so it still works after a restart."""
+
+    def __init__(self, what, i=None, label=None):
+        style = {"ok": discord.ButtonStyle.success, "fix": discord.ButtonStyle.primary}.get(what, discord.ButtonStyle.secondary)
+        emoji = {"ok": look.TICK, "fix": look.PENCIL}.get(what)
+        custom_id = f"bearcheck:{what}" + (f":{i}" if i is not None else "")
+        super().__init__(discord.ui.Button(label=label, style=style, emoji=emoji, custom_id=custom_id))
+        self.what, self.i = what, i
+
+    @classmethod
+    async def from_custom_id(cls, inter, item, match):
+        return cls(match["what"], int(match["i"]) if match["i"] else None)
+
+    async def callback(self, inter: discord.Interaction):
+        await check_answer(inter, self.what, self.i)
+
+
+def check_buttons(number, alts):
+    view = discord.ui.View(timeout=None)
+    if number:
+        view.add_item(CheckButton("ok", label=look.CHECK_BUTTONS["ok"]))
+        for i, alt in enumerate(alts):
+            view.add_item(CheckButton("alt", i, label=alt))
+    view.add_item(CheckButton("fix", label=look.CHECK_BUTTONS["fix" if number else "type"]))
+    return view
+
+
+class FixBox(discord.ui.Modal, title=look.CHECK_BOX["title"]):
+    number = discord.ui.TextInput(label=look.CHECK_BOX["label"], min_length=1, max_length=pc.MAX_TYPED)
+
+    def __init__(self, card_id, read):
+        super().__init__(timeout=900)
+        self.card_id = card_id
+        self.number.default = read or None
+
+    async def on_submit(self, inter: discord.Interaction):
+        number = pc.typed(self.number.value)
+        if not number:
+            return await inter.response.send_message(look.reply("check_bad_number"), ephemeral=True)
+        await answered(inter, self.card_id, number, "fix")
+
+
+async def check_answer(inter, what, i):
+    """✅, another reading, or ✏️ (which opens the box; the answer is saved when it is sent)."""
+    card_id = inter.message.id
+    if what == "fix":
+        rec = pc.peek(CHECK_PENDING, card_id)
+        if rec is None:
+            return await inter.response.send_message(look.reply("check_answered"), ephemeral=True)
+        return await inter.response.send_modal(FixBox(card_id, rec.get("read")))
+    rec = pc.peek(CHECK_PENDING, card_id) or {}
+    alts = rec.get("alts") or []
+    number = rec.get("read") if what == "ok" else (alts[i] if i is not None and i < len(alts) else None)
+    if not number:
+        return await inter.response.send_message(look.reply("check_answered"), ephemeral=True)
+    await answered(inter, card_id, number, what)
+
+
+async def answered(inter, card_id, number, how):
+    """Save the answer once (a second tap is told it's taken) and turn the card green."""
+    rec = pc.take(CHECK_PENDING, card_id)
+    if rec is None:
+        return await inter.response.send_message(look.reply("check_answered"), ephemeral=True)
+    if how == "fix" and number == rec.get("read"):
+        how = "ok"   # opened the box and sent BEAR's own reading back
+    who = getattr(inter.user, "display_name", None) or str(inter.user)
+    pc.log_answer(CHECK_LOG, rec, number, how, who)
+    log.info("part check in %s: %s (%s by %s, BEAR read %s)", inter.channel, number, how, who, rec.get("read"))
+    post = look.check_card("done", number, photo=rec.get("photo"), of=rec.get("of"), how=how, read=rec.get("read"),
+                           who=getattr(inter.user, "mention", who), dev=dev())
+    await inter.response.edit_message(**look.kwargs(post), view=None)
+
+
+async def check_photo(msg, att, n, of):
+    """Reply to one photo with the part number BEAR reads off it. Never raises."""
+    ch = msg.channel
+    try:
+        card = await ch.send(**look.kwargs(look.check_card("reading", photo=n, of=of, dev=dev())),
+                             reference=msg.to_reference(fail_if_not_exists=False))
+    except discord.DiscordException:
+        return log.warning("can't post a part check in %s", ch, exc_info=True)
+    if not fo.is_photo(att):   # HEIC and other images BEAR can't open
+        return await check_show(card, look.check_card("unreadable", photo=n, of=of, dev=dev()))
+    try:
+        async with CHECKS:
+            where = CHECK_DIR / "photos" / f"{fo.slug(getattr(ch, 'name', 'dm'))}-{ch.id}"
+            where.mkdir(parents=True, exist_ok=True)
+            saved = where / f"{msg.id}-{n}{Path(att.filename).suffix.lower()}"
+            await download(att, saved, msg, "BEAR-C01")
+            got = await read_part(saved, check_car(ch))
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        got = {"error": f"{type(e).__name__}: {getattr(e, 'detail', '') or e}"}
+    if got.get("error"):
+        await check_failed(ch, msg, got["error"])
+        return await check_show(card, look.check_card("failed", photo=n, of=of, dev=dev()))
+    number, alts = pc.answer(got)
+    rec = {"read": number, "alts": alts, "photo": n, "of": of, "channel": f"#{getattr(ch, 'name', ch.id)}",
+           "photo_url": msg.jump_url, "saved": str(saved), "read_s": got.get("read_s"),
+           "wait_s": round(time.time() - msg.created_at.timestamp(), 1), "cost": got.get("cost"),
+           "description": got.get("part_description")}
+    try:
+        pc.save_pending(CHECK_PENDING, card.id, rec)
+    except OSError as e:   # the buttons would have nothing to save
+        await check_failed(ch, msg, f"can't keep the read: {type(e).__name__}: {e}")
+        return await check_show(card, look.check_card("failed", photo=n, of=of, dev=dev()))
+    post = look.check_card("ask" if number else "none", number, alts, n, of, seconds=got.get("read_s"), dev=dev())
+    await check_show(card, post, check_buttons(number, alts))
+
+
+async def check_show(card, post, view=None):
+    try:
+        await card.edit(**look.kwargs(post), view=view)
+    except discord.DiscordException:
+        log.warning("can't edit the part check card in %s", card.channel, exc_info=True)
+
+
+async def read_part(photo, car):
+    """partcheck.py on one photo as its own process: its JSON, or {"error": ...}. Stopped after
+    CHECK_TIMEOUT seconds whatever the model is doing."""
+    env = run_env()
+    env["BEAR_SPEND_LEDGER"] = str(CHECK_DIR / "spend.jsonl")   # part checks' spend, apart from the runs
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, str(CHECK_PY), str(photo), car, stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=str(REPO), env=env,
+        start_new_session=True)
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), CHECK_TIMEOUT)
+    except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+        if isinstance(e, asyncio.CancelledError):
+            raise
+        return {"error": f"no answer within {CHECK_TIMEOUT} s"}
+    lines = out.decode(errors="replace").strip().splitlines()
+    try:
+        return json.loads(lines[-1])
+    except (IndexError, ValueError):
+        return {"error": f"partcheck.py exit {proc.returncode}: {err.decode(errors='replace')[-600:]}"}
+
+
+async def check_failed(ch, msg, detail):
+    """Tell the error channel, at most once per CHECK_ERROR_GAP per code: when the read model is down,
+    every photo fails, and one post says so."""
+    code = "BEAR-K01" if "HTTP 402" in detail else "BEAR-C01"
+    log.warning("part check failed in %s (%s): %s", ch, code, detail[:300])
+    if time.time() - CHECK_ERRORED.get(code, 0) < CHECK_ERROR_GAP:
+        return
+    CHECK_ERRORED[code] = time.time()
+    meaning, fix = fo.ERRORS[code]
+    car = check_car(ch)
+    await bot.to_errors(look.error_report("Part check", code, meaning, fix, ch.id, None if car.startswith("unknown") else car,
+                                          detail, msg.jump_url, dev()))
 
 
 # --- Renaming -----------------------------------------------------------------------------------

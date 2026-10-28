@@ -56,6 +56,32 @@ label photo on its own with 💸 → 6 general photos → `end` → `/run` → "
 parts / Bear ran and found x amount of listings / Here is the xlsx file" + spreadsheet.
 In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 
+### Part check (any channel)
+
+Since 2026-10-28: someone takes a photo of a part number and posts it in **any channel** (not
+`#bear-errors` or `#update-log`). The bot replies to that photo at once with a grey
+**🔍 Reading the part number** card, runs **Agent 1 only** (`bear2/stage1_read.py`: no eBay, no
+spreadsheet), and edits the card to show the number it read:
+
+- **✅ Correct** saves it.
+- **Another reading** buttons (Agent 1's look-alike readings, e.g. `0`/`O`): one tap saves that one.
+- **✏️ Fix** opens a box filled with BEAR's reading; edit it and send. No number found: **✏️ Type it**.
+
+The answer goes in **`<storage>/checks/part-numbers.txt`** (for now): one tab-separated line with
+when, the channel, who, the part number, what BEAR read, how it was answered (`correct`,
+`picked another reading`, `typed`), seconds from the photo to BEAR's answer (`wait_s`) and for the
+read alone (`read_s`), the photo's link and the saved copy of the photo. So the latency and Agent
+1's real accuracy can be read straight from the file.
+
+Speed: one model call, about 2-5 s (estimate until `part-numbers.txt` has real numbers). A person is
+waiting, so the limits are tighter than a `/run`'s: 20 s per call and one retry (a `/run` allows
+120 s and 6 tries), the whole check is stopped after `BEAR_CHECK_TIMEOUT` (60 s), and if nothing is
+found upright the three rotated re-reads run at the same time. Part checks have their own limit
+(`BEAR_CHECKS`, 6 at once), so they never wait behind a folder's `/run`. A failure turns the card red
+("send the photo again") and `BEAR-C01` goes to the error channel, at most once per 10 minutes.
+
+In car channels this means every folder photo gets a check card too; `/run` ignores them.
+
 ---
 
 ## 2. Decisions
@@ -170,6 +196,10 @@ channel and the run's log. The fixes below are a first draft, to be refined late
 | `BEAR-D06` | A photo couldn't be downloaded | `/run` again. |
 
 `BEAR-D04` (a 💸 message with more than one photo) was retired with 💸 on 2026-10-27.
+
+| Code | Meaning | Fix (draft) |
+|---|---|---|
+| `BEAR-C01` | A part check couldn't read a photo (read model failed or took too long) | The person sends the photo again; if it keeps happening, look at the bot's log. |
 | `BEAR-D07` | Renaming failed: a photo didn't download or a zip wasn't posted | `/rename` again with the same SKU. |
 | `BEAR-N01` | Name model rate limited | Wait and finish the names, or swap the name model. |
 | `BEAR-N02` | Name model not responding | Same as N01. |

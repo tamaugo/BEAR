@@ -18,7 +18,8 @@ is in [PLAN.md](PLAN.md), and setting up the VM and the bot is in [SETUP.md](SET
 1. **One message per run.** `/run` posts a single card and edits it as it goes:
    checking → waiting for uploads → *Running 12 parts* → queued → running → done/failed.
    A folder should leave three bot messages in the car channel: the 📁 marker, the run card, and
-   the spreadsheet. Six status lines per folder would bury the photos.
+   the spreadsheet. Six status lines per folder would bury the photos. (The part check adds one
+   reply per photo, edited in place: the owner asked for every photo to be checked.)
 2. **Colour shows the state.** Grey = working, amber = waiting on something, green = done,
    red = problem. You can tell how a folder went without reading anything.
 3. **The car channel only shows what the uploader can do.** For a problem the uploader can fix
@@ -95,6 +96,11 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 | In `#bear-errors` | `**Q184** encountered an issue — \`BEAR-D05\` — fix: …` + red card with meaning, car, link to the folder, log excerpt (+ log file) | `error_report` |
 | Bot starts | Green *🟢 BEAR is up* card in `#bear-errors`, with the version (automatic: `VERSION` + merges since, e.g. 0.4.12) | `bot_started` |
 | After an update | Green *🐻 BEAR updated to 0.4.13* in `#update-log`: the merged pull requests, linked | `update_log` |
+| Someone posts a photo (any channel) | A reply to it, grey: *🔍 Reading the part number* (*· photo 2 of 3* when a message has several) | `check_card("reading")` |
+| …read | Same card, amber: the number, big, + **✅ Correct**, one button per other reading, **✏️ Fix**; footer *Part check · read in 3.2 s* | `check_card("ask")` |
+| …nothing found | Same card, amber: *No part number found* + **✏️ Type it** | `check_card("none")` |
+| …answered | Same card, green: *✅ Part number saved* + the number, *Checked by @Sam* / *@Sam picked another reading* / *Typed by @Sam*, buttons gone | `check_card("done")` |
+| …couldn't read / HEIC | Same card, red: *Couldn't read this photo: send it again* / *Photo type BEAR can't read* | `check_card("failed"/"unreadable")` |
 | `/status` | *1 of 2 running*, one line per folder with a channel link | `status_card` |
 | `/run` (beside the run card; only with `BEAR_RENAME_OFFER=1`, off since 2026-10-25) | Amber *🏷️ Rename the photos?* + **Rename photos** button (opens a SKU box), *closes in 1 minute* | `rename_card("offer")` |
 | …left blank | Same card, grey: *No SKU given, photos not renamed* | `rename_card("skipped")` |

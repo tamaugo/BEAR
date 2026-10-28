@@ -50,14 +50,15 @@ def parse_json(s):
     return json.loads(m.group(0)) if m else None
 
 
-def read_photo(path, vehicle, model=MODEL, max_side=1600, rotate=0):
+def read_photo(path, vehicle, model=MODEL, max_side=1600, rotate=0, **chat_opts):
+    """chat_opts go to common.chat (attempts, timeout): the Discord part check keeps them short."""
     msgs = [{"role": "user", "content": [
         {"type": "text", "text": prompt_for(vehicle)},
         {"type": "image_url", "image_url": {"url": c.img_data_uri(path, max_side, rotate)}}]}]
     cost = 0
     for attempt in range(2):
         out, raw = c.chat(model, msgs, max_tokens=1200, response_format={"type": "json_object"},
-                          temperature=0 if attempt == 0 else 0.3, tag=f"s1:{Path(path).name}")
+                          temperature=0 if attempt == 0 else 0.3, tag=f"s1:{Path(path).name}", **chat_opts)
         cost += (raw.get("usage") or {}).get("cost") or 0
         try:
             d = parse_json(out) or {}

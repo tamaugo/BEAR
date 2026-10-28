@@ -159,7 +159,9 @@ def _retry_wait(err, attempt):
 
 
 def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=None, extra=None, tag="",
-         attempts=CHAT_ATTEMPTS):
+         attempts=CHAT_ATTEMPTS, timeout=120):
+    """timeout: seconds per attempt. The Discord part check (discordbot/partcheck.py) uses short
+    ones, because a person is waiting for the answer."""
     _check_cap()
     body = {"model": model, "messages": messages, "temperature": temperature,
             "max_tokens": max_tokens, "usage": {"include": True}}
@@ -174,7 +176,7 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
         req.add_header("Authorization", f"Bearer {jev_client.resolve_api_key()}")
         req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 d = json.loads(r.read())
             cost = (d.get("usage") or {}).get("cost") or 0
             log_spend("chat", model, cost, {"tag": tag})
