@@ -11,9 +11,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import look  # noqa: E402
 
-ERRORS_ID, GUIDE_ID, CAR_ID, CAR2_ID = 101, 102, 201, 202
+ERRORS_ID, GUIDE_ID, CAR_ID, CAR2_ID, GENERAL_ID = 101, 102, 201, 202, 301
 CHANNELS = {ERRORS_ID: "bear-errors", GUIDE_ID: "how-to-bear", CAR_ID: "ford-fiesta-mk7-2012",
-            CAR2_ID: "vw-golf-mk6-2010"}
+            CAR2_ID: "vw-golf-mk6-2010", GENERAL_ID: "general"}
 CAR = "FORD FIESTA MK7 2012 HATCHBACK 1.4 DIESEL"
 CAR2 = "VW GOLF MK6 2010 ESTATE 1.6 TDI"
 NOW = time.time()
@@ -32,7 +32,9 @@ def md(text):
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text, flags=re.S)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="#">\1</a>', text)
+    text = re.sub(r"(?m)^# (.+)$", r'<div class="h1">\1</div>', text)
     text = re.sub(r"&lt;#(\d+)&gt;", lambda m: f'<span class="mention">#{CHANNELS.get(int(m.group(1)), "channel")}</span>', text)
+    text = re.sub(r"&lt;@(\w+)&gt;", r'<span class="mention">@\1</span>', text)
     text = re.sub(r"&lt;t:(\d+):R&gt;", lambda m: f'<span class="ts">{max(1, int((NOW - int(m.group(1))) // 60))} minutes ago</span>', text)
     text = text.replace("\n", "<br>")
     return re.sub(r"\x00(\d+)\x00", lambda m: blocks[int(m.group(1))], text)
@@ -52,8 +54,25 @@ def embed(e):
     return "".join(out) + "</div>"
 
 
-def bot(post, used=None, who="Sam", ephemeral=False, file=None, when="Today at 14:02", note=None):
+def buttons(post_buttons):
+    """[(label, style)] under a message; style: ok | fix | alt (Discord's green, blurple, grey)."""
+    return ('<div class="btns">' + "".join(f'<span class="btn {st}">{html.escape(label)}</span>'
+                                           for label, st in post_buttons) + "</div>") if post_buttons else ""
+
+
+def check_buttons(number, alts):
+    """The part-check card's buttons, as bot.check_buttons makes them."""
+    if not number:
+        return [(f"{look.PENCIL} {look.CHECK_BUTTONS['type']}", "fix")]
+    return ([(f"{look.TICK} {look.CHECK_BUTTONS['ok']}", "ok")] + [(a, "alt") for a in alts]
+            + [(f"{look.PENCIL} {look.CHECK_BUTTONS['fix']}", "fix")])
+
+
+def bot(post, used=None, who="Sam", ephemeral=False, file=None, when="Today at 14:02", note=None,
+        btns=None, reply_to=None):
     head = ""
+    if reply_to:
+        head = f'<div class="used">↱ <span class="uname">@{reply_to}</span> <span class="ph-s">🏷️ Click to see attachment</span></div>'
     if used:
         head = f'<div class="used"><span class="uname">@{who}</span> used <span class="cmd">{used}</span></div>'
     body = md(post["content"]) if post.get("content") else ""
@@ -63,7 +82,7 @@ def bot(post, used=None, who="Sam", ephemeral=False, file=None, when="Today at 1
     n = f'<div class="note">{note}</div>' if note else ""
     return (f'{n}<div class="msg">{head}<div class="row"><div class="av bot">🐻</div><div class="mbody">'
             f'<div class="who"><span class="bname">BEAR</span><span class="tag">APP</span><span class="when">{when}</span></div>'
-            f'<div class="text">{body}</div>{embeds}{att}{eph}</div></div></div>')
+            f'<div class="text">{body}</div>{embeds}{buttons(btns)}{att}{eph}</div></div></div>')
 
 
 def person(photos=0, who="Sam", text=None, when="Today at 13:58", note=None, struck=False):
@@ -79,6 +98,41 @@ def scenes():
     folder = look.folder_card("Q184", CAR)
     fname = "Q184-ford-fiesta-mk7.xlsx"
     s = {}
+    num, alts = "82481-3Z000", ["82481-3Z0O0", "82481-3Z010"]
+    ask = look.check_card("ask", num, alts, seconds=3.4)
+    s["general"] = (
+        "Part check: a photo posted in ANY channel gets a reply with the part number Agent 1 reads. "
+        "One card per photo, edited in place.",
+        person(1, when="Today at 10:14", note="Someone posts a photo of a part number")
+        + bot(look.check_card("reading"), reply_to="Sam", when="Today at 10:14",
+              note="Straight away: the bot replies so they know it's being read")
+        + bot(ask, btns=check_buttons(num, alts), reply_to="Sam", when="Today at 10:14",
+              note="About 3-5 s later, the same card: the number, big. ✅ / another reading / ✏️ Fix")
+        + '<div class="modal"><div class="mtitle">' + html.escape(look.CHECK_BOX["title"]) + '</div>'
+          '<div class="mlabel">' + html.escape(look.CHECK_BOX["label"]).upper() + '</div>'
+          '<div class="minput">' + num + '</div><div class="mfoot"><span class="btn alt">Cancel</span>'
+          '<span class="btn fix">Submit</span></div></div>'
+        + bot(look.check_card("done", num, who="<@Sam>", how="ok"), reply_to="Sam",
+              when="Today at 10:15", note="Tapped ✅ Correct: card goes green, buttons go, a line is saved")
+        + bot(look.check_card("done", "82481-3Z010", who="<@Sam>", how="alt", read=num), reply_to="Sam",
+              when="Today at 10:15", note="…or tapped another reading")
+        + bot(look.check_card("done", "82481-3Z000-RY", who="<@Sam>", how="fix", read=num), reply_to="Sam",
+              when="Today at 10:15", note="…or ✏️ Fix: a box filled with BEAR's reading (above), edited and sent")
+        + person(3, when="Today at 10:20", note="Several photos in one message: one card each")
+        + bot(look.check_card("ask", "97420-3Z000", ["97420-3Z00O"], 2, 3, seconds=2.9),
+              btns=check_buttons("97420-3Z000", ["97420-3Z00O"]), reply_to="Sam", when="Today at 10:20")
+        + bot(look.check_card("none", photo=3, of=3, seconds=4.8), btns=check_buttons(None, []), reply_to="Sam",
+              when="Today at 10:20", note="No number found (rotated re-reads included)")
+        + bot(look.check_card("failed"), reply_to="Sam", when="Today at 10:31",
+              note="Model down or over 60 s: red, send again (owner told once in #bear-errors, BEAR-C01)")
+        + bot({"content": look.reply("check_answered"), "embeds": []}, ephemeral=True,
+              when="Today at 10:15", note="Someone taps a card that was already answered")
+        + '<div class="note">What lands in checks/part-numbers.txt (one tab-separated line per answer)</div>'
+          '<pre class="txt">time                       channel   who  part_number     bear_read    how                     wait_s read_s\n'
+          '2026-10-28T10:14:09+00:00  #general  Sam  82481-3Z000     82481-3Z000  correct                 4.1    3.4\n'
+          '2026-10-28T10:15:30+00:00  #general  Sam  82481-3Z010     82481-3Z000  picked another reading  3.8    3.1\n'
+          '2026-10-28T10:16:02+00:00  #general  Sam  82481-3Z000-RY  82481-3Z000  typed                   3.9    3.2\n'
+          '<i>(+ photo link and saved photo path in the last two columns)</i></pre>')
     s["how-to-bear"] = ("Pinned guide. Read-only for everyone; the bot posts it once and pins it.",
                         bot(look.guide(ERRORS_ID), note="📌 Pinned"))
     s["ford-fiesta-mk7-2012"] = (
@@ -156,6 +210,13 @@ a{color:#00a8fc;text-decoration:none}.mention{background:#3c4270;color:#c9cdfb;p
 .eph{font-size:12px;color:#949ba4;margin-top:4px}
 .note{margin:14px 16px 2px 72px;font-size:12px;color:#f0b232;text-transform:uppercase;letter-spacing:.03em}
 .scene{display:none}.scene.on{display:block}
+.h1{font-size:26px;font-weight:700;color:#f2f3f5;margin:2px 0 4px}.h1 code{font-size:24px;padding:2px 6px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.btn{padding:3px 14px;border-radius:4px;font-size:14px;font-weight:500;color:#fff;line-height:26px}
+.btn.ok{background:#248046}.btn.fix{background:#5865f2}.btn.alt{background:#4e5058}.ph-s{color:#949ba4;font-style:italic}
+.modal{margin:6px 16px 6px 72px;max-width:440px;background:#313338;border:1px solid #1e1f22;border-radius:8px;padding:16px;box-shadow:0 8px 24px #0008}
+.mtitle{font-size:20px;font-weight:700;color:#f2f3f5;margin-bottom:12px}.mlabel{font-size:12px;font-weight:700;color:#b5bac1;margin-bottom:6px}
+.minput{background:#1e1f22;border-radius:4px;padding:10px;color:#dbdee1}.mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.txt{margin:4px 16px 0 72px;max-width:900px;overflow:auto;white-space:pre}
 """
 
 
@@ -163,10 +224,11 @@ def page():
     sc = scenes()
     side = ('<div class="sname">BEAR Parts</div><div class="cat">🐻 BEAR</div>'
             + "".join(f'<div class="ch" data-s="{n}"># {n}</div>' for n in ("how-to-bear", "bear-errors"))
+            + '<div class="cat">💬 Chat</div><div class="ch" data-s="general"># general</div>'
             + '<div class="cat">🚗 Cars</div>'
             + "".join(f'<div class="ch" data-s="{n}"># {n}</div>' for n in ("ford-fiesta-mk7-2012", "vw-golf-mk6-2010"))
             + '<div class="cat">🗄️ Done</div><div class="ch dim"># bmw-e90-2008</div>')
-    topics = {"how-to-bear": "How BEAR works", "bear-errors": "Problems and the owner's notes",
+    topics = {"general": "Any channel: photos get a part check", "how-to-bear": "How BEAR works", "bear-errors": "Problems and the owner's notes",
               "ford-fiesta-mk7-2012": CAR, "vw-golf-mk6-2010": CAR2}
     main = "".join(
         f'<div class="scene" id="s-{n}"><div class="top"><b># {n}</b><span>{html.escape(topics[n])}</span></div>'
@@ -174,7 +236,7 @@ def page():
         for n, (about, body) in sc.items())
     js = ("const show=n=>{document.querySelectorAll('.scene').forEach(e=>e.classList.toggle('on',e.id=='s-'+n));"
           "document.querySelectorAll('.ch[data-s]').forEach(e=>e.classList.toggle('on',e.dataset.s==n))};"
-          "document.querySelectorAll('.ch[data-s]').forEach(e=>e.onclick=()=>show(e.dataset.s));show('ford-fiesta-mk7-2012');")
+          "document.querySelectorAll('.ch[data-s]').forEach(e=>e.onclick=()=>show(e.dataset.s));show('general');")
     return (f'<!doctype html><html><head><meta charset="utf-8"><title>BEAR on Discord: mockup</title>'
             f'<style>{CSS}</style></head><body><div class="servers"><div class="srv">🐻</div></div>'
             f'<div class="side">{side}</div><div class="main">{main}</div><script>{js}</script></body></html>')
