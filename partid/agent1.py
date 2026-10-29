@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
-"""#part-id's own Agent 1, a framework for now: reads one part-number photo and prints what the
-model sent back, raw.
+"""#part-id's own Agent 1 (Gemini): reads one part-number photo for every possible part number and
+every possible reading of it.
 
 A separate copy of Agent 1 (bear2/stage1_read.py on 2026-10-29: same model and prompt), kept
 apart on purpose while the new pipeline is decided (owner, 2026-10-29). Change this file freely:
@@ -9,12 +8,10 @@ apart on purpose while the new pipeline is decided (owner, 2026-10-29). Change t
 Left out: Agent 1's second try on broken JSON, and its rotated re-reads (photos are always
 head-on shots, owner 2026-10-29).
 
-options() turns the read into up to 3 part numbers, most likely first, for the #part-id buttons.
+Agent 1 only reads: readings() lists every number and every other reading it gave, unranked.
+Jev scores them (partid/jev.py); partid/part_id.py runs the two and picks the top 3.
 
-Prints one JSON object on stdout: {"model", "seconds", "cost", "raw", "options"}. BEAR_SIM set
-(dev mode): a made-up read, no call, no credit.
-
-usage: python3 partid/agent1.py <photo> [vehicle]
+BEAR_SIM set (dev mode): a made-up read, no call, no credit.
 """
 import json, os, re, sys, time
 from pathlib import Path
@@ -54,34 +51,38 @@ SIM_RAW = json.dumps({"has_any_text": True, "part_description": "(dev mode) made
                                       "alt_readings": ["97420-3Z0O0"], "note": "(dev mode)"},
                                      {"text": "39R293-1200", "role": "secondary", "legibility": "partly clear",
                                       "alt_readings": [], "note": "(dev mode)"}]})
-ROLE = {"primary": 0, "unclear": 1, "secondary": 2}
-LEGIBLE = {"clear": 0, "partly clear": 1, "poor": 2}
-HOW_MANY = 3
 
 
-def options(raw):
-    """Up to 3 part numbers from Agent 1's read, most likely first: the candidates ranked by role
-    (primary, unclear, secondary) then legibility, each followed by its other readings; the same
-    number twice (ignoring spaces and dashes) only once. [] if there is none or the JSON is broken."""
+def parse(raw):
+    """The model's JSON as a dict, or {} if it isn't valid JSON."""
     m = re.search(r"\{.*\}", raw or "", re.S)
     try:
         d = json.loads(m.group(0)) if m else {}
     except ValueError:
-        return []
-    cands = [x for x in (d.get("candidates") if isinstance(d, dict) else None) or [] if isinstance(x, dict)]
-    cands.sort(key=lambda x: (ROLE.get(x.get("role"), 1), LEGIBLE.get(x.get("legibility"), 3)))
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def readings(raw):
+    """Every reading in Agent 1's answer, in the order it gave them: each candidate's text, then its
+    other readings, the same number twice (ignoring spaces and dashes) only once. Not ranked: Jev does
+    that (partid/jev.py). [] if there is none or the JSON is broken."""
     out, seen = [], set()
-    for x in cands:
-        for text in [x.get("text"), *(x.get("alt_readings") or [])]:
+    for x in parse(raw).get("candidates") or []:
+        if not isinstance(x, dict):
+            continue
+        main = x.get("text").strip() if isinstance(x.get("text"), str) else ""
+        for text in [main, *(x.get("alt_readings") or [])]:
             text = text.strip() if isinstance(text, str) else ""
             if c.norm(text) and c.norm(text) not in seen:
                 seen.add(c.norm(text))
-                out.append(text)
-    return out[:HOW_MANY]
+                out.append({"text": text, "alt_of": None if text == main else main or None,
+                            "role": x.get("role"), "legibility": x.get("legibility"), "note": x.get("note")})
+    return out
 
 
 def read(path, vehicle=NO_CAR):
-    """One read of the photo: {"model", "seconds", "cost", "raw", "options"}, raw = the model's text as sent."""
+    """One read of the photo: {"model", "seconds", "cost", "raw"}, raw = the model's text as sent."""
     started = time.time()
     if os.environ.get("BEAR_SIM"):
         raw, cost = SIM_RAW, 0
@@ -92,11 +93,4 @@ def read(path, vehicle=NO_CAR):
         raw, d = c.chat(MODEL, msgs, max_tokens=1200, response_format={"type": "json_object"},
                         tag=f"partid:{Path(path).name}")
         cost = (d.get("usage") or {}).get("cost") or 0
-    return {"model": MODEL, "seconds": round(time.time() - started, 1), "cost": cost, "raw": raw,
-            "options": options(raw)}
-
-
-if __name__ == "__main__":
-    if len(sys.argv) not in (2, 3):
-        sys.exit(__doc__.split("usage: ")[1])
-    print(json.dumps(read(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) == 3 else NO_CAR)))
+    return {"model": MODEL, "seconds": round(time.time() - started, 1), "cost": cost, "raw": raw}

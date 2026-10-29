@@ -282,18 +282,24 @@ the same. A wrong channel name lists the real ones.
 
 ## 10. Part ID (#part-id, a framework for testing)
 
-Post a part-number photo in `#part-id` and the bot replies to it with a card: up to 3 part numbers
-Agent 1 read, most likely first, and buttons **1**, **2**, **3** and **✏️ Type your own**. Until
-someone picks or types, the answer is **1**. A blank ✏️ box also means 1. Answers can be changed;
-the last one counts and the card shows who gave it. One card per photo, as soon as it is read.
-Text is left alone. Nothing here touches `/run`: it has its own copy of Agent 1
-(`partid/agent1.py`, one head-on read, no Jev, no eBay); the card's look is `card_text()` in
+Post a part-number photo in `#part-id` and the bot replies to it with a card of up to 3 part numbers.
+How they're chosen: **Agent 1** (Gemini) reads the photo for every possible part number and every
+possible reading of it, then **Jev** scores all of them from most to least likely. The card shows Jev's
+top 3, best first, each with Jev's score. The order is always Jev's, never Gemini's. If Jev fails, the
+card says to send the photo again.
+
+Buttons **1**, **2**, **3** and **✏️ Type your own**. Until someone picks or types, the answer is
+**1**. A blank ✏️ box also means 1. Answers can be changed; the last one counts and the card shows
+who gave it. One card per photo, as soon as it is read (about 2 s). Text is left alone.
+
+Nothing here touches `/run`: `partid/agent1.py` is its own copy of Agent 1 (one head-on read),
+`partid/jev.py` the scoring, `partid/part_id.py` runs the two. The card's look is `card_text()` in
 `discordbot/partid_bot.py`.
 
 The channel: run `/opt/bear/.venv/bin/python /opt/bear/discordbot/setup_server.py --write-env`
 once (it adds `#part-id` under BEAR, open to everyone, and writes `PART_ID_CHANNEL_ID`), then
 `systemctl restart bear-bot`. Or make a text channel called exactly `part-id` by hand.
 
-Photos are kept in `/var/lib/bear/runs/part-id/`, each card's answer and Agent 1's raw read in its
+Photos are kept in `/var/lib/bear/runs/part-id/`, each card's answer and the whole read (Agent 1's raw answer, Jev's scores) in its
 `cards/` (one file per card, for the spreadsheet later), spend in its `spend.jsonl`. Dev mode
 (`BEAR_SIM`) gives a made-up read, no credit spent.

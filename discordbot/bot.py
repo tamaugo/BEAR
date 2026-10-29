@@ -11,8 +11,8 @@ SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant 
 /quit stops everything /run or /rename is doing in the channel.
 After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
 every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
-#part-id (partid_bot.py) is apart from all of this: a photo posted there gets Agent 1's 3 most likely part
-numbers back to pick from, or type your own.
+#part-id (partid_bot.py) is apart from all of this: a photo posted there is read by Agent 1, Jev scores
+the readings, and the top 3 come back to pick from, or type your own.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 

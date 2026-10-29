@@ -1,11 +1,14 @@
-"""#part-id, a framework for now: someone posts a part-number photo, the bot runs #part-id's own Agent 1
-on it (partid/agent1.py) and replies with up to 3 part numbers, most likely first. Buttons 1, 2, 3 pick
+"""#part-id, a framework for now: someone posts a part-number photo and the bot runs partid/part_id.py on it:
+Agent 1 (Gemini) reads every possible part number and reading, Jev scores them, and the reply has the
+top 3 by Jev's score, most likely first, each with its score. The order is Jev's, never Gemini's
+(owner, 2026-10-29). Buttons 1, 2, 3 pick
 one; ✏️ Type your own opens a box for a correction. Until someone picks or types, the answer is 1, the
 most likely (owner, 2026-10-29). Answers can be changed; the last one counts. Kept apart from /run
 while the new pipeline is decided: no folders, nothing in bear2/ changes.
 
 Each photo's card is kept in <storage>/part-id/cards/<reply message id>.json: the photo, the options,
-the answer (choice 1-3 or "typed", how: default / picked / typed, by whom, when) and Agent 1's raw read.
+the answer (choice 1-3 or "typed", how: default / picked / typed, by whom, when) and the whole read
+(Agent 1's raw answer, every reading, Jev's scores).
 Those files are what a later step turns into a spreadsheet. The photos are in <storage>/part-id/, the
 spend in <storage>/part-id/spend.jsonl, apart from the runs. Text messages are left alone.
 
@@ -21,9 +24,9 @@ import folders as fo
 from renames import is_image
 
 log = logging.getLogger("bear-bot")
-AGENT1 = Path(__file__).resolve().parent.parent / "partid" / "agent1.py"
+RUN = Path(__file__).resolve().parent.parent / "partid" / "part_id.py"
 CHANNEL = "part-id"
-HOW_MANY = 3                   # options shown (partid/agent1.py HOW_MANY)
+HOW_MANY = 3                   # options shown (partid/part_id.py HOW_MANY)
 READS = asyncio.Semaphore(4)   # photos read at once
 TIMEOUT = 180                  # seconds before a read is stopped
 FOLDER = Path("part-id")       # set by setup()
@@ -42,9 +45,9 @@ def is_partid(channel, channel_id):
 # --- The card ------------------------------------------------------------------------------------
 
 def card_text(card):
-    lines = [f"**Part number** · `{card['photo_name']}`"]
-    for i, text in enumerate(card["options"], 1):
-        lines.append(f"**{i}** `{text}`" + ("  ← most likely" if i == 1 else ""))
+    lines = [f"**Part number** · `{card['photo_name']}` · scored by Jev"]
+    for i, o in enumerate(card["options"], 1):
+        lines.append(f"**{i}** `{o['text']}` · {o['score']:.0%}" + ("  ← most likely" if i == 1 else ""))
     if not card["options"]:
         lines.append("Agent 1 found no part number. Type it with ✏️.")
     lines.append("")
@@ -82,7 +85,7 @@ class Pick(discord.ui.Button):
         card = load(inter.message.id)
         if card is None or self.i > len(card["options"]):
             return await inter.response.send_message("This card isn't saved any more.", ephemeral=True)
-        answer(card, self.i, card["options"][self.i - 1], "picked", inter.user)
+        answer(card, self.i, card["options"][self.i - 1]["text"], "picked", inter.user)
         await inter.response.edit_message(content=card_text(card), view=Buttons(card))
 
 
@@ -105,7 +108,7 @@ class TypeBox(discord.ui.Modal, title="Type the part number"):
         super().__init__()
         self.card_id = card["card"]
         if card["options"]:
-            self.number.placeholder = card["options"][0]
+            self.number.placeholder = card["options"][0]["text"]
 
     async def on_submit(self, inter):
         card = load(self.card_id)
@@ -115,7 +118,7 @@ class TypeBox(discord.ui.Modal, title="Type the part number"):
         if typed:
             answer(card, "typed", typed, "typed", inter.user)
         else:   # blank: back to the most likely
-            answer(card, 1 if card["options"] else None, card["options"][0] if card["options"] else None,
+            answer(card, 1 if card["options"] else None, card["options"][0]["text"] if card["options"] else None,
                    "default", None)
         await inter.response.edit_message(content=card_text(card), view=Buttons(card))
 
@@ -163,10 +166,10 @@ async def one(msg, att, n, env):
     try:
         await att.save(path)
         async with READS:
-            out = await run_agent1(path, {**env, "BEAR_SPEND_LEDGER": str(FOLDER / "spend.jsonl")})
+            out = await read(path, {**env, "BEAR_SPEND_LEDGER": str(FOLDER / "spend.jsonl")})
         options = out["options"][:HOW_MANY]
         card = {"card": None, "photo": str(path), "photo_name": att.filename, "message": msg.jump_url,
-                "options": options, "choice": 1 if options else None, "answer": options[0] if options else None,
+                "options": options, "choice": 1 if options else None, "answer": options[0]["text"] if options else None,
                 "how": "default", "by": None, "by_name": None, "at": time.time(), "read": out}
         reply = await msg.reply(card_text(card), view=Buttons(card), mention_author=False)
         card["card"] = reply.id
@@ -175,14 +178,14 @@ async def one(msg, att, n, env):
         raise
     except Exception as e:
         log.warning("part-id read failed for %s: %s", att.filename, e)
-        await safe(msg.reply(f"**Agent 1** · `{att.filename}` failed, send the photo again:\n"
+        await safe(msg.reply(f"**Part number** · `{att.filename}` failed, send the photo again:\n"
                              f"```\n{str(e)[-1500:]}\n```", mention_author=False))
 
 
-async def run_agent1(path, env):
-    """partid/agent1.py on one photo as its own process (so it can always be stopped): its JSON."""
+async def read(path, env):
+    """partid/part_id.py on one photo as its own process (so it can always be stopped): its JSON."""
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, str(AGENT1), str(path), stdin=asyncio.subprocess.DEVNULL,
+        sys.executable, str(RUN), str(path), stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, start_new_session=True)
     try:
         out, err = await asyncio.wait_for(proc.communicate(), TIMEOUT)
