@@ -11,6 +11,7 @@ SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant 
 /quit stops everything /run or /rename is doing in the channel.
 After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
 every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
+#part-id (partid_bot.py) is apart from all of this: a photo posted there gets Agent 1's raw read back.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -31,6 +32,7 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
   BEAR_HEARTBEAT_URL   the healthchecks.io ping URL checked in with every 10 minutes (blank: off)
   UPDATE_CHANNEL_ID    where the update log goes (blank: the channel named update-log; none: no log)
+  PART_ID_CHANNEL_ID   the #part-id channel (blank: the channel named part-id)
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
 
@@ -49,6 +51,7 @@ from discord import app_commands  # noqa: E402
 import folders as fo  # noqa: E402
 import heartbeat as hb  # noqa: E402
 import look  # noqa: E402
+import partid_bot  # noqa: E402
 import renames as rn  # noqa: E402
 import shadow as sh  # noqa: E402
 
@@ -102,6 +105,7 @@ RENAMES_DIR = STORAGE / "renames"   # on the same disk as the runs (the SSD on t
 SHADOW_DIR = STORAGE / "shadow"
 RENAME_DOWNLOADS = max(1, number("BEAR_RENAME_DOWNLOADS", 6))
 ZIP_MB = max(1, number("BEAR_ZIP_MB", 10))
+PART_ID_CHANNEL_ID = number("PART_ID_CHANNEL_ID", 0) or None
 NO_CAR = "No car in the topic"
 
 SLOTS = asyncio.Semaphore(MAX_RUNS)
@@ -221,7 +225,11 @@ class Bot(discord.Client):
             log.exception("can't post in %s", ch)
 
     async def on_message(self, msg):
-        """Text is never read: in car channels a message without a file is deleted."""
+        """Text is never read: in car channels a message without a file is deleted. Photos in
+        #part-id go to its own Agent 1 (partid_bot.py)."""
+        if (msg.attachments and not msg.author.bot and msg.guild
+                and partid_bot.is_partid(msg.channel, PART_ID_CHANNEL_ID)):
+            return await partid_bot.handle(msg, STORAGE, run_env(), discord)
         if (CARS_CATEGORY_ID is None or msg.author.bot or not msg.guild or msg.attachments
                 or getattr(msg.channel, "category_id", None) != CARS_CATEGORY_ID
                 or msg.channel.id == ERROR_CHANNEL_ID
