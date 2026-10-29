@@ -4,7 +4,7 @@ it finds what's already there and only adds what's missing, then updates the pin
 
     🐻 BEAR     #how-to-bear (guide, pinned; read-only)   #bear-errors (the error channel; read-only)
                #update-log (what changed in each update; read-only)
-               #part-id (post a part-number photo, Agent 1's raw read comes back; for testing)
+               #part-id (post a part-number photo, pick 1/2/3 or type your own; for testing)
     🚗 Cars     one channel per car, the topic is the car  (text-only messages are deleted here)
     🗄️ Done     finished cars, dragged here by hand         (read-only, commands refused)
 
@@ -119,8 +119,8 @@ async def lay_out(client, guild_id, write):
                                {everyone: read_only, me: bot_can})
     updates = await text_channel(guild, bear, UPDATES_CH, "What changed each time BEAR is updated. Only the bot posts here.",
                                  {everyone: read_only, me: bot_can}, int(setting("UPDATE_CHANNEL_ID") or 0) or None)
-    part_id = await text_channel(guild, bear, PART_ID_CH, "Post a part-number photo: BEAR's Agent 1 replies with "
-                                 "what it read, raw. For testing.", {me: bot_can},
+    part_id = await text_channel(guild, bear, PART_ID_CH, "Post a part-number photo: pick 1, 2 or 3, or type your own "
+                                 "(nothing picked = 1). For testing.", {me: bot_can},
                                  int(setting("PART_ID_CHANNEL_ID") or 0) or None)
     cars = await category(guild, CARS_CAT, int(setting("CARS_CATEGORY_ID") or 0) or None, {me: bot_can})
     await category(guild, DONE_CAT, None, {everyone: read_only, me: O(view_channel=True, read_message_history=True)})

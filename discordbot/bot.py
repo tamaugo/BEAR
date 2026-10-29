@@ -11,7 +11,8 @@ SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant 
 /quit stops everything /run or /rename is doing in the channel.
 After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
 every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
-#part-id (partid_bot.py) is apart from all of this: a photo posted there gets Agent 1's raw read back.
+#part-id (partid_bot.py) is apart from all of this: a photo posted there gets Agent 1's 3 most likely part
+numbers back to pick from, or type your own.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -184,6 +185,8 @@ class Bot(discord.Client):
         self.started = False
 
     async def setup_hook(self):
+        partid_bot.setup(STORAGE)
+        self.add_view(partid_bot.Buttons())   # #part-id cards' buttons, also on cards from before a restart
         guild = discord.Object(GUILD_ID)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)   # this server only, so commands appear at once
@@ -229,7 +232,7 @@ class Bot(discord.Client):
         #part-id go to its own Agent 1 (partid_bot.py)."""
         if (msg.attachments and not msg.author.bot and msg.guild
                 and partid_bot.is_partid(msg.channel, PART_ID_CHANNEL_ID)):
-            return await partid_bot.handle(msg, STORAGE, run_env(), discord)
+            return await partid_bot.handle(msg, run_env())
         if (CARS_CATEGORY_ID is None or msg.author.bot or not msg.guild or msg.attachments
                 or getattr(msg.channel, "category_id", None) != CARS_CATEGORY_ID
                 or msg.channel.id == ERROR_CHANNEL_ID

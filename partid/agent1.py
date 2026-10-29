@@ -6,14 +6,17 @@ A separate copy of Agent 1 (bear2/stage1_read.py on 2026-10-29: same model and p
 apart on purpose while the new pipeline is decided (owner, 2026-10-29). Change this file freely:
 /run never uses it, and changes to bear2/stage1_read.py never reach it. Only the plumbing
 (OpenRouter call, photo resize, spend ledger) is shared, from bear2/common.py, unchanged.
-Left out for now: Agent 1's second try on broken JSON and its rotated re-reads.
+Left out: Agent 1's second try on broken JSON, and its rotated re-reads (photos are always
+head-on shots, owner 2026-10-29).
 
-Prints one JSON object on stdout: {"model", "seconds", "cost", "raw"}. BEAR_SIM set (dev mode):
-a made-up read, no call, no credit.
+options() turns the read into up to 3 part numbers, most likely first, for the #part-id buttons.
+
+Prints one JSON object on stdout: {"model", "seconds", "cost", "raw", "options"}. BEAR_SIM set
+(dev mode): a made-up read, no call, no credit.
 
 usage: python3 partid/agent1.py <photo> [vehicle]
 """
-import json, os, sys, time
+import json, os, re, sys, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -46,11 +49,39 @@ Return ONLY this JSON, no prose:
 If there is no number at all, candidates = [].
 """
 
-SIM_RAW = '{"has_any_text": true, "part_description": "(dev mode) made-up read", "candidates": []}'
+SIM_RAW = json.dumps({"has_any_text": True, "part_description": "(dev mode) made-up read", "item_count": 1,
+                      "candidates": [{"text": "97420-3Z000", "role": "primary", "legibility": "clear",
+                                      "alt_readings": ["97420-3Z0O0"], "note": "(dev mode)"},
+                                     {"text": "39R293-1200", "role": "secondary", "legibility": "partly clear",
+                                      "alt_readings": [], "note": "(dev mode)"}]})
+ROLE = {"primary": 0, "unclear": 1, "secondary": 2}
+LEGIBLE = {"clear": 0, "partly clear": 1, "poor": 2}
+HOW_MANY = 3
+
+
+def options(raw):
+    """Up to 3 part numbers from Agent 1's read, most likely first: the candidates ranked by role
+    (primary, unclear, secondary) then legibility, each followed by its other readings; the same
+    number twice (ignoring spaces and dashes) only once. [] if there is none or the JSON is broken."""
+    m = re.search(r"\{.*\}", raw or "", re.S)
+    try:
+        d = json.loads(m.group(0)) if m else {}
+    except ValueError:
+        return []
+    cands = [x for x in (d.get("candidates") if isinstance(d, dict) else None) or [] if isinstance(x, dict)]
+    cands.sort(key=lambda x: (ROLE.get(x.get("role"), 1), LEGIBLE.get(x.get("legibility"), 3)))
+    out, seen = [], set()
+    for x in cands:
+        for text in [x.get("text"), *(x.get("alt_readings") or [])]:
+            text = text.strip() if isinstance(text, str) else ""
+            if c.norm(text) and c.norm(text) not in seen:
+                seen.add(c.norm(text))
+                out.append(text)
+    return out[:HOW_MANY]
 
 
 def read(path, vehicle=NO_CAR):
-    """One upright read of the photo: {"model", "seconds", "cost", "raw"}, raw = the model's text as sent."""
+    """One read of the photo: {"model", "seconds", "cost", "raw", "options"}, raw = the model's text as sent."""
     started = time.time()
     if os.environ.get("BEAR_SIM"):
         raw, cost = SIM_RAW, 0
@@ -61,7 +92,8 @@ def read(path, vehicle=NO_CAR):
         raw, d = c.chat(MODEL, msgs, max_tokens=1200, response_format={"type": "json_object"},
                         tag=f"partid:{Path(path).name}")
         cost = (d.get("usage") or {}).get("cost") or 0
-    return {"model": MODEL, "seconds": round(time.time() - started, 1), "cost": cost, "raw": raw}
+    return {"model": MODEL, "seconds": round(time.time() - started, 1), "cost": cost, "raw": raw,
+            "options": options(raw)}
 
 
 if __name__ == "__main__":
