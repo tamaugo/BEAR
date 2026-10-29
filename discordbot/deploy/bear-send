@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# bear-send: my message here @channel-name      (setup.sh installs this as `bear-send` and `bear-send:`)
+# Posts to that Discord channel as the BEAR bot. The token lives in /opt/bear/.env, which only the
+# bear user can read, so this runs the real script (discordbot/send.py) as that user.
+DIR=/opt/bear
+run=("$DIR/.venv/bin/python" "$DIR/discordbot/send.py" "$@")
+if [ -r "$DIR/.env" ]; then exec "${run[@]}"
+elif [ "$(id -u)" = 0 ]; then exec runuser -u bear -- "${run[@]}"
+elif command -v sudo >/dev/null; then exec sudo -u bear "${run[@]}"
+else echo "bear-send: needs root to read $DIR/.env. Type: su -   and run it again." >&2; exit 1
+fi
