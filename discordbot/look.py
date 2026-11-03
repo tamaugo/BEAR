@@ -47,6 +47,10 @@ COMMANDS = {
         "description": "Stop everything /run or /rename is doing in this channel",
         "options": {},
     },
+    "sheet": {
+        "description": "#part-id: every part number since the last /sheet, as a spreadsheet",
+        "options": {},
+    },
 }
 
 # What the person in the car channel should do, per error code: short, phone-sized, no settings

@@ -3,24 +3,30 @@ Agent 1 (Gemini) reads every possible part number and reading, Jev scores them, 
 top 3 by Jev's score, most likely first, each with its score. The order is Jev's, never Gemini's
 (owner, 2026-10-29). Buttons 1, 2, 3 pick
 one; ✏️ Type your own opens a box for a correction. Until someone picks or types, the answer is 1, the
-most likely (owner, 2026-10-29). Answers can be changed; the last one counts. Kept apart from /run
+most likely (owner, 2026-10-29). A second row of buttons gives the location (near side rear, near side
+front, off side rear, off side front); none picked = blank, clicking the picked one again clears it.
+Answers can be changed; the last one counts. Kept apart from /run
 while the new pipeline is decided: no folders, nothing in bear2/ changes.
 
 Each photo's card is kept in <storage>/part-id/cards/<reply message id>.json: the photo, the options,
-the answer (choice 1-3 or "typed", how: default / picked / typed, by whom, when) and the whole read
-(Agent 1's raw answer, every reading, Jev's scores).
-Those files are what a later step turns into a spreadsheet. The photos are in <storage>/part-id/, the
+the answer (choice 1-3 or "typed", how: default / picked / typed, by whom, when), the location, when the
+photo was posted, and the whole read (Agent 1's raw answer, every reading, Jev's scores).
+/sheet in #part-id posts every card since the last /sheet as a spreadsheet (partid_sheet.py), first
+posted at the top, and marks them with that sheet's name so the next /sheet starts after them; a copy
+of each sheet stays in <storage>/part-id/sheets/. The photos are in <storage>/part-id/, the
 spend in <storage>/part-id/spend.jsonl, apart from the runs. Text messages are left alone.
 
 The channel is PART_ID_CHANNEL_ID, or else the channel named part-id (setup_server.py makes it).
 How a card looks is card_text() and Buttons below. The buttons keep working after a restart: the bot
 registers Buttons() once (bot.py setup_hook) and each click finds its card file by the message id.
 """
-import asyncio, json, logging, os, signal, sys, time
+import asyncio, io, json, logging, os, signal, sys, time
+from datetime import datetime
 from pathlib import Path, PurePath
 
 import discord
 import folders as fo
+import partid_sheet
 from renames import is_image
 
 log = logging.getLogger("bear-bot")
@@ -29,6 +35,8 @@ CHANNEL = "part-id"
 HOW_MANY = 3                   # options shown (partid/part_id.py HOW_MANY)
 READS = asyncio.Semaphore(4)   # photos read at once
 TIMEOUT = 180                  # seconds before a read is stopped
+LOCATIONS = {"nsr": "near side rear", "nsf": "near side front", "osr": "off side rear", "osf": "off side front"}
+SHEETING = asyncio.Lock()      # one /sheet at a time
 FOLDER = Path("part-id")       # set by setup()
 
 
@@ -59,11 +67,16 @@ def card_text(card):
         lines.append(f"Answer: **{card['choice']}** `{card['answer']}`, picked by {card['by']}")
     else:
         lines.append(f"Answer: ✏️ `{card['answer']}`, typed by {card['by']}")
+    if card.get("location"):
+        lines.append(f"Location: **{card['location']}**, picked by {card['location_by']}")
+    else:
+        lines.append("Location: none yet")
     return "\n".join(lines)
 
 
 class Buttons(discord.ui.View):
     """1, 2, 3 (as many as there are options) and ✏️ Type your own; the current answer's button is green.
+    Under them the four locations, the picked one green.
     Buttons() with no card has all of them, for registering after a restart."""
 
     def __init__(self, card=None):
@@ -73,11 +86,13 @@ class Buttons(discord.ui.View):
         for i in range(1, count + 1):
             self.add_item(Pick(i, chosen == i))
         self.add_item(TypeOwn(chosen == "typed"))
+        for key, name in LOCATIONS.items():
+            self.add_item(Location(key, name, bool(card) and card.get("location") == name))
 
 
 class Pick(discord.ui.Button):
     def __init__(self, i, chosen):
-        super().__init__(label=str(i), custom_id=f"partid:pick:{i}",
+        super().__init__(label=str(i), custom_id=f"partid:pick:{i}", row=0,
                          style=discord.ButtonStyle.success if chosen else discord.ButtonStyle.secondary)
         self.i = i
 
@@ -91,7 +106,7 @@ class Pick(discord.ui.Button):
 
 class TypeOwn(discord.ui.Button):
     def __init__(self, chosen):
-        super().__init__(label="Type your own", emoji="\N{PENCIL}\N{VARIATION SELECTOR-16}", custom_id="partid:type",
+        super().__init__(label="Type your own", emoji="\N{PENCIL}\N{VARIATION SELECTOR-16}", custom_id="partid:type", row=0,
                          style=discord.ButtonStyle.success if chosen else discord.ButtonStyle.primary)
 
     async def callback(self, inter):
@@ -120,6 +135,24 @@ class TypeBox(discord.ui.Modal, title="Type the part number"):
         else:   # blank: back to the most likely
             answer(card, 1 if card["options"] else None, card["options"][0]["text"] if card["options"] else None,
                    "default", None)
+        await inter.response.edit_message(content=card_text(card), view=Buttons(card))
+
+
+class Location(discord.ui.Button):
+    def __init__(self, key, name, chosen):
+        super().__init__(label=name.capitalize(), custom_id=f"partid:loc:{key}", row=1,
+                         style=discord.ButtonStyle.success if chosen else discord.ButtonStyle.secondary)
+        self.place = name
+
+    async def callback(self, inter):
+        card = load(inter.message.id)
+        if card is None:
+            return await inter.response.send_message("This card isn't saved any more.", ephemeral=True)
+        if card.get("location") == self.place:   # the picked one again: back to none
+            card.update(location=None, location_by=None)
+        else:
+            card.update(location=self.place, location_by=inter.user.mention)
+        save(card)
         await inter.response.edit_message(content=card_text(card), view=Buttons(card))
 
 
@@ -169,6 +202,7 @@ async def one(msg, att, n, env):
             out = await read(path, {**env, "BEAR_SPEND_LEDGER": str(FOLDER / "spend.jsonl")})
         options = out["options"][:HOW_MANY]
         card = {"card": None, "photo": str(path), "photo_name": att.filename, "message": msg.jump_url,
+                "posted": msg.created_at.timestamp(), "location": None, "location_by": None,
                 "options": options, "choice": 1 if options else None, "answer": options[0]["text"] if options else None,
                 "how": "default", "by": None, "by_name": None, "at": time.time(), "read": out}
         reply = await msg.reply(card_text(card), view=Buttons(card), mention_author=False)
@@ -208,3 +242,51 @@ async def safe(post):
         return await post
     except Exception:
         log.exception("can't reply in #part-id")
+
+
+# --- /sheet --------------------------------------------------------------------------------------
+
+def posted(card):
+    """When the card's photo was posted, and its place on the message: the sheet's order. Cards from
+    before "posted" was kept get it from the message id."""
+    msg_id, _, n = PurePath(card["photo"]).stem.partition("-")
+    when = card.get("posted") or discord.utils.snowflake_time(int(msg_id)).timestamp()
+    return when, int(n or 1)
+
+
+def new_cards():
+    """Every saved card no /sheet has had yet, first posted first."""
+    cards = []
+    for path in (FOLDER / "cards").glob("*.json"):
+        try:
+            card = json.loads(path.read_text())
+        except (OSError, ValueError):
+            log.warning("part-id card %s can't be read, left out of the sheet", path.name)
+            continue
+        if card.get("card") and not card.get("sheet"):
+            cards.append(card)
+    cards.sort(key=posted)
+    for card in cards:
+        card["posted"] = posted(card)[0]
+    return cards
+
+
+async def sheet(inter):
+    """/sheet: every card since the last /sheet, as a spreadsheet posted in the channel."""
+    async with SHEETING:
+        cards = await asyncio.to_thread(new_cards)
+        if not cards:
+            return await inter.response.send_message("No new part numbers since the last sheet.", ephemeral=True)
+        name = f"part-id-{datetime.now(partid_sheet.UK).strftime('%Y-%m-%d-%H%M%S')}.xlsx"
+        data = await asyncio.to_thread(partid_sheet.xlsx, cards)
+        sheets = FOLDER / "sheets"
+        sheets.mkdir(parents=True, exist_ok=True)
+        (sheets / name).write_bytes(data)
+        await inter.response.send_message(
+            f"**Sheet** · {len(cards)} part number{'s' if len(cards) != 1 else ''}, by {inter.user.mention}",
+            file=discord.File(io.BytesIO(data), filename=name))
+        for card in cards:   # only once it is posted, so a failed post leaves them for the next /sheet
+            fresh = load(card["card"]) or card
+            fresh.update(sheet=name, posted=card["posted"])
+            save(fresh)
+        log.info("/sheet %s: %d cards, by %s", name, len(cards), inter.user)

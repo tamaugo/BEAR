@@ -283,6 +283,20 @@ check("send: posts", sd.send(["hi", "there", "@update-log"]), ("Sent to #update-
 check("send: posted plain, nobody mentioned", posted, [("/channels/2/messages", {"content": "hi there", "allowed_mentions": {"parse": []}})])
 sd.text_channels, hb._discord = _channels, _post
 
+# #part-id /sheet: who got the number, blanks, the rows in a real .xlsx (partid_sheet.py)
+import partid_sheet as ps  # noqa: E402
+check("sheet: nothing picked", ps.who({"answer": "A1", "how": "default", "choice": 1}), "jev option 1")
+check("sheet: picked 2", ps.who({"answer": "A1", "how": "picked", "choice": 2}), "jev option 2")
+check("sheet: typed", ps.who({"answer": "A1", "how": "typed", "choice": "typed"}), "human")
+check("sheet: no answer", ps.who({"answer": None, "how": "default", "choice": None}), "")
+when = datetime(2026, 7, 1, 11, 35, 12, tzinfo=timezone.utc).timestamp()   # 12:35:12 in UK summer time
+check("sheet: row", ps.row({"posted": when, "answer": "1K0 615 601", "how": "picked", "choice": 2, "location": None}),
+      (datetime(2026, 7, 1, 12, 35, 12), "1K0 615 601", "jev option 2", ""))
+with zipfile.ZipFile(io.BytesIO(ps.xlsx([{"posted": when, "answer": "A<&>\x01", "how": "typed", "choice": "typed",
+                                          "location": "off side front"}]))) as z:
+    sheet = z.read("xl/worksheets/sheet1.xml").decode()
+check("sheet: header, escaped number, location", all(t in sheet for t in ("who got the info", "A&lt;&amp;&gt;<", "off side front")), True)
+
 if fails:
     print("\n".join(fails))
     sys.exit(f"{len(fails)} failed")
