@@ -12,7 +12,8 @@ SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant 
 After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
 every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
 #part-id (partid_bot.py) is apart from all of this: a photo posted there is read by Agent 1, Jev scores
-the readings, and the top 3 come back to pick from, or type your own.
+the readings, and the top 3 come back to pick from, or type your own, plus the location. /sheet there
+posts every part number since the last /sheet as a spreadsheet.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -443,6 +444,13 @@ async def status(inter: discord.Interaction):
     active = [{**a, "folder": a["folder"] or "(checking)", "channel_id": cid} for cid, a in ACTIVE.items()]
     await inter.response.send_message(**look.kwargs(look.status_card(active, MAX_RUNS, time.time(), dev())),
                                       ephemeral=True)
+
+
+@bot.tree.command(name="sheet", description=look.COMMANDS["sheet"]["description"])
+async def sheet(inter: discord.Interaction):
+    if not partid_bot.is_partid(inter.channel, PART_ID_CHANNEL_ID):
+        return await inter.response.send_message("Use /sheet in #part-id.", ephemeral=True)
+    await partid_bot.sheet(inter)
 
 
 async def read_folder(ch):

@@ -95,7 +95,7 @@ for name, c in look.COMMANDS.items():
     check(f"/{name} description", 1 <= len(c["description"]) <= 100)
     check(f"/{name} options", all(1 <= len(d) <= 100 for d in c["options"].values()))
 check("messages say folder, not box", "box" not in str([look.guide(), look.REPLIES, look.UPLOADER_FIX, look.TITLES]).replace("box of parts", ""))
-check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit"})
+check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit", "sheet"})
 
 # Renaming: every state fits, the offer says when it closes, the done card names the zips.
 fits("stopped", look.stopped_card("Q184", dev=True))

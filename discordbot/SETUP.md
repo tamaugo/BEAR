@@ -292,6 +292,14 @@ Buttons **1**, **2**, **3** and **✏️ Type your own**. Until someone picks or
 **1**. A blank ✏️ box also means 1. Answers can be changed; the last one counts and the card shows
 who gave it. One card per photo, as soon as it is read (about 2 s). Text is left alone.
 
+Under them, four location buttons: **Near side rear**, **Near side front**, **Off side rear**,
+**Off side front**. Nothing picked leaves the location blank; clicking the picked one again clears it.
+
+**/sheet** (in `#part-id`) posts a spreadsheet of every part number since the last `/sheet`, the first
+posted at the top: date & time posted, the number, who got it (`jev option 1/2/3`, or `human` if typed
+with ✏️; nothing picked = `jev option 1`) and the location. Run it once every photo is right: answers
+changed after a `/sheet` don't go in a later one. The first `/sheet` takes every card ever saved.
+
 Nothing here touches `/run`: `partid/agent1.py` is its own copy of Agent 1 (one head-on read),
 `partid/jev.py` the scoring, `partid/part_id.py` runs the two. The card's look is `card_text()` in
 `discordbot/partid_bot.py`.
@@ -301,5 +309,5 @@ once (it adds `#part-id` under BEAR, open to everyone, and writes `PART_ID_CHANN
 `systemctl restart bear-bot`. Or make a text channel called exactly `part-id` by hand.
 
 Photos are kept in `/var/lib/bear/runs/part-id/`, each card's answer and the whole read (Agent 1's raw answer, Jev's scores) in its
-`cards/` (one file per card, for the spreadsheet later), spend in its `spend.jsonl`. Dev mode
+`cards/` (one file per card), a copy of each `/sheet` in its `sheets/`, spend in its `spend.jsonl`. Dev mode
 (`BEAR_SIM`) gives a made-up read, no credit spent.
