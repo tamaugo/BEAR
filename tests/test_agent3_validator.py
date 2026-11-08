@@ -51,11 +51,11 @@ def with_tempdir(fn):
 def test_sorted_pass_through(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 10.00 | http://a\n"
-                       "img_2.jpg | BBB222 | Part B | 10.00 | http://b\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 10.00 | http://a\n"
+                       "img_2.jpg | BBB222 | Part B | 9886 | 10.00 | http://b\n")
     write(output_path,
-          "VEH - Part A AAA111 | 19.99 | http://a | img_1.jpg\n"
-          "VEH - Part B BBB222 | 19.99 | http://b | img_2.jpg\n")
+          "VEH - Part A AAA111 | 19.99 | 9886 | http://a | img_1.jpg\n"
+          "VEH - Part B BBB222 | 19.99 | 9886 | http://b | img_2.jpg\n")
     original = read(output_path)
     report, any_marks = run_validator(output_path, input_path)
     check("sorted pass-through: no marks", any_marks is False, report)
@@ -69,11 +69,11 @@ def test_sorted_pass_through(tmpdir):
 def test_out_of_order_repair(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 10.00 | http://a\n"
-                       "img_2.jpg | BBB222 | Part B | 10.00 | http://b\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 10.00 | http://a\n"
+                       "img_2.jpg | BBB222 | Part B | 9886 | 10.00 | http://b\n")
     write(output_path,
-          "VEH - Part B BBB222 | 19.99 | http://b | img_2.jpg\n"
-          "VEH - Part A AAA111 | 19.99 | http://a | img_1.jpg\n")
+          "VEH - Part B BBB222 | 19.99 | 9886 | http://b | img_2.jpg\n"
+          "VEH - Part A AAA111 | 19.99 | 9886 | http://a | img_1.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     lines = [l for l in read(output_path).splitlines() if l.strip()]
     check("out-of-order: repaired, no marks", any_marks is False, report)
@@ -88,8 +88,8 @@ def test_out_of_order_repair(tmpdir):
 def test_price_floor_repair(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 5.00 | http://a\n")
-    write(output_path, "VEH - Part A AAA111 | 5.00 | http://a | img_1.jpg\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 5.00 | http://a\n")
+    write(output_path, "VEH - Part A AAA111 | 5.00 | 9886 | http://a | img_1.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     out = read(output_path)
     check("price floor: repaired to 19.99", "| 19.99 | " in out, out)
@@ -102,8 +102,8 @@ def test_price_floor_repair(tmpdir):
 def test_price_format_repair(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 19.90 | http://a\n")
-    write(output_path, "VEH - Part A AAA111 | 19.9 | http://a | img_1.jpg\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 19.90 | http://a\n")
+    write(output_path, "VEH - Part A AAA111 | 19.9 | 9886 | http://a | img_1.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     out = read(output_path)
     check("price format: '19.9' -> '19.99'", "| 19.99 | " in out, out)
@@ -116,8 +116,8 @@ def test_price_format_repair(tmpdir):
 def test_price_rounding_repair(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 25.00 | http://a\n")
-    write(output_path, "VEH - Part A AAA111 | 25.00 | http://a | img_1.jpg\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 25.00 | http://a\n")
+    write(output_path, "VEH - Part A AAA111 | 25.00 | 9886 | http://a | img_1.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     out = read(output_path)
     check("rounding: 25.00 -> 25.99", "| 25.99 | " in out, out)
@@ -132,38 +132,38 @@ def test_row_shift_remap_repair(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
     write(input_path,
-          "img_1.jpg | AAA111 | Part A | 10.00 | http://a\n"
-          "img_2.jpg | BBB222 | Part B | 10.00 | http://b\n"
-          "img_3.jpg | CCC333 | Part C | 10.00 | http://c\n")
+          "img_1.jpg | AAA111 | Part A | 9886 | 10.00 | http://a\n"
+          "img_2.jpg | BBB222 | Part B | 9886 | 10.00 | http://b\n"
+          "img_3.jpg | CCC333 | Part C | 9886 | 10.00 | http://c\n")
     # img_2.jpg's row wrongly claims img_3.jpg (a row-shift cascade); img_3.jpg's own
     # row still correctly claims img_3.jpg too, so img_3.jpg is duplicated and img_2.jpg
     # (the true home of BBB222) is an orphan -- exactly the row-shift signature.
     write(output_path,
-          "VEH - Part A AAA111 | 19.99 | http://a | img_1.jpg\n"
-          "VEH - Part B BBB222 | 19.99 | http://b | img_3.jpg\n"
-          "VEH - Part C CCC333 | 19.99 | http://c | img_3.jpg\n")
+          "VEH - Part A AAA111 | 19.99 | 9886 | http://a | img_1.jpg\n"
+          "VEH - Part B BBB222 | 19.99 | 9886 | http://b | img_3.jpg\n"
+          "VEH - Part C CCC333 | 19.99 | 9886 | http://c | img_3.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     out = read(output_path)
     check("row-shift: BBB222 remapped to img_2.jpg",
-          "Part B BBB222 | 19.99 | http://b | img_2.jpg" in out, out)
+          "Part B BBB222 | 19.99 | 9886 | http://b | img_2.jpg" in out, out)
     check("row-shift: CCC333 stays on img_3.jpg",
-          "Part C CCC333 | 19.99 | http://c | img_3.jpg" in out, out)
+          "Part C CCC333 | 19.99 | 9886 | http://c | img_3.jpg" in out, out)
     check("row-shift: no marks", any_marks is False, report)
 
 
 # ---------------------------------------------------------------------------
-# 7. Failure-row cleanup repair: stray price/url cleared on a known pattern.
+# 7. Failure-row cleanup repair: stray price/category/url cleared on a known pattern.
 # ---------------------------------------------------------------------------
 def test_failure_row_cleanup_repair(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
     write(input_path, "img_1.jpg | FAILED | Agent 1 | Could Not Produce Clear Part Number\n")
     write(output_path,
-          "FAILED - Agent 1 - Could Not Produce Clear Part Number | 9.99 | http://x | img_1.jpg\n")
+          "FAILED - Agent 1 - Could Not Produce Clear Part Number | 9.99 | 9886 | http://x | img_1.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     out = read(output_path)
-    check("failure cleanup: price/url cleared",
-          "Number | | | img_1.jpg" in out, out)
+    check("failure cleanup: price/category/url cleared",
+          "Number | | | | img_1.jpg" in out, out)
     check("failure cleanup: no marks", any_marks is False, report)
 
 
@@ -173,8 +173,8 @@ def test_failure_row_cleanup_repair(tmpdir):
 def test_unparseable_price_mark(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 10.00 | http://a\n")
-    write(output_path, "VEH - Part A AAA111 | ask seller | http://a | img_1.jpg\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 10.00 | http://a\n")
+    write(output_path, "VEH - Part A AAA111 | ask seller | 9886 | http://a | img_1.jpg\n")
     original = read(output_path)
     report, any_marks = run_validator(output_path, input_path)
     check("unparseable price: marked", any_marks is True, report)
@@ -189,9 +189,9 @@ def test_count_mismatch_mark(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
     write(input_path,
-          "img_1.jpg | AAA111 | Part A | 10.00 | http://a\n"
-          "img_2.jpg | BBB222 | Part B | 10.00 | http://b\n")
-    write(output_path, "VEH - Part A AAA111 | 19.99 | http://a | img_1.jpg\n")
+          "img_1.jpg | AAA111 | Part A | 9886 | 10.00 | http://a\n"
+          "img_2.jpg | BBB222 | Part B | 9886 | 10.00 | http://b\n")
+    write(output_path, "VEH - Part A AAA111 | 19.99 | 9886 | http://a | img_1.jpg\n")
     report, any_marks = run_validator(output_path, input_path)
     check("count mismatch: marked", any_marks is True, report)
     check("count mismatch: reported", "line count deficit" in report, report)
@@ -203,8 +203,8 @@ def test_count_mismatch_mark(tmpdir):
 def test_invented_part_number_mark(tmpdir):
     input_path = os.path.join(tmpdir, "input.md")
     output_path = os.path.join(tmpdir, "output.md")
-    write(input_path, "img_1.jpg | AAA111 | Part A | 10.00 | http://a\n")
-    write(output_path, "VEH - Part A ZZZ999 | 19.99 | http://a | img_1.jpg\n")
+    write(input_path, "img_1.jpg | AAA111 | Part A | 9886 | 10.00 | http://a\n")
+    write(output_path, "VEH - Part A ZZZ999 | 19.99 | 9886 | http://a | img_1.jpg\n")
     original = read(output_path)
     report, any_marks = run_validator(output_path, input_path)
     check("invented part number: marked", any_marks is True, report)

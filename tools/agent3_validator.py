@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Deterministic post-validator + repairer for Agent 3's 4-field pipe-delimited output.
+Deterministic post-validator + repairer for Agent 3's 5-field pipe-delimited output
+(part info | price | eBay category ID | url | image).
 
 Agent 3 is an LLM and, on live A/B runs,
 occasionally slips on STRUCTURE rather than content: a row lands out of numeric order,
@@ -45,6 +46,9 @@ NO_PART_NUMBER_RE = re.compile(r"^NO PART NUMBER( - .+)?$")
 
 PRICE_FLOOR = 19.99
 
+FIELD_COUNT = 5
+IMAGE = 4  # index of the image filename field
+
 
 class Row:
     """One line of Agent 3's output, tracked through validation and repair."""
@@ -53,7 +57,7 @@ class Row:
         self.raw = raw
         self.index = index  # arrival order, used to keep sort stable on ties
         self.parse_error = False
-        self.fields = None  # [part_info, price, url, image] once parsed
+        self.fields = None  # [part_info, price, category, url, image] once parsed
         self.repairs = []  # human-readable notes: silently-applied fixes
         self.marks = []  # human-readable notes: could not repair, must flag
 
@@ -65,7 +69,7 @@ class Row:
 
 
 def parse_output_line(line, index):
-    """Rule 1: split into exactly 4 fields on the pipe delimiter. A bad split is left
+    """Rule 1: split into exactly 5 fields on the pipe delimiter. A bad split is left
     untouched (not repaired) but still counted -- guessing at field boundaries risks
     corrupting data worse than the original mistake.
 
@@ -79,10 +83,10 @@ def parse_output_line(line, index):
     """
     row = Row(line, index)
     fields = [piece.strip() for piece in line.split("|")]
-    if len(fields) != 4:
+    if len(fields) != FIELD_COUNT:
         row.parse_error = True
         row.marks.append(
-            f"malformed line: split on ' | ' gave {len(fields)} fields, expected 4"
+            f"malformed line: split on ' | ' gave {len(fields)} fields, expected {FIELD_COUNT}"
         )
         return row
     row.fields = fields
@@ -90,7 +94,7 @@ def parse_output_line(line, index):
 
 
 def join_fields(fields):
-    """Rebuild a 4-field line the way the v4 prompt actually writes one.
+    """Rebuild a 5-field line with the spacing the v4 prompt used for empty fields.
 
     Plain " | ".join(fields) is wrong here: an empty field between two separators
     should leave a *single* space between the two pipes ("| | |", as in every
@@ -209,12 +213,12 @@ def fix_price(raw_price):
 
 def repair_row_order(rows):
     """Rule 2a: stable-sort all successfully-parsed rows by image number ascending;
-    parse-error rows have no trustworthy field 4, so they're anchored at the end
+    parse-error rows have no trustworthy image field, so they're anchored at the end
     (still in their own arrival order) rather than guessed at."""
     def sort_key(row):
         if row.parse_error:
             return (1, 0)
-        image_num = extract_image_number(row.fields[3])
+        image_num = extract_image_number(row.fields[IMAGE])
         return (0, -1 if image_num is None else image_num)
 
     original_order = list(rows)
@@ -229,7 +233,7 @@ def repair_row_order(rows):
 def repair_image_field_remap(rows, input_filenames, input_index):
     """Rule 2b: the row-shift cascade repair.
 
-    Signature of a row-shift: one input filename is claimed (as field 4) by two
+    Signature of a row-shift: one input filename is claimed (as the image field) by two
     output rows, while another input filename is claimed by none (an "orphan").
     That happens when Agent 3 drops or duplicates a row and every row after it
     silently inherits the previous row's image reference. We resolve it only when
@@ -241,7 +245,7 @@ def repair_image_field_remap(rows, input_filenames, input_index):
     for row in rows:
         if row.parse_error:
             continue
-        claim_counts[row.fields[3]] = claim_counts.get(row.fields[3], 0) + 1
+        claim_counts[row.fields[IMAGE]] = claim_counts.get(row.fields[IMAGE], 0) + 1
 
     orphans = [fn for fn in input_filenames if fn not in claim_counts]
     duplicated = [fn for fn, count in claim_counts.items() if count > 1]
@@ -250,7 +254,7 @@ def repair_image_field_remap(rows, input_filenames, input_index):
         claimants = [
             row for row in rows
             if not row.parse_error
-            and row.fields[3] == filename
+            and row.fields[IMAGE] == filename
             and not is_known_failure_shape(row.fields[0])
         ]
         for orphan in list(orphans):
@@ -265,8 +269,8 @@ def repair_image_field_remap(rows, input_filenames, input_index):
             ]
             if len(matching_claimants) == 1:
                 row = matching_claimants[0]
-                old = row.fields[3]
-                row.fields[3] = orphan
+                old = row.fields[IMAGE]
+                row.fields[IMAGE] = orphan
                 row.repairs.append(f"image field remap (row-shift cascade): {old!r} -> {orphan!r}")
                 orphans.remove(orphan)
                 break
@@ -278,14 +282,13 @@ def validate_rows(rows, input_index, input_filenames):
     for row in rows:
         if row.parse_error:
             continue
-        part_info, price, url, image = row.fields
+        part_info, price, category, url, image = row.fields
 
         if is_known_failure_shape(part_info):
-            # Rule 2e: failure / no-part-number rows must carry no price or url.
-            if price != "" or url != "":
-                row.fields[1] = ""
-                row.fields[2] = ""
-                row.repairs.append("cleared stray price/url on failure/no-part-number row")
+            # Rule 2e: failure / no-part-number rows must carry no price, category or url.
+            if price != "" or category != "" or url != "":
+                row.fields[1:4] = ["", "", ""]
+                row.repairs.append("cleared stray price/category/url on failure/no-part-number row")
             continue
 
         if looks_like_failure_shape(part_info):
@@ -367,7 +370,7 @@ def build_report(rows, file_level_marks):
     for row in rows:
         if not row.repairs and not row.marks:
             continue
-        label = row.fields[3] if row.fields else row.raw[:60]
+        label = row.fields[IMAGE] if row.fields else row.raw[:60]
         lines.append(f"Line (image={label!r}):")
         for note in row.repairs:
             lines.append(f"  [repaired] {note}")

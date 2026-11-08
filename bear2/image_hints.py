@@ -88,18 +88,18 @@ def main(run_dir, photo_dir, vehicle):
     for line in a3:
         out.append(line)
         f = line.split("|")
-        if not (len(f) == 4 and f[0].strip().startswith(("FAILED", "NO PART NUMBER"))):
+        if not (len(f) == 5 and f[0].strip().startswith(("FAILED", "NO PART NUMBER"))):
             continue
-        img = f[3].strip()
+        img = f[4].strip()
         top = rank(search_by_image(photo_dir / img), ctx)[:PER_PHOTO]
         trace[img] = [(it.get("title"), it["price"]["value"]) for it in top]
         if not top:
-            out.append(f"\u21b3 POSSIBLE MATCH - none found by image search | | | {img}")
+            out.append(f"\u21b3 POSSIBLE MATCH - none found by image search | | | | {img}")
         for k, it in enumerate(top, 1):
             s = c.summarize(it)
             title = (s["title"] or "").replace("|", " ")
             price = f"listed \u00a3{float(it['price']['value']):.2f}"
-            out.append(f"\u21b3 POSSIBLE MATCH {k} (check by eye) - {title} | {price} | {s['url']} | {img}")
+            out.append(f"\u21b3 POSSIBLE MATCH {k} (check by eye) - {title} | {price} | {s['category']} | {s['url']} | {img}")
             n_hints += 1
     (run / "image_hints.json").write_text(json.dumps({"context": ctx.most_common(15), "hints": trace}, indent=1))
     if not trace:
