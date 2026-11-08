@@ -3,6 +3,8 @@
 
 The layout is the owner-approved Q269 sheet (2026-10-05, listed on eBay):
   HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL - Front Fog Light 922023Z010 | 24.99 | <url> | IMG_4969-OSF.JPEG
+with the eBay category ID added after the price (2026-11-08):
+  ... 922023Z010 | 24.99 | 33709 | <url> | IMG_4969-OSF.JPEG
 
 The NSF/NSR/OSF/OSR location words were removed from the server code (the bot names photos
 001.jpg ...), so the finished line carries the tidied name as-is and the filename is passed
@@ -17,7 +19,8 @@ import assemble as a  # noqa: E402
 
 V = "HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL"
 FOG_OSF = ["IMG_4969-OSF.JPEG", "922023Z010", "HYUNDAI I40 FRONT RIGHT FOG LIGHT 92202-3Z010",
-           "24.99", "https://www.ebay.co.uk/itm/800068400352"]
+           "33709", "24.99", "https://www.ebay.co.uk/itm/800068400352"]
+# A run saved before the category field: the category is left blank.
 FOG = ["IMG_4976.-NSFJPEG.JPEG", "922013Z010", "HYUNDAI I40 FRONT LEFT FOG LIGHT 92201-3Z010",
        "24.99", "https://www.ebay.co.uk/itm/167617751562"]
 
@@ -45,9 +48,9 @@ def main():
             bad += 1
             print(f"FAIL tidy_name({name!r}, {pn!r}) = {got!r}, want {want!r}")
     lines = [a.part_line(V, FOG_OSF, "Front Fog Light"), a.part_line(V, FOG, "Front Fog Light")]
-    want = ["HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL - Front Fog Light 922023Z010 | 24.99 | "
+    want = ["HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL - Front Fog Light 922023Z010 | 24.99 | 33709 | "
             "https://www.ebay.co.uk/itm/800068400352 | IMG_4969-OSF.JPEG",
-            "HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL - Front Fog Light 922013Z010 | 24.99 | "
+            "HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL - Front Fog Light 922013Z010 | 24.99 |  | "
             "https://www.ebay.co.uk/itm/167617751562 | IMG_4976.-NSFJPEG.JPEG"]
     for got, exp in zip(lines, want):
         if got != exp:

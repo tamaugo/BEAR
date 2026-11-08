@@ -15,7 +15,7 @@ Questions go through an `ask(text, choices)` function: `terminal_ask` in the Ter
 `web_ask` for the web page (bear2/ui/server.py). ask=None = stop.
 
 usage: python3 bear2/assemble.py <run_dir> "<VEHICLE STRING>"
-Writes <run_dir>/agent3_results.txt (4-field contract) and results.xlsx. Re-running it on a
+Writes <run_dir>/agent3_results.txt (5-field contract) and results.xlsx. Re-running it on a
 saved run redoes only the names (the photo reads and eBay results are not paid for again).
 """
 import json, os, re, subprocess, sys
@@ -126,10 +126,12 @@ def title_item(f):
 
 
 def part_line(vehicle, f, name):
-    """The finished results line for a priced row, exactly as it is written to the results."""
+    """The finished results line for a priced row, exactly as it is written to the results.
+    A run saved before the category field (5 fields, no category) gets a blank category."""
     img, pn, price, url = f[0], f[1], f[-2], f[-1]
+    category = f[3] if len(f) >= 6 else ""
     info = f"{vehicle} - {name} {c.norm(pn)}"
-    return f"{info} | {price} | {url} | {img}"
+    return f"{info} | {price} | {category} | {url} | {img}"
 
 
 def terminal_ask(text, choices):
@@ -279,7 +281,7 @@ def main(run_dir, vehicle, ask=None, model=None):
     for k, f in enumerate(rows):
         img = f[0]
         if f[1] == "FAILED":
-            out.append((image_no(img), f"FAILED - {f[2]} - {f[3]} | | | {img}"))
+            out.append((image_no(img), f"FAILED - {f[2]} - {f[3]} | | | | {img}"))
             continue
         out.append((image_no(img), part_line(vehicle, f, names[f"i{k}"])))
     out.sort(key=lambda x: x[0])                      # stable: same number keeps arrival order

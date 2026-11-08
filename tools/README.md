@@ -62,7 +62,7 @@ dollar cost of that one request, as billed by OpenRouter.
 
 ## Agent 3 output validator
 
-`agent3_validator.py` validates Agent 3's 4-field pipe-delimited output file
+`agent3_validator.py` validates Agent 3's 5-field pipe-delimited output file
 against every contract in its prompt, repairs what is deterministically
 repairable, and marks the rest:
 

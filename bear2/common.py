@@ -141,7 +141,14 @@ def summarize(it):
     return {"id": it.get("legacyItemId") or it.get("itemId"), "title": it.get("title"),
             "price": float((it.get("price") or {}).get("value") or 0),
             "condition": it.get("condition") or "", "seller": (it.get("seller") or {}).get("username"),
-            "url": url.split("?")[0], "image": img}
+            "url": url.split("?")[0], "image": img, "category": category_id(it)}
+
+
+def category_id(it):
+    """The eBay category the seller listed the item in, as its ID ("33546" = HVAC Blower Motors
+    & Wheels); "" if eBay gave none. The ID, not the name: it is what a listing is filed under."""
+    leaf = it.get("leafCategoryIds") or [x.get("categoryId") for x in it.get("categories") or []]
+    return str(leaf[0] or "") if leaf else ""
 
 
 # ---------------- OpenRouter chat ----------------

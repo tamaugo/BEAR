@@ -1,6 +1,6 @@
 """BEAR v2 end-to-end runner (stages 1-3). Writes Agent-2-shaped lines
-(`filename | part_number | title | price | url`) so the existing Agent 3 +
-validator + make_xlsx.py chain is unchanged downstream, plus a JSON trace.
+(`filename | part_number | title | category | price | url`, category = the eBay category ID of
+the listing BEAR picked) for assemble.py + validator + make_xlsx.py, plus a JSON trace.
 
 usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cached_stage1.json]
        python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> --names-only
@@ -102,7 +102,7 @@ def process(name, s1, vehicle, make, photo_path=None):
     # Operator-rule sell price (x.99, floor 19.99) computed here so Agent 3's own
     # round-up rule is a no-op on it (x.99 stays x.99).
     price = f"{pinfo['sell_price']:.2f}"
-    return f"{name} | {out_number} | {title} | {price} | {s['url']}", tr
+    return f"{name} | {out_number} | {title} | {s['category']} | {price} | {s['url']}", tr
 
 
 def first_line_check(photos, vehicle, make, read, ask, out_dir):

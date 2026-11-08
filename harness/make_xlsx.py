@@ -37,36 +37,37 @@ the harness already follows this rule.
 
 --- Input format ---
 
-One row per line, exactly 4 pipe-separated fields:
+One row per line, exactly 5 pipe-separated fields:
 
-    part info | price | url | image
+    part info | price | ebay category ID | url | image
 
 Real examples:
 
     MAZDA 6 MK2 2008 SEDAN 2.5 PETROL - Off Side Front Bumper Bracket \
-GS1D500T1 | 44.99 | https://www.ebay.co.uk/itm/123456789 | img_2225_OSF.JPEG
-    FAILED - Agent 2 - No eBay Listing Found | | | img_2240.JPEG
+GS1D500T1 | 44.99 | 33640 | https://www.ebay.co.uk/itm/123456789 | img_2225_OSF.JPEG
+    FAILED - Agent 2 - No eBay Listing Found | | | | img_2240.JPEG
 
-Failure rows have empty price and url fields but ALWAYS carry an image
+Failure rows have empty price, category and url fields but ALWAYS carry an image
 field, so a failed part is still traceable back to its photograph.
 
 Leading and trailing whitespace is stripped from every field. Completely
 blank lines are skipped (they are spacing, not rows).
 
-A line that does not have exactly 4 fields is NOT silently dropped. It is
+A line that does not have exactly 5 fields is NOT silently dropped. It is
 written into the sheet with the whole raw line in the part info column and
 a MALFORMED marker in front of it, and a warning is printed to stderr. A
 bad row must be visible in the output, never lost.
 
 --- Output format ---
 
-Column A = part info    B = price    C = url    D = image
+Column A = part info    B = price    C = ebay ID Category:    D = url    E = image
 
 Header row is bold and frozen. Price is written as a real NUMBER wherever
 the text parses as one, so the sheet can sum and sort it; anything that
 does not parse (an empty failure-row price, a value with a currency symbol
 or thousands separator) is left as text, unchanged and visible. URLs that
-look like http(s) links are made clickable.
+look like http(s) links are made clickable. The category ID is kept as text, exactly as
+eBay gave it.
 """
 
 import io
@@ -75,14 +76,14 @@ import re
 import sys
 import zipfile
 
-HEADERS = ["part info", "price", "url", "image"]
+HEADERS = ["part info", "price", "ebay ID Category:", "url", "image"]
 FIELD_COUNT = len(HEADERS)
 
 # Column widths in Excel's own unit (roughly one character of the default
-# font, plus padding). part info is long, url is medium, price and image
-# are narrow. These are the same numbers the openpyxl version used, so the
-# sheet looks identical to the one the pipeline produced before.
-COLUMN_WIDTHS = [70, 10, 46, 22]
+# font, plus padding). part info is long, url is medium, price, category and
+# image are narrow. The four original columns keep the widths the openpyxl
+# version used.
+COLUMN_WIDTHS = [70, 10, 18, 46, 22]
 
 MALFORMED_PREFIX = "MALFORMED ROW"
 
@@ -188,7 +189,7 @@ def parse_price(text: str):
 def parse_line(raw: str):
     """Turn one input line into a (fields, malformed) pair.
 
-    A well-formed line gives its 4 stripped fields and malformed=False. A
+    A well-formed line gives its 5 stripped fields and malformed=False. A
     line with any other number of fields gives the raw line, marked, in the
     part info column with the rest blank, and malformed=True — so it lands
     in the sheet where a human will see it."""
@@ -200,7 +201,7 @@ def parse_line(raw: str):
         f"{MALFORMED_PREFIX} (expected {FIELD_COUNT} fields, "
         f"got {len(fields)}): {clean(raw)}"
     )
-    return [marker, "", "", ""], True
+    return [marker] + [""] * (FIELD_COUNT - 1), True
 
 
 def read_rows(path: str):
@@ -325,7 +326,7 @@ def styles_xml() -> str:
 
 
 def column_letter(index: int) -> str:
-    """1 -> A, 26 -> Z, 27 -> AA. Only ever called with 1..4 here, but
+    """1 -> A, 26 -> Z, 27 -> AA. Only ever called with 1..5 here, but
     written generally so it cannot quietly break if a column is added."""
     letters = ""
     while index > 0:
@@ -406,7 +407,7 @@ def build_sheet(rows: list):
 
     for offset, (_line_number, fields, _malformed) in enumerate(rows):
         row_number = offset + 2
-        part_info, price, url, image = fields
+        part_info, price, category, url, image = fields
 
         parts.append(f'<row r="{row_number}">')
 
@@ -415,14 +416,15 @@ def build_sheet(rows: list):
             # never as a BEAR sell price.
             parts.append(text_cell(f"A{row_number}", part_info, STYLE_HINT))
             parts.append(text_cell(f"B{row_number}", price, STYLE_HINT))
+            parts.append(text_cell(f"C{row_number}", category, STYLE_HINT))
             if is_http_url(url):
-                ref = f"C{row_number}"
+                ref = f"D{row_number}"
                 rel_id = f"rId{len(hyperlinks) + 1}"
                 hyperlinks.append((ref, rel_id, url))
                 parts.append(text_cell(ref, url, STYLE_HINT_LINK))
             else:
-                parts.append(text_cell(f"C{row_number}", url, STYLE_HINT))
-            parts.append(text_cell(f"D{row_number}", image, STYLE_HINT))
+                parts.append(text_cell(f"D{row_number}", url, STYLE_HINT))
+            parts.append(text_cell(f"E{row_number}", image, STYLE_HINT))
             parts.append("</row>")
             continue
 
@@ -440,19 +442,23 @@ def build_sheet(rows: list):
         elif price_value:
             parts.append(text_cell(f"B{row_number}", price_value))
 
-        # Column C — url, blue and underlined and clickable when it is one.
+        # Column C — the eBay category ID, as text so it stays exactly as eBay gave it.
+        if category:
+            parts.append(text_cell(f"C{row_number}", category))
+
+        # Column D — url, blue and underlined and clickable when it is one.
         if url:
             if is_http_url(url):
-                ref = f"C{row_number}"
+                ref = f"D{row_number}"
                 rel_id = f"rId{len(hyperlinks) + 1}"
                 hyperlinks.append((ref, rel_id, url))
                 parts.append(text_cell(ref, url, STYLE_LINK))
             else:
-                parts.append(text_cell(f"C{row_number}", url))
+                parts.append(text_cell(f"D{row_number}", url))
 
-        # Column D — image filename.
+        # Column E — image filename.
         if image:
-            parts.append(text_cell(f"D{row_number}", image))
+            parts.append(text_cell(f"E{row_number}", image))
 
         parts.append("</row>")
 
@@ -532,7 +538,7 @@ def main() -> None:
             "Usage:\n"
             "  python3 make_xlsx.py <input.txt> <output.xlsx>\n\n"
             "  <input.txt>   pipe-delimited text from Agent 3, one row per line:\n"
-            "                  part info | price | url | image\n"
+            "                  part info | price | ebay category ID | url | image\n"
             "  <output.xlsx> spreadsheet to write (overwritten if it exists)"
         )
 

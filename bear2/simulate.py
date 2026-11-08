@@ -84,7 +84,7 @@ assemble.clean_names = fake_clean_names
 def agent2_line(p):
     if p[1] is None:
         return f"{p[0]} | FAILED | Agent 2 | No eBay Listing Found"
-    return f"{p[0]} | {p[1]} | {p[2]} | {p[3]} | https://www.ebay.co.uk/itm/2000000000{PARTS.index(p) + 1:02d}"
+    return f"{p[0]} | {p[1]} | {p[2]} | 9886 | {p[3]} | https://www.ebay.co.uk/itm/2000000000{PARTS.index(p) + 1:02d}"
 
 
 def main():
