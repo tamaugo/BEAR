@@ -223,9 +223,15 @@ def problem_card(folder, code, error_channel_id, photo_links=(), dev=False, part
     return _post(_embed(RED if not partial else AMBER, title, desc, footer=_footer(dev, code)))
 
 
-def stopped_card(folder, dev=False):
-    """Last edit of the run card after /quit."""
+def stopped_card(folder, dev=False, restarted=False):
+    """Last edit of the run card after /quit. restarted=True: the bot was restarted (an update or a
+    fix) while the folder was running, and the run went with it."""
     name = f"{folder} · " if folder else ""
+    if restarted:
+        return _post(_embed(RED, f"\N{BLACK SQUARE FOR STOP} {name}Stopped by a restart",
+                            "BEAR was restarted (an update or a fix) while this folder was running, so it "
+                            "stopped. Nothing more is posted for it. Use **/run** to start it again.",
+                            footer=_footer(dev)))
     return _post(_embed(RED, f"\N{BLACK SQUARE FOR STOP} {name}Stopped",
                         "Stopped with **/quit**: nothing more is posted for this folder. **/run** starts it again.",
                         footer=_footer(dev)))

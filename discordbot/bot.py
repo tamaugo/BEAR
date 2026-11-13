@@ -40,7 +40,7 @@ and read again for each run, so changing them needs no restart. The token is nev
 
 usage: python3 discordbot/bot.py       (systemd runs this: discordbot/deploy/bear-bot.service)
 """
-import asyncio, logging, os, shutil, signal, sys, time, traceback
+import asyncio, json, logging, os, shutil, signal, sys, time, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -105,6 +105,7 @@ RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
 STORAGE = Path(setting("BEAR_STORAGE", str(REPO / "runs")))
 RENAMES_DIR = STORAGE / "renames"   # on the same disk as the runs (the SSD on the VM)
 SHADOW_DIR = STORAGE / "shadow"
+RUNNING_DIR = STORAGE / "running"   # one note per /run still working: a restart marks its card stopped
 RENAME_DOWNLOADS = max(1, number("BEAR_RENAME_DOWNLOADS", 6))
 ZIP_MB = max(1, number("BEAR_ZIP_MB", 10))
 PART_ID_CHANNEL_ID = number("PART_ID_CHANNEL_ID", 0) or None
@@ -151,8 +152,8 @@ class Card:
     """The one live message for a /run (look.run_card), edited at each step. A normal channel
     message, not the reply to /run: replies stop being editable after 15 minutes."""
 
-    def __init__(self, ch):
-        self.ch, self.msg = ch, None
+    def __init__(self, ch, on_post=None):
+        self.ch, self.msg, self.on_post = ch, None, on_post   # on_post(): called each time a new message goes up
 
     async def show(self, post, file=None, view=False):
         """view: buttons to put under the card, None to take them away, False to leave them."""
@@ -165,6 +166,8 @@ class Card:
             log.warning("can't edit the card in %s, posting a new one", self.ch, exc_info=True)
         extra = {"file": file} if file else {}
         self.msg = await self.ch.send(**look.kwargs(post), **extra, **({"view": view} if view else {}))
+        if self.on_post:
+            self.on_post()
 
 
 def run_env():
@@ -201,6 +204,7 @@ class Bot(discord.Client):
         await self.to_errors(look.bot_started(MAX_RUNS, setting("BEAR_SIM"), version()))
         # First start on new code: say what changed in #update-log (nothing when the code is the same)
         await asyncio.to_thread(hb.update_log, STORAGE / "update-log.last")
+        await stopped_by_restart()
 
     async def error_channel(self):
         return self.get_channel(ERROR_CHANNEL_ID) or await self.fetch_channel(ERROR_CHANNEL_ID)
@@ -323,17 +327,21 @@ async def run(inter: discord.Interaction):
     # Claimed before the first await, so a second /run straight after this one is refused.
     a = ACTIVE[ch.id] = {"folder": None, "state": "being checked", "parts": 0, "since": time.time(),
                          "channel_id": ch.id}
-    card = Card(ch)
+    card = Card(ch, on_post=lambda: remember_run(ch, card, a))
+    stopping = False
     try:
         await inter.response.send_message(look.reply("on_it"), ephemeral=True)
         if not a.get("quit"):
             a["task"] = asyncio.create_task(whole_run(ch, card, a))   # /quit cancels this
             await a["task"]
     except asyncio.CancelledError:
-        if not a.get("quit"):   # the bot is stopping, not /quit
+        if not a.get("quit"):   # the bot is stopping, not /quit: the note stays for the restart
+            stopping = True
             raise
     finally:
         ACTIVE.pop(ch.id, None)
+        if not stopping:
+            forget_run(ch)
     if a.get("quit") and not a.get("bear_finished"):   # a finished spreadsheet card stays as it is
         try:
             await card.show(look.stopped_card(a["folder"], dev()))
@@ -363,6 +371,7 @@ async def whole_run(ch, card, a):
             if not ready.done():   # no folder: nothing for the rename to number
                 ready.set_result(None)
         a["bear_finished"] = True
+        forget_run(ch)   # its card is final now (spreadsheet or problem): a restart leaves it alone
         bear_done.set()
         got = ready.result() if ready.done() and not ready.cancelled() else None
         if got and shadow_on():
@@ -495,6 +504,7 @@ async def run_folder(ch, card, a, ready):
         a.update(folder=folder, marker_url=getattr(marker, "jump_url", None), marker_id=getattr(marker, "id", None))
         if first:
             await card.show(look.run_card("checking", folder, car or NO_CAR, dev=dev()))
+            remember_run(ch, card, a)   # the folder's name, for the card a restart leaves
 
     async def waiting(folder):
         await card.show(look.run_card("waiting", folder, car or NO_CAR, wait_seconds=UPLOAD_WAIT, dev=dev()))
@@ -532,6 +542,52 @@ async def run_folder(ch, card, a, ready):
         rc = await run_bear(photos, car, results, run_dir / "bear.log")
     await report(ch, card, folder, car, rc, run_dir, results, started, a.get("marker_url"))
     return folder
+
+
+def remember_run(ch, card, a):
+    """Note this /run's card in <storage>/running/<channel id>.json while it works. A restart
+    (systemctl, an update) kills the run without a word; the next start finds the note and marks
+    the card stopped (stopped_by_restart). Never raises: the run matters more than the note."""
+    if card.msg is None or a.get("bear_finished"):
+        return
+    try:
+        RUNNING_DIR.mkdir(parents=True, exist_ok=True)
+        (RUNNING_DIR / f"{ch.id}.json").write_text(json.dumps(
+            {"channel_id": ch.id, "message_id": card.msg.id, "folder": a.get("folder"), "since": time.time()}))
+    except OSError:
+        log.exception("can't note the run in %s", ch)
+
+
+def forget_run(ch):
+    try:
+        (RUNNING_DIR / f"{ch.id}.json").unlink(missing_ok=True)
+    except OSError:
+        log.exception("can't remove the run note for %s", ch)
+
+
+async def stopped_by_restart():
+    """At the first start: every run the last restart cut off (its note is still in running/) gets
+    its card edited to say so, and to /run again. A channel or card that is gone is skipped. Never raises."""
+    try:
+        notes = sorted(RUNNING_DIR.glob("*.json"))
+    except OSError:
+        return
+    for path in notes:
+        try:
+            note = json.loads(path.read_text())
+            cid = int(note["channel_id"])
+            if cid in ACTIVE:   # a /run started since this start: not cut off
+                continue
+            ch = bot.get_channel(cid) or await bot.fetch_channel(cid)
+            msg = await ch.fetch_message(int(note["message_id"]))
+            await msg.edit(**look.kwargs(look.stopped_card(note.get("folder"), dev(), restarted=True)), view=None)
+            log.info("run card in %s marked stopped by the restart (%s)", ch, note.get("folder"))
+        except Exception:
+            log.warning("can't mark the run card from %s stopped", path.name, exc_info=True)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def new_dir(parent, name):
