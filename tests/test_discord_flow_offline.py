@@ -69,6 +69,7 @@ class Channel:
         self.events = []   # ("file", name) each time a file goes up, in order
         self.zips = {}     # zip name -> names inside it, read as it is posted
         self.view = None   # the buttons last put on a message
+        self.read = 0      # messages handed out by history(), to see how far back the bot reads
 
     def add(self, author=PERSON, content="", files=(), ago=300, embeds=()):
         m = NS(id=self.id * 1000 + len(self.msgs), author=author, content=content,
@@ -80,6 +81,7 @@ class Channel:
 
     async def history(self, limit=100):
         for m in self.msgs[::-1][:limit]:
+            self.read += 1
             yield m
 
     def posted(self, file):
@@ -209,6 +211,52 @@ async def main():
           [["001.jpg", "IMG_1.jpg"], ["002.jpg", "IMG_2.jpg"], ["003.jpg", "IMG_10.jpg"], ["004.webp", "IMG_11.webp"]])
     check("own spend ledger used", (run_dir / "results" / "results.xlsx").exists(), True)
     check("no error posted", ERRORS.sent, [])
+
+    # read_folder stops at the newest marker, with exactly the answer reading all HISTORY_LIMIT
+    # messages and splitting them gave (the old way); D02 the same when no marker is in reach.
+    async def old_read_folder(ch):
+        history = [m async for m in ch.history(limit=B.HISTORY_LIMIT)]
+        name, marker, after = fo.split_folder(history, B.bot.user.id)
+        if not name:
+            raise fo.FolderError("BEAR-D02")
+        return name, after, marker
+
+    async def outcome(read, ch):
+        try:
+            name, after, marker = await read(ch)
+            return name, [m.id for m in after], marker.id
+        except fo.FolderError as e:
+            return e.code
+
+    limit, B.HISTORY_LIMIT = B.HISTORY_LIMIT, 10
+
+    def chan(cid, plan):
+        """plan, oldest first: a folder name is its marker, "p" a photo, "t" a bot text message."""
+        ch = Channel(cid)
+        for x in plan:
+            ch.add(ME, fo.marker(x)) if len(x) > 1 else ch.add(ME, "card") if x == "t" else ch.add(files=["a.jpg"])
+        return ch
+    shapes = {
+        "one folder": ["Q1", "p", "p", "t"],
+        "two folders, newest wins": ["Q1", "p", "Q2", "p", "p"],
+        "marker newest, no photos yet": ["p", "Q1"],
+        "no marker at all (D02)": ["p", "p", "t"],
+        "empty channel (D02)": [],
+        "marker exactly at the limit": ["Q1"] + ["p"] * 9,
+        "marker one past the limit (D02)": ["Q1"] + ["p"] * 10,
+        "older marker past the limit": ["Q0", "p", "p", "Q1"] + ["p"] * 6,
+    }
+    for i, (what, plan) in enumerate(shapes.items()):
+        ch = chan(200 + i, plan)
+        old = await outcome(old_read_folder, ch)
+        ch.read = 0
+        new = await outcome(B.read_folder, ch)
+        check(f"read_folder same as before: {what}", new, old)
+        stop = next((k + 1 for k, m in enumerate(ch.msgs[::-1][:10]) if fo.marker_name(m, ME.id)), min(len(plan), 10))
+        check(f"read_folder stops at the marker: {what}", ch.read, stop)
+    check("marker at the limit found", await outcome(B.read_folder, chan(299, shapes["marker exactly at the limit"])),
+          ("Q1", [299001 + k for k in range(9)], 299000))
+    B.HISTORY_LIMIT = limit
 
     # Problems a person can cause.
     cases = [
