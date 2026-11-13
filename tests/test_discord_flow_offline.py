@@ -37,6 +37,7 @@ CAR = "MITSUBISHI SHOGUN 2007 3.2 DI-D"
 B.bot._connection.user = ME
 logging.disable(logging.CRITICAL)   # the bot logs every error it posts; the checks below cover them
 B.car_channel_problem = lambda ch: None
+B.NAME_RETRY_WAITS = (0, 0)   # retry the names at once in the test
 B.rename_wait = lambda: WAIT[0]   # the rename offer's minute, shortened for the test
 WAIT = [0.05]
 
@@ -227,6 +228,16 @@ async def main():
         ch = await run(folder(20 + i))
         await run(ch, sim)
         check(f"sim {sim}", f"`{code}`" in last_error(), True)
+        if code != "BEAR-R01":   # names failed: only the names were tried again, twice
+            log_text = sorted((TMP / f"car-{20 + i}-{20 + i}").iterdir())[-1].joinpath("bear.log").read_text()
+            check(f"sim {sim}: names retried twice", log_text.count("retrying only the part names"), 2)
+            check(f"sim {sim}: photos read once", log_text.count("Reading part numbers 1/"), 1)
+
+    # The name model fails once, then the names-only retry works: the spreadsheet is posted.
+    errors_before = len(ERRORS.sent)
+    ch = await run(folder(28), "names-once")
+    check("names-once: spreadsheet posted after retrying the names", card(ch)[1], "Q184-mitsubishi-shogun-2007.xlsx")
+    check("names-once: no error posted", len(ERRORS.sent), errors_before)
 
     # Upload still arriving: /run waits for a quiet spell, then runs.
     ch = folder(30)

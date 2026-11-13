@@ -56,8 +56,42 @@ def main():
         if got != exp:
             bad += 1
             print(f"FAIL line\n  got  {got}\n  want {exp}")
+    bad += batch_checks()
     print("all passed" if not bad else f"{bad} failed")
     return 1 if bad else 0
+
+
+def batch_checks():
+    """clean_names sends NAME_BATCH rows per call, so a big folder can't be cut off at max_tokens."""
+    import json, re
+    calls, bad = [], 0
+    real = a.c.chat
+
+    def fake_chat(model, messages, **kw):
+        items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+        calls.append(len(items))
+        if kw.get("tag") == "clean_names" and "i55" in items:
+            names = {k: "Relay" for k in items if k != "i55"}   # one name missing in the last batch
+            return json.dumps({"names": names}), {}
+        return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
+    a.c.chat = fake_chat
+    try:
+        rows = {f"i{k}": FOG_OSF for k in range(55)}
+        got = a.clean_names(rows)
+        for what, ok in [("55 rows -> 3 calls of 25, 25, 5", calls == [25, 25, 5]),
+                         ("every row named", got == {k: "Fog Light" for k in rows})]:
+            if not ok:
+                bad += 1
+                print(f"FAIL batch: {what} (calls {calls})")
+        try:
+            a.clean_names({**rows, "i55": FOG_OSF})
+            bad += 1
+            print("FAIL batch: a name missing from one batch must stop the run")
+        except a.NamesFailed:
+            pass
+    finally:
+        a.c.chat = real
+    return bad
 
 
 if __name__ == "__main__":
