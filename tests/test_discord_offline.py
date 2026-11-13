@@ -297,6 +297,13 @@ with zipfile.ZipFile(io.BytesIO(ps.xlsx([{"posted": when, "answer": "A<&>\x01", 
     sheet = z.read("xl/worksheets/sheet1.xml").decode()
 check("sheet: header, escaped number, location", all(t in sheet for t in ("who got the info", "A&lt;&amp;&gt;<", "off side front")), True)
 
+# Every offline test runs both on GitHub (each pull request) and in setup.sh (each server update)
+setup_sh = (ROOT / "discordbot/deploy/setup.sh").read_text()
+workflow = (ROOT / ".github/workflows/offline-tests.yml").read_text()
+for t in sorted((ROOT / "tests").glob("test_*.py")):
+    check(f"setup.sh runs {t.name}", f"tests/{t.name}" in setup_sh, True)
+    check(f"GitHub runs {t.name}", t.stem in workflow, True)
+
 if fails:
     print("\n".join(fails))
     sys.exit(f"{len(fails)} failed")
