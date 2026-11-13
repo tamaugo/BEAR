@@ -245,8 +245,7 @@ def bear_retry_checks():
 
 
 bear_retry_checks()
-rep = fo.error_report("Q184", "BEAR-D05", "<#9>", "x" * 5000)
-check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D05` — fix: "), len(rep) <= 2000), (True, True))
+check("error report lives in look.py only", hasattr(fo, "error_report"), False)
 check("every code has a meaning and a fix", all(len(v) == 2 and all(v) for v in fo.ERRORS.values()), True)
 # The final check's verdict in bear.log (bear2/assemble.py prints it): exit 2 is BEAR-V01 with the rows.
 VLOG = ("Writing results.xlsx ...\nvalidator exit 2 | wrote results.xlsx\nAgent 3 output validation report\n"

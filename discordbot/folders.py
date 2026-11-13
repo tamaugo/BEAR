@@ -199,11 +199,3 @@ def outage_problem(agent2_text):
     down = sum(1 for l in rows if OUTAGE.search(l))
     return "BEAR-E01" if rows and down * 2 > len(rows) else None
 
-
-def error_report(folder, code, where, detail=""):
-    """The error channel message: **Q184** encountered an issue — `BEAR-D05` — fix: ..."""
-    meaning, fix = ERRORS[code]
-    text = f"**{folder}** encountered an issue — `{code}` — fix: {fix}\n{meaning} Channel: {where}"
-    if detail:
-        text += "\n```\n" + detail.replace("```", "'''")[:1400] + "\n```"
-    return text[:2000]

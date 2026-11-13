@@ -173,10 +173,9 @@ class Card:
 
 def run_env():
     """Environment for one BEAR run: this process's, plus every BEAR_* line in .env (read now),
-    minus the Discord token and the web page's ask switch (no one answers questions here)."""
+    minus the Discord token."""
     env = {**{k: v for k, v in dotenv().items() if k.startswith("BEAR_")}, **os.environ}
-    for k in ("DISCORD_TOKEN", "BEAR_WEB_ASK"):
-        env.pop(k, None)
+    env.pop("DISCORD_TOKEN", None)
     env["PYTHONUNBUFFERED"] = "1"
     return env
 
@@ -657,7 +656,7 @@ async def download_all(files, code, progress=None, every=10):
 
 async def run_bear(photos, car, results, logfile, names_only=False):
     """Run BEAR as its own process; returns its exit code, or None if it ran out of time.
-    No stdin and no terminal, so BEAR skips the first-line check and stops if the name model fails.
+    No stdin: BEAR asks no questions, and stops with no names written if the name model fails.
     names_only: finish only the names of the saved run in results, added to the same log.
     If this is cancelled (/quit), BEAR is stopped too."""
     env = run_env()

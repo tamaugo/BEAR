@@ -68,6 +68,16 @@ def main():
     bad += pipeline_checks()
     bad += batch_checks()
     bad += spend_checks()
+    # The Terminal / web page question code is gone: the server never asks, it stops (tidy, 2026-11-13).
+    import inspect
+    gone = [f for f in ("terminal_ask", "web_ask", "web_say", "asker", "verify", "approve", "pick_model", "save_check")
+            if hasattr(a, f)]
+    if gone or list(inspect.signature(a.main).parameters) != ["run_dir", "vehicle"]:
+        bad += 1
+        print(f"FAIL question code still in assemble.py: {gone}")
+    if "JEV_MODEL" in (Path(__file__).resolve().parent.parent / ".env.example").read_text():
+        bad += 1
+        print("FAIL .env.example still lists JEV_MODEL, which nothing reads")
     print("all passed" if not bad else f"{bad} failed")
     return 1 if bad else 0
 
