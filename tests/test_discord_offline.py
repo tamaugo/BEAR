@@ -126,8 +126,10 @@ def bear_retry_checks():
     c.CACHE = Path(tempfile.mkdtemp())
     c.LEDGER = c.CACHE / "spend.jsonl"   # never the real ledger
     slept, calls = [], []
-    real = c.time.sleep, jc.time.sleep, c.urllib.request.urlopen, jc.urllib.request.urlopen, c.ebay_token
+    real = (c.time.sleep, jc.time.sleep, c.urllib.request.urlopen, jc.urllib.request.urlopen, c.ebay_token,
+            jc.resolve_api_key)
     c.time.sleep = jc.time.sleep = slept.append
+    jc.resolve_api_key = lambda: "test-key"   # no real key needed (GitHub has none)
     c.ebay_token = lambda: "t"
 
     class Resp(io.BytesIO):
@@ -177,6 +179,28 @@ def bear_retry_checks():
         jc.urllib.request.urlopen = opener([http(429)] * 5 + [{"answers": {}, "usage": {"cost": 0}}])
         check("Jev: 5 busy answers then fine", c.decide("m", "s", {})["answers"], {})
         check("Jev: waits like chat", slept, [2, 4, 8, 16, 30])
+        # Jev down: after JEV_DOWN_AFTER calls fail in a row, the rest try once with no wait
+        jc.urllib.request.urlopen = opener([http(503)] * (c.CHAT_ATTEMPTS * c.JEV_DOWN_AFTER + 1))
+        for _ in range(c.JEV_DOWN_AFTER):
+            try:
+                c.decide("m", "s", {})
+            except c.JevFailed:
+                pass
+        slept.clear()
+        try:
+            c.decide("m", "s", {})
+        except c.JevFailed:
+            check("Jev down: one try, no waiting", slept, [])
+        c._jev_fails[0] = 0
+        # eBay login down counts towards eBay being down
+        c.ebay_token, c._ebay_fails[0], c._tok["v"] = real[4], 0, None
+        c._env = lambda name: "x"
+        c.urllib.request.urlopen = opener([http(503)] * (c.EBAY_ATTEMPTS + 1))
+        try:
+            c.ebay_token()
+        except RuntimeError:
+            check("eBay login outage counted", c._ebay_fails[0], 1)
+        c.ebay_token, c._ebay_fails[0] = (lambda: "t"), 0
         jc.urllib.request.urlopen = opener([http(402)])
         try:
             c.decide("m", "s", {})
@@ -190,7 +214,8 @@ def bear_retry_checks():
         check("rescue: errors kept", bool(errs) and errs[0].endswith("HTTPError"), True)
         s2b.s2.ebay_for = saved
     finally:
-        c.time.sleep, jc.time.sleep, c.urllib.request.urlopen, jc.urllib.request.urlopen, c.ebay_token = real
+        (c.time.sleep, jc.time.sleep, c.urllib.request.urlopen, jc.urllib.request.urlopen, c.ebay_token,
+         jc.resolve_api_key) = real
 
     # A part that still fails is labelled by what failed, not always "eBay Lookup Unavailable".
     for e, want in [(c.JevFailed("Jev failed: JevAPIError: 503"), R.FAIL_JEV),

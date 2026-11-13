@@ -73,7 +73,8 @@ def ebay_token():
     basic = base64.b64encode(f"{_env('EBAY_APP_ID')}:{_env('EBAY_CERT_ID')}".encode()).decode()
     body = urllib.parse.urlencode({"grant_type": "client_credentials",
                                    "scope": "https://api.ebay.com/oauth/api_scope"}).encode()
-    for attempt in range(EBAY_ATTEMPTS):
+    attempts = 1 if _ebay_fails[0] >= EBAY_DOWN_AFTER else EBAY_ATTEMPTS   # eBay down: fail fast
+    for attempt in range(attempts):
         req = urllib.request.Request("https://api.ebay.com/identity/v1/oauth2/token", data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         req.add_header("Authorization", f"Basic {basic}")
@@ -82,7 +83,9 @@ def ebay_token():
                 d = json.loads(r.read())
             break
         except Exception as e:
-            if not _transient(e) or attempt + 1 == EBAY_ATTEMPTS:
+            if not _transient(e) or attempt + 1 == attempts:
+                if _transient(e):
+                    _ebay_fails[0] += 1   # a login outage counts towards "eBay is down" too
                 why = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else type(e).__name__
                 raise RuntimeError(f"eBay OAuth failed {why}") from None
             time.sleep(_retry_wait(e, attempt))
@@ -257,15 +260,22 @@ class JevFailed(RuntimeError):
     labelled "Jev Unavailable", not blamed on eBay (bear2/run.py fail_cause)."""
 
 
+JEV_DOWN_AFTER = 3   # this many Jev calls in a row failing after their minute of retries = Jev is
+_jev_fails = [0]     # down: later calls try once, until one works (a run can't stall for hours)
+
+
 def decide(model, state, questions, tag=""):
     """One Decisions API call (Jev, or openai/gpt-6-luna-decisions, which also takes photos).
     Retried like chat calls (CHAT_ATTEMPTS, about a minute), not jev_client's own ~3 seconds."""
     _check_cap()
+    attempts = 1 if _jev_fails[0] >= JEV_DOWN_AFTER else CHAT_ATTEMPTS
     try:
-        r = jev_client.call_decisions(model, state, questions, max_attempts=CHAT_ATTEMPTS, wait=_retry_wait)
+        r = jev_client.call_decisions(model, state, questions, max_attempts=attempts, wait=_retry_wait)
     except jev_client.JevPaymentError as e:   # same words as chat's 402, so the bot reports BEAR-K01
         raise JevFailed(f"OpenRouter HTTP 402 (Jev): {str(e)[:200]}") from None
     except Exception as e:
+        _jev_fails[0] += 1
         raise JevFailed(f"Jev failed: {type(e).__name__}: {str(e)[:200]}") from None
+    _jev_fails[0] = 0
     log_spend("decisions", model, jev_client.get_cost(r), {"tag": tag})
     return r
