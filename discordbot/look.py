@@ -329,7 +329,7 @@ def shadow_ping(folders, parts, log_path, user_id=None):
              "Time to look at whether a model could read the locations.",
              f"On the server: `/opt/bear/.venv/bin/python /opt/bear/discordbot/shadow_report.py {log_path}`, "
              "or send that file to Claude.",
-             "It keeps collecting. Turn it off with `BEAR_SHADOW=0` in `.env` (no restart)."]
+             "It keeps collecting. Turn it off by removing `BEAR_SHADOW=1` from `.env` (no restart)."]
     return _post(_embed(AMBER, "\N{TEST TUBE} Shadow test: time to look at the data", "\n\n".join(lines)),
                  content=f"<@{user_id}>" if user_id else None)
 
