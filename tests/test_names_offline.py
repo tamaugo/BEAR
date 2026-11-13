@@ -84,8 +84,8 @@ def pipeline_checks():
 
     photos = TMP / "photos"
     photos.mkdir()
-    for n in ("001.jpg", "002.jpg", "004.jpg"):
-        Image.new("RGB", (32, 32), "white").save(photos / n, "JPEG")
+    for n, colour in (("001.jpg", "white"), ("002.jpg", "red"), ("004.jpg", "blue")):   # different photos:
+        Image.new("RGB", (32, 32), colour).save(photos / n, "JPEG")   # identical ones would share a saved read
     (photos / "003.jpg").write_bytes(b"not a photo at all")   # corrupt upload
     ps = sorted(photos.iterdir())
 
