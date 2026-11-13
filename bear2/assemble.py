@@ -293,8 +293,10 @@ def main(run_dir, vehicle, ask=None, model=None):
     x = subprocess.run([sys.executable, str(c.ROOT / "harness/make_xlsx.py"), str(run / "agent3_results.txt"),
                         str(run / "results.xlsx")], capture_output=True, text=True)
     print(f"validator exit {v.returncode} | {(x.stdout or x.stderr).strip()[-120:]}")
-    if v.returncode:
-        print(v.stdout[-1200:])
+    if v.returncode == 2:   # rows flagged: the whole report, so the bot's BEAR-V01 can list every one
+        print(v.stdout)
+    elif v.returncode:      # the check itself broke
+        print((v.stderr or v.stdout)[-1200:])
     return text
 
 

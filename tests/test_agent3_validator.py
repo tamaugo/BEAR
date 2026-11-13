@@ -212,6 +212,29 @@ def test_invented_part_number_mark(tmpdir):
     check("invented part number: file untouched", read(output_path) == original)
 
 
+# ---------------------------------------------------------------------------
+# 11. Numbers read with dots or slashes are the same number once written without them
+#     (server runs 2026-10-27 to 11-08: 4F0.820.511.A, 8A61-A27000/01, 96.728.750.80).
+# ---------------------------------------------------------------------------
+def test_punctuated_part_number_not_marked(tmpdir):
+    input_path = os.path.join(tmpdir, "input.md")
+    output_path = os.path.join(tmpdir, "output.md")
+    write(input_path, "008.jpeg | 4F0.820.511.A | Heater Flap Motor | 33546 | 19.99 | http://a\n"
+                      "009.jpeg | 8A61-A27000/01 | Window Regulator | 1 | 19.99 | http://b\n"
+                      "010.jpeg | 96.728.750.80 | Solenoid Valve | 1 | 19.99 | http://c\n")
+    write(output_path,
+          "VEH - Heater Flap Motor 4F0820511A | 19.99 | 33546 | http://a | 008.jpeg\n"
+          "VEH - Window Regulator 8A61A2700001 | 19.99 | 1 | http://b | 009.jpeg\n"
+          "VEH - Solenoid Valve 9672875080 | 19.99 | 1 | http://c | 010.jpeg\n")
+    report, any_marks = run_validator(output_path, input_path)
+    check("punctuated part numbers: not marked", any_marks is False, report)
+    write(output_path, "VEH - Heater Flap Motor 4F0820511B | 19.99 | 33546 | http://a | 008.jpeg\n"
+                       "VEH - Window Regulator 8A61A2700001 | 19.99 | 1 | http://b | 009.jpeg\n"
+                       "VEH - Solenoid Valve 9672875080 | 19.99 | 1 | http://c | 010.jpeg\n")
+    report, any_marks = run_validator(output_path, input_path)
+    check("punctuated part numbers: a real change is still marked", any_marks is True and "4F0820511B" in report, report)
+
+
 TESTS = [
     test_sorted_pass_through,
     test_out_of_order_repair,
@@ -223,6 +246,7 @@ TESTS = [
     test_unparseable_price_mark,
     test_count_mismatch_mark,
     test_invented_part_number_mark,
+    test_punctuated_part_number_not_marked,
 ]
 
 

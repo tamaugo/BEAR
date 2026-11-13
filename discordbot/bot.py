@@ -856,6 +856,12 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
     if code:   # a new message under the green card, which keeps its spreadsheet
         await bot.fail(ch, folder, code, "The spreadsheet was posted, but some parts failed because of this.",
                        logfile, partial=True, jump_url=jump_url)
+    code, flagged = fo.validator_problem(text)
+    if code:   # for the owner only: the uploader's card stays green
+        meaning, fix = fo.ERRORS[code]
+        log.warning("%s %s %s: %s", ch, folder, code, flagged[:300])
+        await bot.to_errors(look.error_report(folder, code, meaning, fix, ch.id, car, flagged, jump_url, dev()),
+                            [discord.File(logfile, filename=f"{folder}-log.txt")] if logfile.exists() else [])
 
 
 # --- Shadow test (shadow.py) ------------------------------------------------------------------
