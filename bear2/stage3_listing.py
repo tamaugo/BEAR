@@ -67,6 +67,10 @@ def listing_match(s1, listings, vehicle, cap=60):
     parking-brake switch as a 'window switch' and every genuine listing got vetoed (r2, IMG_4784).
     Vision still supplies the quantity in the photo."""
     listings = listings[:cap]
+    if len(listings) == 1:
+        # Nothing to compare: pick_listing returns the only listing whatever Jev answers (it keeps
+        # the best-scoring one even below EXCLUDE_BELOW), so the call can't change the result.
+        return [(listings[0], 1.0)]
     state = {"car": vehicle,
              "photo": {"items_in_photo": s1.get("item_count", 1),
                        "rough_description_may_be_imprecise": s1.get("part_description")},

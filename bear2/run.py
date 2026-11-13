@@ -145,6 +145,7 @@ def main():
     make = vehicle.split()[0]
     s1_cache = sys.argv[sys.argv.index("--s1") + 1] if "--s1" in sys.argv else None
     out_dir.mkdir(parents=True, exist_ok=True)
+    c.prune_ebay_cache()
     spend0 = c.total_spend()
     photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in c.PHOTO_EXT)
     # Terminal runs ask in the Terminal, web page runs on the page (BEAR_WEB_ASK).
@@ -155,7 +156,7 @@ def main():
     S1 = json.loads(Path(s1_cache).read_text()) if s1_cache else {}
     done = {}
     if ask:
-        read1 = (lambda p: S1.get(p.name)) if s1_cache else (lambda p: s1m.read_photo_robust(p, vehicle))
+        read1 = (lambda p: S1.get(p.name)) if s1_cache else (lambda p: s1m.read_photo_cached(p, vehicle))
         try:
             done = first_line_check(photos, vehicle, make, read1, ask, out_dir)
         except assemble.Stop as e:
@@ -167,7 +168,7 @@ def main():
 
         def read(p):
             try:
-                return s1m.read_photo_robust(p, vehicle)
+                return s1m.read_photo_cached(p, vehicle)
             finally:
                 tick()
         with cf.ThreadPoolExecutor(6) as ex:
