@@ -27,9 +27,9 @@ import sys
 import tempfile
 
 # The failure strings BEAR writes: the four the v4 prompt defines verbatim (agent3_instructions
-# section "Input" + "Absolute rules"), plus the two unreadable-photo rows from bear2/run.py
-# (FAIL_PHOTO, FAIL_READ). Anything claiming to be a failure row that isn't exactly
-# one of these -- or the NO PART NUMBER shape below -- is not something we can trust
+# section "Input" + "Absolute rules"), plus the rows bear2/run.py writes for an unreadable photo
+# (FAIL_PHOTO, FAIL_READ) and for the service that failed (fail_cause). Anything claiming to be a
+# failure row that isn't exactly one of these -- or the NO PART NUMBER shape below -- is not something we can trust
 # enough to silently clean up, so it gets marked instead of repaired.
 FAILURE_PATTERNS = {
     "FAILED - Agent 1 - Could Not Produce Clear Part Number",
@@ -37,6 +37,10 @@ FAILURE_PATTERNS = {
     "FAILED - Agent 1 - Photo Read Unavailable",
     "FAILED - Agent 2 - No eBay Listing Found",
     "FAILED - Agent 2 - eBay Lookup Unavailable",
+    "FAILED - Agent 2 - Jev Unavailable",
+    "FAILED - Agent 2 - Model Unavailable",
+    "FAILED - Agent 2 - Spend Limit Reached",
+    "FAILED - Agent 2 - Unexpected Error",
     "FAILED - Agent 3 - Malformed Input Line",
 }
 

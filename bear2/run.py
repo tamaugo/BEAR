@@ -4,9 +4,9 @@ the listing BEAR picked) for assemble.py + validator + make_xlsx.py, plus a JSON
 
 usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cached_stage1.json]
        python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> --names-only
-         (finish the names of a stopped run in out_dir; the web page's Finish names)
+         (finish only the names of a run in out_dir that stopped at the names)
 """
-import json, sys, threading, time, concurrent.futures as cf
+import json, sys, threading, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble, image_hints
@@ -70,6 +70,26 @@ def read_all(photos, read, tick=None):
     return reads, {k: (why, f"{type(e).__name__}: {str(e)[:200]}") for k, (why, e) in errors.items()}
 
 
+FAIL_JEV = "FAILED | Agent 2 | Jev Unavailable"
+FAIL_MODEL = "FAILED | Agent 2 | Model Unavailable"        # an OpenRouter chat call (the photo check)
+FAIL_MONEY = "FAILED | Agent 2 | Spend Limit Reached"      # BEAR's cap or OpenRouter credit (K02 / K01)
+FAIL_ERR = "FAILED | Agent 2 | Unexpected Error"
+
+
+def fail_cause(e):
+    """The FAILED row for a part whose pricing raised e: the service that really failed."""
+    text = str(e)
+    if "spend cap reached" in text or "OpenRouter HTTP 402" in text:
+        return FAIL_MONEY
+    if isinstance(e, c.JevFailed):
+        return FAIL_JEV
+    if "OpenRouter" in text:
+        return FAIL_MODEL
+    if "eBay" in text or isinstance(e, c.NETWORK_ERRORS):
+        return FAIL_UN
+    return FAIL_ERR
+
+
 def no_match_fail(s1):
     """A clearly-read primary number that no UK seller lists (or only lists as a different
     component) is an eBay miss, not a reading failure - tell the operator which it was."""
@@ -87,12 +107,13 @@ def process(name, s1, vehicle, make, photo_path=None):
                        "err": v.get("error")} for v in verified]
     if verified and all(v.get("error") for v in verified):
         return f"{name} | {FAIL_UN}", tr
+    ebay_errors = [f"{v['text']}: {v['error']}" for v in verified if v.get("error")]
     live = s3.drop_substring_readings(verified)
     # Rescue unless a PRIMARY-role reading is strongly listed. Secondary junk like "10 10 3"
     # (150 substring hits) must not suppress the rescue (IMG_3931, pt2).
     if not any(len(v["listings"]) >= s2b.STRONG and v["cand"].get("role") == "primary" for v in live):
         # hard read: try confusable-character / revision-suffix rescues
-        rescued = s2b.rescue(s1, make)
+        rescued = s2b.rescue(s1, make, ebay_errors)
         tr["rescued"] = [{"text": v["text"], "n": len(v["listings"]), "from": v["cand"].get("read_as"),
                           "how": v["cand"].get("rescue")} for v in rescued]
         live = s3.drop_substring_readings(live + rescued)
@@ -108,6 +129,9 @@ def process(name, s1, vehicle, make, photo_path=None):
                 live = [{"text": tok, "cand": {"role": "primary", "rescue": "image-corroborated"},
                          "listings": items, "make_hits": 0}]
     if not live:
+        if ebay_errors:   # a search that failed might have found it: say eBay, not "no listing"
+            tr["ebay_errors"] = ebay_errors[:20]
+            return f"{name} | {FAIL_UN}", tr
         return f"{name} | {no_match_fail(s1)}", tr
     chosen, info = s3.choose_number(s1, live, vehicle)
     tr["choose"] = {"text": chosen["text"], **info}
@@ -159,29 +183,6 @@ def process(name, s1, vehicle, make, photo_path=None):
     return f"{name} | {out_number} | {title} | {s['category']} | {price} | {s['url']}", tr
 
 
-def first_line_check(photos, vehicle, make, read, ask, out_dir):
-    """Before the full run: top to bottom until a photo gets a listing, then the operator
-    approves its finished line (assemble.verify) and the approved name model is saved to
-    names_check.json. Every photo processed here is returned so the full run never redoes it."""
-    print("Checking the first part before the full run ...", file=sys.stderr, flush=True)
-    done = {}
-    for p in photos:
-        s1 = read(p)
-        try:
-            line, tr = process(p.name, s1, vehicle, make, p)
-        except Exception as e:
-            line, tr = f"{p.name} | {FAIL_UN}", {"error": f"{type(e).__name__}: {str(e)[:200]}"}
-        done[p.name] = (s1, line, tr)
-        f = assemble.parse_row(line)
-        if f[1] == "FAILED":
-            print(f"{p.name}: no listing, trying the next photo", file=sys.stderr, flush=True)
-            continue
-        model, name = assemble.verify(vehicle, f, ask, assemble.start_model())
-        assemble.save_check(out_dir, p.name, model, name)
-        break
-    return done
-
-
 def progress(label, total):
     """Thread-safe `label n/total` counter on stderr, so long jobs visibly move."""
     lock, done = threading.Lock(), [0]
@@ -199,32 +200,22 @@ def main():
     make = vehicle.split()[0]
     s1_cache = sys.argv[sys.argv.index("--s1") + 1] if "--s1" in sys.argv else None
     out_dir.mkdir(parents=True, exist_ok=True)
+    c.prune_ebay_cache()
     spend0 = c.total_spend()
     photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in c.PHOTO_EXT)
-    # Terminal runs ask in the Terminal, web page runs on the page (BEAR_WEB_ASK).
-    ask = assemble.asker()
     if "--names-only" in sys.argv:
-        return finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos), assemble.start_model() if ask else None)
+        return finish(out_dir, photo_dir, vehicle, spend0, len(photos))
     print(f"{len(photos)} photos to price. This takes a few minutes for a big job.", file=sys.stderr, flush=True)
     S1 = json.loads(Path(s1_cache).read_text()) if s1_cache else {}
-    done = {}
-    if ask:
-        read1 = (lambda p: S1.get(p.name)) if s1_cache else (lambda p: s1m.read_photo_robust(p, vehicle))
-        try:
-            done = first_line_check(photos, vehicle, make, read1, ask, out_dir)
-        except assemble.Stop as e:
-            assemble.stop_exit(e)
-    rest = [p for p in photos if p.name not in done]
-    S1.update({k: v[0] for k, v in done.items()})
+    rest = photos
     if not s1_cache:
-        reads, unread = read_all(rest, lambda p: s1m.read_photo_robust(p, vehicle),
+        reads, unread = read_all(rest, lambda p: s1m.read_photo_cached(p, vehicle),
                                  progress("Reading part numbers", len(rest)))
         S1.update(reads)
     else:
         unread = {}
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
-    lines = {k: v[1] for k, v in done.items()}
-    trace = {k: v[2] for k, v in done.items()}
+    lines, trace = {}, {}
     for name, (why, err) in unread.items():
         lines[name], trace[name] = f"{name} | {why}", {"error": err}
     rest = [p for p in rest if p.name not in unread]
@@ -237,19 +228,19 @@ def main():
             try:
                 lines[futs[f]], trace[futs[f]] = f.result()
             except Exception as e:
-                lines[futs[f]] = f"{futs[f]} | {FAIL_UN}"
+                lines[futs[f]] = f"{futs[f]} | {fail_cause(e)}"
                 trace[futs[f]] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
     ordered = [lines[p.name] for p in photos]
     (out_dir / "agent2_results.md").write_text("\n".join(ordered) + "\n")
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
-    finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos))
+    finish(out_dir, photo_dir, vehicle, spend0, len(photos))
 
 
-def finish(out_dir, photo_dir, vehicle, ask, spend0, n, model=None):
-    """Names, results.xlsx and image hints. model: see assemble.main (names-only reruns)."""
+def finish(out_dir, photo_dir, vehicle, spend0, n):
+    """Names, results.xlsx and image hints."""
     print("Building results.xlsx ...", file=sys.stderr, flush=True)
     try:
-        print(assemble.main(out_dir, vehicle, ask, model))
+        print(assemble.main(out_dir, vehicle))
     except assemble.Stop as e:
         assemble.stop_exit(e)
     print("Looking for possible matches for unpriced photos ...", file=sys.stderr, flush=True)

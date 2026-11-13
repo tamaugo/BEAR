@@ -67,7 +67,7 @@ UPLOADER_FIX = {
     "BEAR-D07": "The photos couldn't be renamed. **/rename** again with the same SKU; if it keeps happening, "
                 "re-send the photo below.",
     "BEAR-N01": None, "BEAR-N02": None, "BEAR-N03": None,
-    "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None, "BEAR-V01": None,
+    "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None, "BEAR-V01": None, "BEAR-E01": None,
 }
 
 # Short titles for the problem card, so the code means something at a glance.
@@ -84,6 +84,7 @@ TITLES = {
     "BEAR-K01": "Out of OpenRouter credit",
     "BEAR-K02": "Folder hit BEAR's spend cap",
     "BEAR-V01": "Final check flagged rows",
+    "BEAR-E01": "eBay or the AI models were down",
     "BEAR-T01": "Run took too long",
     "BEAR-R01": "BEAR run failed",
 }
@@ -336,7 +337,7 @@ def shadow_ping(folders, parts, log_path, user_id=None):
              "Time to look at whether a model could read the locations.",
              f"On the server: `/opt/bear/.venv/bin/python /opt/bear/discordbot/shadow_report.py {log_path}`, "
              "or send that file to Claude.",
-             "It keeps collecting. Turn it off with `BEAR_SHADOW=0` in `.env` (no restart)."]
+             "It keeps collecting. Turn it off by removing `BEAR_SHADOW=1` from `.env` (no restart)."]
     return _post(_embed(AMBER, "\N{TEST TUBE} Shadow test: time to look at the data", "\n\n".join(lines)),
                  content=f"<@{user_id}>" if user_id else None)
 

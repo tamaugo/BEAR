@@ -66,6 +66,18 @@ def main():
             bad += 1
             print(f"FAIL line\n  got  {got}\n  want {exp}")
     bad += pipeline_checks()
+    bad += batch_checks()
+    bad += spend_checks()
+    # The Terminal / web page question code is gone: the server never asks, it stops (tidy, 2026-11-13).
+    import inspect
+    gone = [f for f in ("terminal_ask", "web_ask", "web_say", "asker", "verify", "approve", "pick_model", "save_check")
+            if hasattr(a, f)]
+    if gone or list(inspect.signature(a.main).parameters) != ["run_dir", "vehicle"]:
+        bad += 1
+        print(f"FAIL question code still in assemble.py: {gone}")
+    if "JEV_MODEL" in (Path(__file__).resolve().parent.parent / ".env.example").read_text():
+        bad += 1
+        print("FAIL .env.example still lists JEV_MODEL, which nothing reads")
     print("all passed" if not bad else f"{bad} failed")
     return 1 if bad else 0
 
@@ -82,8 +94,8 @@ def pipeline_checks():
 
     photos = TMP / "photos"
     photos.mkdir()
-    for n in ("001.jpg", "002.jpg", "004.jpg"):
-        Image.new("RGB", (32, 32), "white").save(photos / n, "JPEG")
+    for n, colour in (("001.jpg", "white"), ("002.jpg", "red"), ("004.jpg", "blue")):   # different photos:
+        Image.new("RGB", (32, 32), colour).save(photos / n, "JPEG")   # identical ones would share a saved read
     (photos / "003.jpg").write_bytes(b"not a photo at all")   # corrupt upload
     ps = sorted(photos.iterdir())
 
@@ -134,15 +146,16 @@ def pipeline_checks():
 
     # The whole of run.py main(): the folder finishes with every row, bad photos as FAILED rows.
     out = TMP / "results"
-    saved = R.s1m.read_photo_robust, R.process, R.finish, sys.argv
-    R.s1m.read_photo_robust = lambda p, vehicle: read(p)
+    saved = R.s1m.read_photo_robust, R.process, R.finish, sys.argv, R.s1m.READS
+    R.s1m.READS = TMP / "reads"   # never the real saved reads
+    R.s1m.read_photo_robust = lambda p, vehicle, model=None: read(p)
     R.process = lambda name, s1, *rest: (f"{name} | {s1['candidates'][0]['text']} | Title | 1 | 19.99 | https://e/x", {})
     R.finish = lambda *args, **kw: None
     sys.argv = ["run.py", str(photos), V, str(out)]
     try:
         R.main()
     finally:
-        R.s1m.read_photo_robust, R.process, R.finish, sys.argv = saved
+        R.s1m.read_photo_robust, R.process, R.finish, sys.argv, R.s1m.READS = saved
     rows = (out / "agent2_results.md").read_text().splitlines()
     check("every photo has a row, in order", [r.split(" | ")[0] for r in rows], ["001.jpg", "002.jpg", "003.jpg", "004.jpg"])
     check("rows", rows[1:3], ["002.jpg | " + R.FAIL_READ, "003.jpg | " + R.FAIL_PHOTO])
@@ -155,6 +168,117 @@ def pipeline_checks():
     a2.write_text("002.jpg | " + R.FAIL_READ + "\n003.jpg | " + R.FAIL_PHOTO + "\n")
     report, marked = run_validator(str(a3), str(a2))
     check("validator: new FAILED rows are fine", marked, False)
+    return len(fails)
+
+
+def batch_checks():
+    """clean_names sends NAME_BATCH rows per call, so a big folder can't be cut off at max_tokens."""
+    import json, re
+    calls, bad = [], 0
+    real = a.c.chat
+
+    def fake_chat(model, messages, **kw):
+        items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+        calls.append(len(items))
+        if kw.get("tag") == "clean_names" and "i55" in items:
+            names = {k: "Relay" for k in items if k != "i55"}   # one name missing in the last batch
+            return json.dumps({"names": names}), {}
+        return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
+    a.c.chat = fake_chat
+    try:
+        rows = {f"i{k}": FOG_OSF for k in range(55)}
+        got = a.clean_names(rows)
+        for what, ok in [("55 rows -> 3 calls of 25, 25, 5", calls == [25, 25, 5]),
+                         ("every row named", got == {k: "Fog Light" for k in rows})]:
+            if not ok:
+                bad += 1
+                print(f"FAIL batch: {what} (calls {calls})")
+        try:
+            a.clean_names({**rows, "i55": FOG_OSF})
+            bad += 1
+            print("FAIL batch: a name missing from one batch must stop the run")
+        except a.NamesFailed:
+            pass
+    finally:
+        a.c.chat = real
+    return bad
+
+
+def spend_checks():
+    """Spend saving without changing results: token counts in the ledger, saved reads reused for a
+    byte-identical photo, no Jev call for a single listing, old eBay cache files deleted."""
+    import json, os, tempfile, time
+    import common as c, stage1_read as s1, stage3_listing as s3
+    fails = []
+
+    def check(what, got, want):
+        if got != want:
+            fails.append(what)
+            print(f"FAIL {what}: got {got!r}, want {want!r}")
+    tmp = Path(tempfile.mkdtemp(prefix="bear-spend-test-"))
+    saved = c.LEDGER, c.CACHE, s1.READS, s1.read_photo_robust, c.jev
+    c.LEDGER, c.CACHE, s1.READS = tmp / "spend.jsonl", tmp, tmp / "reads"
+    try:
+        # a. token counts next to the cost
+        c.log_spend("chat", "m", 0.001, {"tag": "x"}, {"prompt_tokens": 1200, "completion_tokens": 80,
+                                                       "completion_tokens_details": {"reasoning_tokens": 30}})
+        line = json.loads(c.LEDGER.read_text().splitlines()[-1])
+        check("ledger tokens", (line["cost"], line["prompt_tokens"], line["completion_tokens"], line["reasoning_tokens"]),
+              (0.001, 1200, 80, 30))
+
+        # b. a saved read is reused for the same photo, model, prompt and vehicle, at cost 0
+        photo = tmp / "001.jpg"
+        photo.write_bytes(b"photo bytes A")
+        reads = []
+
+        def fake_read(path, vehicle, model=s1.MODEL):
+            reads.append((Path(path).read_bytes(), vehicle, model))
+            found = b"blank" not in Path(path).read_bytes()
+            return {"candidates": [{"text": "1K0615601", "role": "primary"}] if found else [], "_cost": 0.002}
+        s1.read_photo_robust = fake_read
+        first = s1.read_photo_cached(photo, "VW GOLF")
+        again = s1.read_photo_cached(photo, "VW GOLF")
+        check("first read pays", (len(reads), first["_cost"]), (1, 0.002))
+        check("same photo reused at cost 0", (len(reads), again["_cost"], again["candidates"]), (1, 0, first["candidates"]))
+        check("reuse logged with cost 0", json.loads(c.LEDGER.read_text().splitlines()[-1])["cost"], 0)
+        s1.read_photo_cached(photo, "VW POLO")
+        check("other vehicle reads again", len(reads), 2)
+        s1.read_photo_cached(photo, "VW GOLF", model="other/model")
+        check("other model reads again", len(reads), 3)
+        prompt = s1.PROMPT
+        s1.PROMPT = prompt + " "
+        s1.read_photo_cached(photo, "VW GOLF")
+        s1.PROMPT = prompt
+        check("changed prompt reads again", len(reads), 4)
+        photo.write_bytes(b"photo bytes B")
+        s1.read_photo_cached(photo, "VW GOLF")
+        check("changed photo reads again", len(reads), 5)
+        blank = tmp / "002.jpg"
+        blank.write_bytes(b"blank photo")
+        s1.read_photo_cached(blank, "VW GOLF")
+        s1.read_photo_cached(blank, "VW GOLF")
+        check("no number found: read fresh every time", len(reads), 7)
+
+        # c. one listing: no Jev call, and pick_listing gives the same answer whatever Jev would say
+        calls = []
+        c.jev = lambda *a, **k: calls.append(1)
+        it = {"title": "VW GOLF ABS PUMP 1K0615601", "price": {"value": "34.50"}, "condition": "Used",
+              "itemWebUrl": "https://www.ebay.co.uk/itm/1"}
+        scored = s3.listing_match({"item_count": 1}, [it], "VW GOLF")
+        check("one listing: no Jev call", calls, [])
+        picks = [s3.pick_listing([(it, p)], "1K0615601", "VW GOLF") for p in (0.0, 0.1, 0.19, 0.2, 0.5, 1.0)]
+        check("one listing: same pick whatever Jev scores", all(p == picks[0] for p in picks), True)
+        check("one listing: skip gives that same pick", s3.pick_listing(scored, "1K0615601", "VW GOLF"), picks[0])
+
+        # d. eBay cache files past their 24 hours are deleted; fresh ones and saved reads stay
+        old, new = tmp / "ebay_old.json", tmp / "ebay_new.json"
+        for f in (old, new):
+            f.write_text("{}")
+        os.utime(old, (time.time() - 25 * 3600,) * 2)
+        check("prune: one old file", c.prune_ebay_cache(), 1)
+        check("prune: fresh kept, old gone", (new.exists(), old.exists(), any(s1.READS.iterdir())), (True, False, True))
+    finally:
+        c.LEDGER, c.CACHE, s1.READS, s1.read_photo_robust, c.jev = saved
     return len(fails)
 
 

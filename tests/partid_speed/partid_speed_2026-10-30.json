@@ -1,0 +1,1304 @@
+{
+ "test": "#part-id end to end: photo sent from the Mac -> bot reply received on the Mac",
+ "date": "2026-10-30",
+ "photo_bytes": 412576,
+ "throttle": "Mac only, bandwidth cap up+down via dnctl/pf, no added latency; VM not throttled",
+ "clock": {
+  "vm_minus_mac_ms": 1.36,
+  "measured_rtt_ms": 3.46
+ },
+ "baseline_connection": {
+  "down_mbps": 86.57,
+  "up_mbps": 64.17,
+  "base_rtt_ms": 24.3
+ },
+ "summary": {
+  "really_slow": {
+   "cap_kbit": 256,
+   "measured": {
+    "down_mbps": 0.12,
+    "up_mbps": 3.24,
+    "base_rtt_ms": 584.0,
+    "error": null
+   },
+   "runs": 3,
+   "avg_end_to_end_ms": 33079.1,
+   "min_end_to_end_ms": 25671.9,
+   "max_end_to_end_ms": 40875.1,
+   "avg_client_connection_ms": 30260.8,
+   "avg_discord_to_server_ms": 411.5,
+   "avg_openrouter_calls_ms": 1736.2,
+   "avg_our_code_ms": 474.5,
+   "avg_reply_to_discord_ms": 339.8,
+   "avg_photo_upload_ms": 30107.6,
+   "avg_reply_back_to_mac_ms": 153.2
+  },
+  "slow": {
+   "cap_kbit": 1000,
+   "measured": {
+    "down_mbps": 0.84,
+    "up_mbps": 12.8,
+    "base_rtt_ms": 153.2,
+    "error": null
+   },
+   "runs": 3,
+   "avg_end_to_end_ms": 8116.7,
+   "min_end_to_end_ms": 6449.8,
+   "max_end_to_end_ms": 11323.1,
+   "avg_client_connection_ms": 5654.3,
+   "avg_discord_to_server_ms": 202.8,
+   "avg_openrouter_calls_ms": 1630.2,
+   "avg_our_code_ms": 441.0,
+   "avg_reply_to_discord_ms": 415.4,
+   "avg_photo_upload_ms": 5520.5,
+   "avg_reply_back_to_mac_ms": 133.8
+  },
+  "medium": {
+   "cap_kbit": 10000,
+   "measured": {
+    "down_mbps": 9.0,
+    "up_mbps": 17.86,
+    "base_rtt_ms": 25.0,
+    "error": null
+   },
+   "runs": 3,
+   "avg_end_to_end_ms": 4130.3,
+   "min_end_to_end_ms": 3504.2,
+   "max_end_to_end_ms": 5281.7,
+   "avg_client_connection_ms": 1495.4,
+   "avg_discord_to_server_ms": 316.2,
+   "avg_openrouter_calls_ms": 1665.8,
+   "avg_our_code_ms": 486.1,
+   "avg_reply_to_discord_ms": 343.3,
+   "avg_photo_upload_ms": 1380.5,
+   "avg_reply_back_to_mac_ms": 114.9
+  },
+  "fast": {
+   "cap_kbit": 50000,
+   "measured": {
+    "down_mbps": 44.23,
+    "up_mbps": 39.11,
+    "base_rtt_ms": 34.6,
+    "error": null
+   },
+   "runs": 3,
+   "avg_end_to_end_ms": 3872.3,
+   "min_end_to_end_ms": 3650.3,
+   "max_end_to_end_ms": 4085.5,
+   "avg_client_connection_ms": 937.9,
+   "avg_discord_to_server_ms": 566.9,
+   "avg_openrouter_calls_ms": 1642.0,
+   "avg_our_code_ms": 539.9,
+   "avg_reply_to_discord_ms": 382.6,
+   "avg_photo_upload_ms": 841.5,
+   "avg_reply_back_to_mac_ms": 96.4
+  },
+  "baseline": {
+   "cap_kbit": null,
+   "measured": {
+    "down_mbps": 107.6,
+    "up_mbps": 56.23,
+    "base_rtt_ms": 29.2,
+    "error": null
+   },
+   "runs": 3,
+   "avg_end_to_end_ms": 4050.9,
+   "min_end_to_end_ms": 3464.2,
+   "max_end_to_end_ms": 4976.7,
+   "avg_client_connection_ms": 1111.6,
+   "avg_discord_to_server_ms": 433.5,
+   "avg_openrouter_calls_ms": 1610.7,
+   "avg_our_code_ms": 678.7,
+   "avg_reply_to_discord_ms": 499.2,
+   "avg_photo_upload_ms": 967.3,
+   "avg_reply_back_to_mac_ms": 144.3
+  }
+ },
+ "runs": [
+  {
+   "gate": "really_slow",
+   "cap_kbit": 256,
+   "run": 1,
+   "message_id": 1565728837982224454,
+   "reply_id": 1565728853178187807,
+   "end_to_end_ms": 32690.3,
+   "client": {
+    "dns_ms": 3.5,
+    "tcp_connect_ms": 1587.2,
+    "tls_ms": 1029.9,
+    "upload_and_discord_accept_ms": 27395.5,
+    "post_total_ms": 30061.7,
+    "upload_bytes": 412576,
+    "upload_speed_kbps": 109.8,
+    "post_start_to_discord_created_ms": 28948.5,
+    "photo_echo_back_on_mac_ms": 29675.2,
+    "reply_created_to_seen_on_mac_ms": 118.8
+   },
+   "server": {
+    "discord_to_bot_event_ms": 698.3,
+    "photo_download_vm_ms": 321.5,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.8,
+    "imports_ms": 37.2,
+    "image_encode_ms": 99.7,
+    "agent1_openrouter_call_ms": 1953.8,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 268.0,
+    "exit_and_json_ms": 12.3,
+    "pipeline_total_ms": 2381.9,
+    "reply_post_ms": 414.2,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 3117.7
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 496,
+     "generation_time": 1017,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1953.8,
+     "network_and_queue_ms": 936.8
+    },
+    "jev": {
+     "round_trip_ms": 268.0,
+     "ids": [
+      {
+       "id": "gen-dec-1793369247-QSYBXFIlFF6tpXeGVu9J",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.9
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.1
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 29067.3,
+    "discord_to_server": 698.3,
+    "openrouter_calls": 2221.8,
+    "our_code": 481.9,
+    "reply_to_discord": 414.2
+   }
+  },
+  {
+   "gate": "really_slow",
+   "cap_kbit": 256,
+   "run": 2,
+   "message_id": 1565728970601795754,
+   "reply_id": 1565728981238685697,
+   "end_to_end_ms": 25671.9,
+   "client": {
+    "dns_ms": 2.2,
+    "tcp_connect_ms": 188.2,
+    "tls_ms": 311.5,
+    "upload_and_discord_accept_ms": 22834.0,
+    "post_total_ms": 23342.0,
+    "upload_bytes": 412576,
+    "upload_speed_kbps": 141.4,
+    "post_start_to_discord_created_ms": 22870.9,
+    "photo_echo_back_on_mac_ms": 23244.2,
+    "reply_created_to_seen_on_mac_ms": 265.0
+   },
+   "server": {
+    "discord_to_bot_event_ms": 361.7,
+    "photo_download_vm_ms": 314.8,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 11.1,
+    "imports_ms": 38.1,
+    "image_encode_ms": 101.7,
+    "agent1_openrouter_call_ms": 1253.7,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 237.4,
+    "exit_and_json_ms": 12.7,
+    "pipeline_total_ms": 1654.9,
+    "reply_post_ms": 327.9,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2297.7
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 542,
+     "generation_time": 1051,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1253.7,
+     "network_and_queue_ms": 202.7
+    },
+    "jev": {
+     "round_trip_ms": 237.4,
+     "ids": [
+      {
+       "id": "gen-dec-1793369278-JimlhA5DXBisx3EcvDKU",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.88
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.12
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 23135.9,
+    "discord_to_server": 361.7,
+    "openrouter_calls": 1491.1,
+    "our_code": 478.8,
+    "reply_to_discord": 327.9
+   }
+  },
+  {
+   "gate": "really_slow",
+   "cap_kbit": 256,
+   "run": 3,
+   "message_id": 1565729164848533550,
+   "reply_id": 1565729174478397602,
+   "end_to_end_ms": 40875.1,
+   "client": {
+    "dns_ms": 19.2,
+    "tcp_connect_ms": 10303.2,
+    "tls_ms": 1822.7,
+    "upload_and_discord_accept_ms": 26681.1,
+    "post_total_ms": 38845.1,
+    "upload_bytes": 412576,
+    "upload_speed_kbps": 85.0,
+    "post_start_to_discord_created_ms": 38503.4,
+    "photo_echo_back_on_mac_ms": 38688.6,
+    "reply_created_to_seen_on_mac_ms": 75.8
+   },
+   "server": {
+    "discord_to_bot_event_ms": 174.6,
+    "photo_download_vm_ms": 301.9,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.6,
+    "imports_ms": 37.2,
+    "image_encode_ms": 100.2,
+    "agent1_openrouter_call_ms": 1265.2,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 230.5,
+    "exit_and_json_ms": 12.4,
+    "pipeline_total_ms": 1656.3,
+    "reply_post_ms": 277.2,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2235.5
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 554,
+     "generation_time": 1062,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1265.2,
+     "network_and_queue_ms": 203.2
+    },
+    "jev": {
+     "round_trip_ms": 230.5,
+     "ids": [
+      {
+       "id": "gen-dec-1793369324-Hte9D4LsL2TUuHfX9NlR",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 38579.2,
+    "discord_to_server": 174.6,
+    "openrouter_calls": 1495.7,
+    "our_code": 462.7,
+    "reply_to_discord": 277.2
+   }
+  },
+  {
+   "gate": "slow",
+   "cap_kbit": 1000,
+   "run": 1,
+   "message_id": 1565729330703769701,
+   "reply_id": 1565729340971548714,
+   "end_to_end_ms": 11323.1,
+   "client": {
+    "dns_ms": 3.5,
+    "tcp_connect_ms": 1093.4,
+    "tls_ms": 399.2,
+    "upload_and_discord_accept_ms": 7571.2,
+    "post_total_ms": 9068.6,
+    "upload_bytes": 412569,
+    "upload_speed_kbps": 364.0,
+    "post_start_to_discord_created_ms": 8760.9,
+    "photo_echo_back_on_mac_ms": 9013.4,
+    "reply_created_to_seen_on_mac_ms": 114.2
+   },
+   "server": {
+    "discord_to_bot_event_ms": 250.4,
+    "photo_download_vm_ms": 323.0,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.8,
+    "imports_ms": 37.8,
+    "image_encode_ms": 100.2,
+    "agent1_openrouter_call_ms": 1249.4,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 262.1,
+    "exit_and_json_ms": 12.5,
+    "pipeline_total_ms": 1673.0,
+    "reply_post_ms": 399.3,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2395.4
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 527,
+     "generation_time": 1027,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1249.4,
+     "network_and_queue_ms": 222.4
+    },
+    "jev": {
+     "round_trip_ms": 262.1,
+     "ids": [
+      {
+       "id": "gen-dec-1793369364-VBDdvAG4kHU53T1YXXBe",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.87
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.13
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 8875.1,
+    "discord_to_server": 250.4,
+    "openrouter_calls": 1511.5,
+    "our_code": 484.7,
+    "reply_to_discord": 399.3
+   }
+  },
+  {
+   "gate": "slow",
+   "cap_kbit": 1000,
+   "run": 2,
+   "message_id": 1565729378258784316,
+   "reply_id": 1565729388702474293,
+   "end_to_end_ms": 6449.8,
+   "client": {
+    "dns_ms": 18.4,
+    "tcp_connect_ms": 26.4,
+    "tls_ms": 55.6,
+    "upload_and_discord_accept_ms": 3922.4,
+    "post_total_ms": 4024.1,
+    "upload_bytes": 412569,
+    "upload_speed_kbps": 820.2,
+    "post_start_to_discord_created_ms": 3770.8,
+    "photo_echo_back_on_mac_ms": 3943.2,
+    "reply_created_to_seen_on_mac_ms": 189.0
+   },
+   "server": {
+    "discord_to_bot_event_ms": 173.6,
+    "photo_download_vm_ms": 224.7,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 11.1,
+    "imports_ms": 39.0,
+    "image_encode_ms": 99.9,
+    "agent1_openrouter_call_ms": 1392.9,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 343.4,
+    "exit_and_json_ms": 12.4,
+    "pipeline_total_ms": 1898.9,
+    "reply_post_ms": 505.1,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2628.8
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 637,
+     "generation_time": 1138,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1392.9,
+     "network_and_queue_ms": 254.9
+    },
+    "jev": {
+     "round_trip_ms": 343.4,
+     "ids": [
+      {
+       "id": "gen-dec-1793369375-3ObJQbbtZYD45PFVe8yg",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 3959.8,
+    "discord_to_server": 173.6,
+    "openrouter_calls": 1736.3,
+    "our_code": 387.5,
+    "reply_to_discord": 505.1
+   }
+  },
+  {
+   "gate": "slow",
+   "cap_kbit": 1000,
+   "run": 3,
+   "message_id": 1565729427378274497,
+   "reply_id": 1565729437649997865,
+   "end_to_end_ms": 6577.2,
+   "client": {
+    "dns_ms": 4.1,
+    "tcp_connect_ms": 58.1,
+    "tls_ms": 58.4,
+    "upload_and_discord_accept_ms": 4117.6,
+    "post_total_ms": 4239.4,
+    "upload_bytes": 412569,
+    "upload_speed_kbps": 778.5,
+    "post_start_to_discord_created_ms": 4029.8,
+    "photo_echo_back_on_mac_ms": 4202.6,
+    "reply_created_to_seen_on_mac_ms": 98.3
+   },
+   "server": {
+    "discord_to_bot_event_ms": 184.5,
+    "photo_download_vm_ms": 287.7,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.9,
+    "imports_ms": 37.8,
+    "image_encode_ms": 101.8,
+    "agent1_openrouter_call_ms": 1415.6,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 227.1,
+    "exit_and_json_ms": 12.3,
+    "pipeline_total_ms": 1805.7,
+    "reply_post_ms": 341.9,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2435.4
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 632,
+     "generation_time": 1142,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1415.6,
+     "network_and_queue_ms": 273.6
+    },
+    "jev": {
+     "round_trip_ms": 227.1,
+     "ids": [
+      {
+       "id": "gen-dec-1793369387-14h7zMDEKewtdbkNtVvs",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 4128.1,
+    "discord_to_server": 184.5,
+    "openrouter_calls": 1642.7,
+    "our_code": 450.9,
+    "reply_to_discord": 341.9
+   }
+  },
+  {
+   "gate": "medium",
+   "cap_kbit": 10000,
+   "run": 1,
+   "message_id": 1565729566863925319,
+   "reply_id": 1565729578347921429,
+   "end_to_end_ms": 5281.7,
+   "client": {
+    "dns_ms": 3.4,
+    "tcp_connect_ms": 83.8,
+    "tls_ms": 343.0,
+    "upload_and_discord_accept_ms": 2367.2,
+    "post_total_ms": 2798.4,
+    "upload_bytes": 412571,
+    "upload_speed_kbps": 1179.5,
+    "post_start_to_discord_created_ms": 2466.9,
+    "photo_echo_back_on_mac_ms": 2774.6,
+    "reply_created_to_seen_on_mac_ms": 76.9
+   },
+   "server": {
+    "discord_to_bot_event_ms": 303.4,
+    "photo_download_vm_ms": 363.3,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.9,
+    "imports_ms": 37.7,
+    "image_encode_ms": 100.4,
+    "agent1_openrouter_call_ms": 1369.4,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 268.8,
+    "exit_and_json_ms": 12.8,
+    "pipeline_total_ms": 1800.2,
+    "reply_post_ms": 398.1,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2561.8
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 608,
+     "generation_time": 1099,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1369.4,
+     "network_and_queue_ms": 270.4
+    },
+    "jev": {
+     "round_trip_ms": 268.8,
+     "ids": [
+      {
+       "id": "gen-dec-1793369420-XJcbQTXrK1q9eGeGb7J0",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 2543.8,
+    "discord_to_server": 303.4,
+    "openrouter_calls": 1638.2,
+    "our_code": 525.5,
+    "reply_to_discord": 398.1
+   }
+  },
+  {
+   "gate": "medium",
+   "cap_kbit": 10000,
+   "run": 2,
+   "message_id": 1565729603304030388,
+   "reply_id": 1565729613605503058,
+   "end_to_end_ms": 3504.2,
+   "client": {
+    "dns_ms": 2.5,
+    "tcp_connect_ms": 31.7,
+    "tls_ms": 49.5,
+    "upload_and_discord_accept_ms": 1280.6,
+    "post_total_ms": 1365.5,
+    "upload_bytes": 412571,
+    "upload_speed_kbps": 2417.1,
+    "post_start_to_discord_created_ms": 868.8,
+    "photo_echo_back_on_mac_ms": 1304.7,
+    "reply_created_to_seen_on_mac_ms": 179.4
+   },
+   "server": {
+    "discord_to_bot_event_ms": 435.0,
+    "photo_download_vm_ms": 277.4,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.9,
+    "imports_ms": 38.4,
+    "image_encode_ms": 102.3,
+    "agent1_openrouter_call_ms": 1245.0,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 284.5,
+    "exit_and_json_ms": 12.2,
+    "pipeline_total_ms": 1693.6,
+    "reply_post_ms": 265.7,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2236.8
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 520,
+     "generation_time": 1018,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1245.0,
+     "network_and_queue_ms": 227.0
+    },
+    "jev": {
+     "round_trip_ms": 284.5,
+     "ids": [
+      {
+       "id": "gen-dec-1793369429-aMjT1caz6z6mhiU9KP81",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 1048.2,
+    "discord_to_server": 435.0,
+    "openrouter_calls": 1529.5,
+    "our_code": 441.6,
+    "reply_to_discord": 265.7
+   }
+  },
+  {
+   "gate": "medium",
+   "cap_kbit": 10000,
+   "run": 3,
+   "message_id": 1565729638725193809,
+   "reply_id": 1565729650095693948,
+   "end_to_end_ms": 3605.1,
+   "client": {
+    "dns_ms": 3.0,
+    "tcp_connect_ms": 36.3,
+    "tls_ms": 32.1,
+    "upload_and_discord_accept_ms": 1023.8,
+    "post_total_ms": 1097.7,
+    "upload_bytes": 412571,
+    "upload_speed_kbps": 3006.8,
+    "post_start_to_discord_created_ms": 805.9,
+    "photo_echo_back_on_mac_ms": 1027.6,
+    "reply_created_to_seen_on_mac_ms": 88.3
+   },
+   "server": {
+    "discord_to_bot_event_ms": 210.1,
+    "photo_download_vm_ms": 330.3,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.6,
+    "imports_ms": 37.2,
+    "image_encode_ms": 100.5,
+    "agent1_openrouter_call_ms": 1572.7,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 257.0,
+    "exit_and_json_ms": 12.1,
+    "pipeline_total_ms": 1990.2,
+    "reply_post_ms": 366.1,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2686.8
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 780,
+     "generation_time": 1308,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1572.7,
+     "network_and_queue_ms": 264.7
+    },
+    "jev": {
+     "round_trip_ms": 257.0,
+     "ids": [
+      {
+       "id": "gen-dec-1793369438-4akpIFd2BLKZGw35OR55",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.9
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.1
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 894.2,
+    "discord_to_server": 210.1,
+    "openrouter_calls": 1829.7,
+    "our_code": 491.1,
+    "reply_to_discord": 366.1
+   }
+  },
+  {
+   "gate": "fast",
+   "cap_kbit": 50000,
+   "run": 1,
+   "message_id": 1565729760250822799,
+   "reply_id": 1565729773244776520,
+   "end_to_end_ms": 3881.0,
+   "client": {
+    "dns_ms": 42.2,
+    "tcp_connect_ms": 32.7,
+    "tls_ms": 39.3,
+    "upload_and_discord_accept_ms": 1205.5,
+    "post_total_ms": 1320.9,
+    "upload_bytes": 412569,
+    "upload_speed_kbps": 2498.7,
+    "post_start_to_discord_created_ms": 667.1,
+    "photo_echo_back_on_mac_ms": 1268.3,
+    "reply_created_to_seen_on_mac_ms": 115.9
+   },
+   "server": {
+    "discord_to_bot_event_ms": 605.3,
+    "photo_download_vm_ms": 398.8,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.6,
+    "imports_ms": 37.0,
+    "image_encode_ms": 99.9,
+    "agent1_openrouter_call_ms": 1460.6,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 260.6,
+    "exit_and_json_ms": 12.1,
+    "pipeline_total_ms": 1881.0,
+    "reply_post_ms": 489.0,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2769.0
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 672,
+     "generation_time": 1208,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1460.6,
+     "network_and_queue_ms": 252.6
+    },
+    "jev": {
+     "round_trip_ms": 260.6,
+     "ids": [
+      {
+       "id": "gen-dec-1793369467-5QdpFrRA0GG6JYyt9rOk",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.86
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.14
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 783.0,
+    "discord_to_server": 605.3,
+    "openrouter_calls": 1721.2,
+    "our_code": 558.8,
+    "reply_to_discord": 489.0
+   }
+  },
+  {
+   "gate": "fast",
+   "cap_kbit": 50000,
+   "run": 2,
+   "message_id": 1565729798351888534,
+   "reply_id": 1565729809655664692,
+   "end_to_end_ms": 3650.3,
+   "client": {
+    "dns_ms": 2.8,
+    "tcp_connect_ms": 41.9,
+    "tls_ms": 55.9,
+    "upload_and_discord_accept_ms": 1163.1,
+    "post_total_ms": 1272.3,
+    "upload_bytes": 412569,
+    "upload_speed_kbps": 2594.1,
+    "post_start_to_discord_created_ms": 868.3,
+    "photo_echo_back_on_mac_ms": 1214.0,
+    "reply_created_to_seen_on_mac_ms": 87.0
+   },
+   "server": {
+    "discord_to_bot_event_ms": 335.2,
+    "photo_download_vm_ms": 484.9,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.8,
+    "imports_ms": 37.5,
+    "image_encode_ms": 101.3,
+    "agent1_openrouter_call_ms": 1305.1,
+    "agent1_parse_ms": 0.2,
+    "jev_openrouter_call_ms": 240.2,
+    "exit_and_json_ms": 12.4,
+    "pipeline_total_ms": 1707.5,
+    "reply_post_ms": 326.0,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2518.5
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 560,
+     "generation_time": 1073,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1305.1,
+     "network_and_queue_ms": 232.1
+    },
+    "jev": {
+     "round_trip_ms": 240.2,
+     "ids": [
+      {
+       "id": "gen-dec-1793369476-EGDnKPsDcxKFEDv3ETRh",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 955.3,
+    "discord_to_server": 335.2,
+    "openrouter_calls": 1545.3,
+    "our_code": 647.4,
+    "reply_to_discord": 326.0
+   }
+  },
+  {
+   "gate": "fast",
+   "cap_kbit": 50000,
+   "run": 3,
+   "message_id": 1565729835165159484,
+   "reply_id": 1565729847790010410,
+   "end_to_end_ms": 4085.5,
+   "client": {
+    "dns_ms": 2.7,
+    "tcp_connect_ms": 53.8,
+    "tls_ms": 56.3,
+    "upload_and_discord_accept_ms": 1683.5,
+    "post_total_ms": 1805.1,
+    "upload_bytes": 412569,
+    "upload_speed_kbps": 1828.4,
+    "post_start_to_discord_created_ms": 989.1,
+    "photo_echo_back_on_mac_ms": 1767.1,
+    "reply_created_to_seen_on_mac_ms": 86.4
+   },
+   "server": {
+    "discord_to_bot_event_ms": 760.2,
+    "photo_download_vm_ms": 249.9,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.7,
+    "imports_ms": 37.5,
+    "image_encode_ms": 102.7,
+    "agent1_openrouter_call_ms": 1360.3,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 299.2,
+    "exit_and_json_ms": 12.3,
+    "pipeline_total_ms": 1822.8,
+    "reply_post_ms": 332.9,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2405.7
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 604,
+     "generation_time": 1095,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1360.3,
+     "network_and_queue_ms": 265.3
+    },
+    "jev": {
+     "round_trip_ms": 299.2,
+     "ids": [
+      {
+       "id": "gen-dec-1793369485-QvLyFcPDX1gxGcMHfUmE",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.89
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.11
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 1075.5,
+    "discord_to_server": 760.2,
+    "openrouter_calls": 1659.5,
+    "our_code": 413.5,
+    "reply_to_discord": 332.9
+   }
+  },
+  {
+   "gate": "baseline",
+   "cap_kbit": null,
+   "run": 1,
+   "message_id": 1565729969047347421,
+   "reply_id": 1565729982230167673,
+   "end_to_end_ms": 4976.7,
+   "client": {
+    "dns_ms": 2.9,
+    "tcp_connect_ms": 1411.7,
+    "tls_ms": 23.4,
+    "upload_and_discord_accept_ms": 911.1,
+    "post_total_ms": 2352.7,
+    "upload_bytes": 412573,
+    "upload_speed_kbps": 1402.9,
+    "post_start_to_discord_created_ms": 1712.2,
+    "photo_echo_back_on_mac_ms": 2328.4,
+    "reply_created_to_seen_on_mac_ms": 121.5
+   },
+   "server": {
+    "discord_to_bot_event_ms": 631.9,
+    "photo_download_vm_ms": 483.6,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.7,
+    "imports_ms": 38.9,
+    "image_encode_ms": 100.7,
+    "agent1_openrouter_call_ms": 1306.9,
+    "agent1_parse_ms": 0.2,
+    "jev_openrouter_call_ms": 250.6,
+    "exit_and_json_ms": 12.2,
+    "pipeline_total_ms": 1720.2,
+    "reply_post_ms": 632.3,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2836.1
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 546,
+     "generation_time": 1089,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1306.9,
+     "network_and_queue_ms": 217.9
+    },
+    "jev": {
+     "round_trip_ms": 250.6,
+     "ids": [
+      {
+       "id": "gen-dec-1793369517-Snsr1YDGGiAOgYcWwx4B",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.9
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.1
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 1833.7,
+    "discord_to_server": 631.9,
+    "openrouter_calls": 1557.5,
+    "our_code": 646.6,
+    "reply_to_discord": 632.3
+   }
+  },
+  {
+   "gate": "baseline",
+   "cap_kbit": null,
+   "run": 2,
+   "message_id": 1565730006292897854,
+   "reply_id": 1565730017629970516,
+   "end_to_end_ms": 3464.2,
+   "client": {
+    "dns_ms": 3.4,
+    "tcp_connect_ms": 18.0,
+    "tls_ms": 18.2,
+    "upload_and_discord_accept_ms": 822.3,
+    "post_total_ms": 862.9,
+    "upload_bytes": 412573,
+    "upload_speed_kbps": 3825.2,
+    "post_start_to_discord_created_ms": 608.0,
+    "photo_echo_back_on_mac_ms": 842.1,
+    "reply_created_to_seen_on_mac_ms": 153.2
+   },
+   "server": {
+    "discord_to_bot_event_ms": 232.2,
+    "photo_download_vm_ms": 560.8,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.9,
+    "imports_ms": 37.6,
+    "image_encode_ms": 100.5,
+    "agent1_openrouter_call_ms": 1396.4,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 279.0,
+    "exit_and_json_ms": 12.4,
+    "pipeline_total_ms": 1837.1,
+    "reply_post_ms": 288.2,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2686.2
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 563,
+     "generation_time": 1097,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1396.4,
+     "network_and_queue_ms": 299.4
+    },
+    "jev": {
+     "round_trip_ms": 279.0,
+     "ids": [
+      {
+       "id": "gen-dec-1793369525-IKN5Fg2HMuiySofuwXg2",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.9
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.1
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 761.2,
+    "discord_to_server": 232.2,
+    "openrouter_calls": 1675.4,
+    "our_code": 722.6,
+    "reply_to_discord": 288.2
+   }
+  },
+  {
+   "gate": "baseline",
+   "cap_kbit": null,
+   "run": 3,
+   "message_id": 1565730041692950600,
+   "reply_id": 1565730054158164129,
+   "end_to_end_ms": 3711.8,
+   "client": {
+    "dns_ms": 2.6,
+    "tcp_connect_ms": 31.3,
+    "tls_ms": 25.4,
+    "upload_and_discord_accept_ms": 988.3,
+    "post_total_ms": 1064.0,
+    "upload_bytes": 412573,
+    "upload_speed_kbps": 3102.2,
+    "post_start_to_discord_created_ms": 581.7,
+    "photo_echo_back_on_mac_ms": 997.3,
+    "reply_created_to_seen_on_mac_ms": 158.1
+   },
+   "server": {
+    "discord_to_bot_event_ms": 436.3,
+    "photo_download_vm_ms": 505.7,
+    "queue_wait_ms": 0.0,
+    "python_start_ms": 10.7,
+    "imports_ms": 37.5,
+    "image_encode_ms": 100.8,
+    "agent1_openrouter_call_ms": 1335.9,
+    "agent1_parse_ms": 0.1,
+    "jev_openrouter_call_ms": 263.4,
+    "exit_and_json_ms": 11.9,
+    "pipeline_total_ms": 1760.4,
+    "reply_post_ms": 577.1,
+    "card_save_ms": 0.3,
+    "bot_event_to_reply_sent_ms": 2843.2
+   },
+   "openrouter": {
+    "agent1": {
+     "provider_name": "Google",
+     "model": "google/gemini-3.1-flash-lite-20260507",
+     "latency": 485,
+     "generation_time": 1000,
+     "moderation_latency": null,
+     "native_tokens_prompt": 1808,
+     "native_tokens_completion": 166,
+     "total_cost": 0.000701,
+     "streamed": true,
+     "round_trip_ms": 1335.9,
+     "network_and_queue_ms": 335.9
+    },
+    "jev": {
+     "round_trip_ms": 263.4,
+     "ids": [
+      {
+       "id": "gen-dec-1793369534-cE6Ep28ndJ21bGNOMAre",
+       "provider": "TypeSafe",
+       "model": "typesafe/jev-1.13-20260917"
+      }
+     ]
+    }
+   },
+   "options": [
+    {
+     "text": "BA6T-14A005-KMC",
+     "score": 0.88
+    },
+    {
+     "text": "EET1-E-12443582-000",
+     "score": 0.12
+    }
+   ],
+   "cost_usd": 0.000733844,
+   "split_ms": {
+    "client_connection": 739.8,
+    "discord_to_server": 436.3,
+    "openrouter_calls": 1599.3,
+    "our_code": 667.0,
+    "reply_to_discord": 577.1
+   }
+  }
+ ]
+}

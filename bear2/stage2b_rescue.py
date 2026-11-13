@@ -61,10 +61,14 @@ def rescue_candidates(s1):
     return res[:120]   # hard cap on eBay calls per photo (free tier 5,000/day)
 
 
-def rescue(s1, make):
+def rescue(s1, make, errors=None):
+    """Rescued readings that eBay lists. An eBay search that failed (after its retries) is added
+    to `errors` instead of being taken as "no listing", so the row can say eBay was unavailable."""
     found = []
     for t, cand in rescue_candidates(s1):
         items, err = s2.ebay_for(t, quick=True)
+        if err and errors is not None:
+            errors.append(f"{t}: {err}")
         if items:
             found.append({"text": t, "cand": cand, "listings": items,
                           "make_hits": sum(1 for it in items if make.upper() in (it.get("title") or "").upper())})

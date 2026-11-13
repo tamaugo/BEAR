@@ -28,11 +28,11 @@ ERRORS = {
                  "/run again. If it keeps failing, re-upload that photo."),
     "BEAR-D07": ("The photos couldn't be renamed: one didn't download, or a zip couldn't be posted.",
                  "/rename again with the same SKU. If it keeps failing, re-upload that photo or look at the bot's log."),
-    "BEAR-N01": ("The name model is rate limited.",
+    "BEAR-N01": ("The name model is rate limited (BEAR already retried only the names, twice).",
                  "Wait a few minutes and /run again, or set BEAR_NAME_MODEL in the server's .env to another name model."),
-    "BEAR-N02": ("The name model is not responding.",
+    "BEAR-N02": ("The name model is not responding (BEAR already retried only the names, twice).",
                  "/run again later, or set BEAR_NAME_MODEL in the server's .env to another name model."),
-    "BEAR-N03": ("The name model gave part names BEAR can't use.",
+    "BEAR-N03": ("The name model gave part names BEAR can't use (BEAR already retried only the names, twice).",
                  "Set BEAR_NAME_MODEL in the server's .env to another name model, then /run again."),
     "BEAR-K01": ("OpenRouter refused: out of credit or the key's spend cap was reached (HTTP 402).",
                  "Top up OpenRouter or raise the key's cap, then /run again."),
@@ -41,6 +41,8 @@ ERRORS = {
     "BEAR-V01": ("BEAR's final check flagged rows in the spreadsheet it couldn't confirm (e.g. a part number that doesn't "
                  "match what was read off the photo, or a price it couldn't read). The spreadsheet was posted.",
                  "Check the flagged rows below in the spreadsheet before listing them; the attached log has the full report."),
+    "BEAR-E01": ("Most parts weren't priced because eBay, Jev or a model was down or failing during the run.",
+                 "/run again later (the photos are saved). If it keeps happening, the log and trace.json say which service failed."),
     "BEAR-T01": ("The BEAR run took too long and was stopped.",
                  "/run again. If it happens again, the owner looks at the log."),
     "BEAR-R01": ("The BEAR run failed.",
@@ -138,6 +140,9 @@ def count_results(agent2_text):
 NAME_FAIL = re.compile(r"^(.+?) (is unavailable|gave an unusable answer|gave a name BEAR can't use)", re.M)
 
 
+NAME_CODES = ("BEAR-N01", "BEAR-N02", "BEAR-N03")
+
+
 def classify(log):
     """The error code for a failed run, from its log (the same codes as the old web page)."""
     if "OpenRouter HTTP 402" in log:
@@ -184,10 +189,13 @@ def validator_problem(log):
     return "BEAR-V01", "\n".join(flagged) or log[m.start():][:1200]
 
 
-def error_report(folder, code, where, detail=""):
-    """The error channel message: **Q184** encountered an issue — `BEAR-D05` — fix: ..."""
-    meaning, fix = ERRORS[code]
-    text = f"**{folder}** encountered an issue — `{code}` — fix: {fix}\n{meaning} Channel: {where}"
-    if detail:
-        text += "\n```\n" + detail.replace("```", "'''")[:1400] + "\n```"
-    return text[:2000]
+OUTAGE = re.compile(r" \| FAILED \| [^|]*\| [^|]*Unavailable\s*$")   # eBay Lookup / Jev / Model ... Unavailable
+
+
+def outage_problem(agent2_text):
+    """BEAR-E01 when most rows (more than half) failed because a service was down, not because of
+    the photos: the run still ends green with its spreadsheet, so this says why so little was priced."""
+    rows = [l for l in agent2_text.splitlines() if l.strip()]
+    down = sum(1 for l in rows if OUTAGE.search(l))
+    return "BEAR-E01" if rows and down * 2 > len(rows) else None
+

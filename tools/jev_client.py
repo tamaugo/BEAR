@@ -96,12 +96,17 @@ def _error_message(body: bytes, code: int) -> str:
 
 
 def call_decisions(model: str, state, questions: dict, *, api_key: str = None,
-                    timeout: float = 60.0, max_attempts: int = MAX_ATTEMPTS) -> dict:
+                    timeout: float = 60.0, max_attempts: int = MAX_ATTEMPTS, wait=None) -> dict:
     """POST one Decisions request and return the parsed JSON response.
 
     `state` is the content being evaluated (string, dict, or list); `questions` is
-    a dict of question-key -> question spec.
+    a dict of question-key -> question spec. `wait(error, attempt)` gives the seconds
+    before retry `attempt` (0 = the first retry); default 1s, 2s, 4s ... BEAR's /run
+    passes its chat backoff (bear2/common.py) so Jev gets as long as the chat calls.
     """
+    def pause(err, attempt):
+        time.sleep(wait(err, attempt - 1) if wait else BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
+
     api_key = api_key or resolve_api_key()
     body = json.dumps({"model": model, "state": state, "questions": questions}).encode("utf-8")
     headers = {
@@ -125,16 +130,16 @@ def call_decisions(model: str, state, questions: dict, *, api_key: str = None,
             if e.code == 429 or e.code >= 500:
                 last_error = JevAPIError(f"Decisions API returned {e.code}: {message}")
                 if attempt < max_attempts:
-                    time.sleep(BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
+                    pause(e, attempt)
                     continue
                 raise last_error
             # Other 4xx codes (400/403/404/413) mean the request itself is wrong --
             # retrying an unchanged request would just fail the same way again.
             raise JevAPIError(f"Decisions API returned {e.code}: {message}") from None
-        except urllib.error.URLError as e:
-            last_error = JevAPIError(f"Network error contacting Decisions API: {e.reason}")
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:   # a read timeout is not a URLError
+            last_error = JevAPIError(f"Network error contacting Decisions API: {getattr(e, 'reason', e)}")
             if attempt < max_attempts:
-                time.sleep(BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
+                pause(e, attempt)
                 continue
             raise last_error
 

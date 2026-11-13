@@ -9,8 +9,9 @@ an update it lists what changed in #update-log (heartbeat.py).
 Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
 SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
 /quit stops everything /run or /rename is doing in the channel.
-After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
-every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
+The shadow test (shadow.py) is switched off since 2026-11-13; its code and data are kept. With
+BEAR_SHADOW=1, after each /run it quietly asks Decisions models to read the location on every photo
+in the folder and logs the answers; nothing is posted until there is enough data to look at.
 #part-id (partid_bot.py) is apart from all of this: a photo posted there is read by Agent 1, Jev scores
 the readings, and the top 3 come back to pick from, or type your own, plus the location. /sheet there
 posts every part number since the last /sheet as a spreadsheet.
@@ -29,7 +30,7 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_RENAME_DOWNLOADS  photos downloaded at once by /run and /rename, across all channels (6)
   BEAR_ZIP_MB          biggest zip posted, in MiB (10: Discord's limit without server boosts)
   BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent
-  BEAR_SHADOW          0 turns the shadow test off (on by default, never in dev mode); read at each /run
+  BEAR_SHADOW          1 turns the shadow test back on (off since 2026-11-13, never in dev mode); read at each /run
   BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many part photos (300)
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
   BEAR_HEARTBEAT_URL   the healthchecks.io ping URL checked in with every 10 minutes (blank: off)
@@ -61,6 +62,7 @@ log = logging.getLogger("bear-bot")
 RUN_PY = REPO / "bear2" / "run.py"
 SIM_PY = REPO / "bear2" / "simulate.py"
 HISTORY_LIMIT = 5000      # messages read back looking for the folder marker
+NAME_RETRY_WAITS = (60, 180)   # a name-model failure: retry only the names after these many seconds
 MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this many seconds
 NOTICE_GAP = 60           # seconds between "text was removed" notices in one channel
 LINK = __import__("re").compile(r"https://discord\.com/channels/\S+")
@@ -172,10 +174,9 @@ class Card:
 
 def run_env():
     """Environment for one BEAR run: this process's, plus every BEAR_* line in .env (read now),
-    minus the Discord token and the web page's ask switch (no one answers questions here)."""
+    minus the Discord token."""
     env = {**{k: v for k, v in dotenv().items() if k.startswith("BEAR_")}, **os.environ}
-    for k in ("DISCORD_TOKEN", "BEAR_WEB_ASK"):
-        env.pop(k, None)
+    env.pop("DISCORD_TOKEN", None)
     env["PYTHONUNBUFFERED"] = "1"
     return env
 
@@ -544,7 +545,8 @@ async def run_folder(ch, card, a, ready):
         a.update(state="running", since=time.time())
         await card.show(look.run_card("running", folder, car, parts=len(picks), since=a["since"], dev=dev()))
         rc = await run_bear(photos, car, results, run_dir / "bear.log")
-    await report(ch, card, folder, car, rc, run_dir, results, started, a.get("marker_url"))
+    rc, log_from = await retry_names(a, photos, car, results, run_dir / "bear.log", rc)
+    await report(ch, card, folder, car, rc, run_dir, results, started, a.get("marker_url"), log_from)
     return folder
 
 
@@ -594,6 +596,25 @@ async def stopped_by_restart():
             pass
 
 
+async def retry_names(a, photos, car, results, logfile, rc):
+    """A run that read and priced every photo but stopped at the names (BEAR-N01 to N03): run only
+    the names again (run.py --names-only, nothing re-read or re-priced), after NAME_RETRY_WAITS.
+    Returns the last exit code and where in the log the last attempt starts (for report)."""
+    log_from = 0
+    for wait in NAME_RETRY_WAITS:
+        text = logfile.read_text(errors="replace")[log_from:] if logfile.exists() else ""
+        if rc in (0, None) or fo.classify(text) not in fo.NAME_CODES \
+                or not (results / "agent2_results.md").exists():
+            break
+        a.update(state="retrying the part names")
+        log.info("names failed (%s), retrying only the names in %ss", fo.classify(text), wait)
+        await asyncio.sleep(wait)
+        async with SLOTS:
+            log_from = len(logfile.read_text(errors="replace")) if logfile.exists() else 0
+            rc = await run_bear(photos, car, results, logfile, names_only=True)
+    return rc, log_from
+
+
 def new_dir(parent, name):
     """parent/<name>-<date-time>, with -2, -3 ... if the same name was started within a second."""
     base = parent / f"{name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -634,17 +655,21 @@ async def download_all(files, code, progress=None, every=10):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def run_bear(photos, car, results, logfile):
+async def run_bear(photos, car, results, logfile, names_only=False):
     """Run BEAR as its own process; returns its exit code, or None if it ran out of time.
-    No stdin and no terminal, so BEAR skips the first-line check and stops if the name model fails.
+    No stdin: BEAR asks no questions, and stops with no names written if the name model fails.
+    names_only: finish only the names of the saved run in results, added to the same log.
     If this is cancelled (/quit), BEAR is stopped too."""
     env = run_env()
     sim = env.get("BEAR_SIM")
     script = SIM_PY if sim else RUN_PY
     env["BEAR_SPEND_LEDGER"] = str(logfile.parent / "spend.jsonl")   # this folder's spend only
-    with open(logfile, "wb") as out:
+    with open(logfile, "ab" if names_only else "wb") as out:
+        if names_only:
+            out.write(b"\n--- retrying only the part names ---\n")
+            out.flush()
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, str(script), str(photos), car, str(results),
+            sys.executable, str(script), str(photos), car, str(results), *(["--names-only"] if names_only else []),
             stdin=asyncio.subprocess.DEVNULL, stdout=out, stderr=asyncio.subprocess.STDOUT,
             cwd=str(REPO), env=env, start_new_session=True)
         try:
@@ -838,9 +863,10 @@ def rename_log(ch, folder, sku, outcome, photos=0, zips=0, where=""):
         log.exception("can't write the rename log")
 
 
-async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=None):
+async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=None, log_from=0):
+    """log_from: where the last attempt starts in bear.log (after names-only retries)."""
     logfile = run_dir / "bear.log"
-    text = logfile.read_text(errors="replace") if logfile.exists() else ""
+    text = logfile.read_text(errors="replace")[log_from:] if logfile.exists() else ""
     xlsx = results / "results.xlsx"
     if rc is None:
         return await bot.fail(ch, folder, "BEAR-T01", text[-1200:], logfile, card, jump_url=jump_url)
@@ -853,6 +879,7 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
                     file=discord.File(xlsx, filename=name))
     trace = results / "trace.json"
     code = fo.partial_problem(trace.read_text(errors="replace")) if trace.exists() else None
+    code = code or fo.outage_problem(a2.read_text() if a2.exists() else "")
     if code:   # a new message under the green card, which keeps its spreadsheet
         await bot.fail(ch, folder, code, "The spreadsheet was posted, but some parts failed because of this.",
                        logfile, partial=True, jump_url=jump_url)
@@ -867,8 +894,9 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
 # --- Shadow test (shadow.py) ------------------------------------------------------------------
 
 def shadow_on():
-    """Read at each /run. Off in dev mode: it would spend credit."""
-    return not dev() and setting("BEAR_SHADOW", "1").lower() not in ("0", "off", "no", "false")
+    """Read at each /run. Off unless BEAR_SHADOW=1 (switched off 2026-11-13, data kept), and never
+    in dev mode: it would spend credit."""
+    return not dev() and setting("BEAR_SHADOW", "0").lower() in ("1", "on", "yes", "true")
 
 
 def start_shadow(ch, folder, marker_id, msgs):

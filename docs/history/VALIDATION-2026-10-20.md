@@ -1,3 +1,5 @@
+> **History** (moved here 2026-11-13). Kept for the reasons behind decisions; it may be out of date. What BEAR does now is in [`docs/CURRENT.md`](../CURRENT.md).
+
 # Discord handoff validation — 20 October 2026
 
 The owner will merge the open PRs after the work is finished. Discord changes target

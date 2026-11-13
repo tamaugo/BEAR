@@ -38,6 +38,7 @@ CAR = "MITSUBISHI SHOGUN 2007 3.2 DI-D"
 B.bot._connection.user = ME
 logging.disable(logging.CRITICAL)   # the bot logs every error it posts; the checks below cover them
 B.car_channel_problem = lambda ch: None
+B.NAME_RETRY_WAITS = (0, 0)   # retry the names at once in the test
 B.rename_wait = lambda: WAIT[0]   # the rename offer's minute, shortened for the test
 WAIT = [0.05]
 
@@ -283,6 +284,16 @@ async def main():
         ch = await run(folder(20 + i))
         await run(ch, sim)
         check(f"sim {sim}", f"`{code}`" in last_error(), True)
+        if code != "BEAR-R01":   # names failed: only the names were tried again, twice
+            log_text = sorted((TMP / f"car-{20 + i}-{20 + i}").iterdir())[-1].joinpath("bear.log").read_text()
+            check(f"sim {sim}: names retried twice", log_text.count("retrying only the part names"), 2)
+            check(f"sim {sim}: photos read once", log_text.count("Reading part numbers 1/"), 1)
+
+    # The name model fails once, then the names-only retry works: the spreadsheet is posted.
+    errors_before = len(ERRORS.sent)
+    ch = await run(folder(28), "names-once")
+    check("names-once: spreadsheet posted after retrying the names", card(ch)[1], "Q184-mitsubishi-shogun-2007.xlsx")
+    check("names-once: no error posted", len(ERRORS.sent), errors_before)
 
     # The final check flags a row: the owner hears (BEAR-V01, the row), the uploader's card stays green.
     ERRORS.sent.clear()
@@ -291,6 +302,12 @@ async def main():
     check("flagged: card stays green", "Done" in card(ch)[0], True)
     check("flagged: V01 to the owner", "`BEAR-V01`" in last_error() and "price unparseable" in last_error(), True)
     check("flagged: one error post", len(ERRORS.sent), 1)
+
+    # eBay down for most of the run: the spreadsheet is still posted, plus BEAR-E01 in amber.
+    ch = await run(folder(26), "outage")
+    check("outage: spreadsheet still posted", any(f == "Q184-mitsubishi-shogun-2007.xlsx" for _, f in ch.sent), True)
+    check("outage: E01 in the error channel", "`BEAR-E01`" in last_error(), True)
+    check("outage: amber note under the card", "Some parts not priced" in card(ch)[0], True)
 
     # Upload still arriving: /run waits for a quiet spell, then runs.
     ch = folder(30)
@@ -471,9 +488,22 @@ async def main():
     check("restart: started message still posted", len(ERRORS.sent), errors_before + 1)
     check("restart: other channels untouched", gone_msg.sent, [])
 
-    # Shadow test: never in dev mode; switched on here with the Decisions models faked (no network).
+    # Shadow test: off unless BEAR_SHADOW=1, never in dev mode; switched on here with the Decisions
+    # models faked (no network).
     shadow_log = TMP / "shadow" / "shadow.jsonl"
     check("no shadow test in dev mode", shadow_log.exists(), False)
+    dev_was = B.dev
+    B.dev = lambda: False
+    os.environ.pop("BEAR_SHADOW", None)
+    check("shadow: off when not set", B.shadow_on(), False)
+    os.environ["BEAR_SHADOW"] = "0"
+    check("shadow: off with 0", B.shadow_on(), False)
+    os.environ["BEAR_SHADOW"] = "1"
+    check("shadow: on with 1", B.shadow_on(), True)
+    B.dev = lambda: True
+    check("shadow: never in dev mode", B.shadow_on(), False)
+    B.dev = dev_was
+    os.environ.pop("BEAR_SHADOW")
     asked = []
 
     def fake_check(model, uri, with_label):

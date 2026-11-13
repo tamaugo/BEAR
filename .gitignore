@@ -1,10 +1,6 @@
 # macOS
 .DS_Store
 
-# Prose docs — deliberately excluded pending a rewrite; a master file will replace them.
-# Files are on disk, just untracked. Remove this line to start tracking them.
-docs/
-
 # Claude Code local settings (machine-specific)
 .claude/
 
