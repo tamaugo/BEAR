@@ -6,7 +6,7 @@ match listings against what is actually in the photo.
 Output per photo (JSON): {has_any_text, part_description, item_count, candidates:[
   {text, role, legibility, alt_readings:[...], note}]}
 """
-import json, re, sys
+import hashlib, json, os, re, sys, threading
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c, configs
@@ -111,6 +111,42 @@ def read_photo_robust(path, vehicle, model=MODEL):
         if not d.get("part_description") and r.get("part_description"):
             d["part_description"] = r["part_description"]
     d["candidates"], d["_cost"], d["_rotation_retry"] = extra, cost, True
+    return d
+
+
+READS = c.CACHE / "reads"   # saved reads, reused for a byte-identical photo (read_photo_cached)
+READ_VERSION = "1"          # change when read_photo_robust's own logic changes, so old reads aren't reused
+
+
+def read_key(path, vehicle, model):
+    """The saved read's key: the photo's bytes, the model, the prompt text and the vehicle text, so a
+    change to any of them reads the photo again."""
+    h = hashlib.sha256()
+    h.update(Path(path).read_bytes())
+    for part in (model, prompt_for(vehicle), vehicle, READ_VERSION):
+        h.update(b"\0" + part.encode())
+    return h.hexdigest()
+
+
+def read_photo_cached(path, vehicle, model=MODEL):
+    """read_photo_robust, but a photo read before (same bytes, model, prompt and vehicle) reuses that
+    read at no cost. Only reads that found a number are reused (owner, 2026-11-13): a photo where
+    nothing was read is read again, so /run again still gives it a fresh try."""
+    key = read_key(path, vehicle, model)
+    saved = READS / f"{key}.json"
+    try:
+        d = json.loads(saved.read_text())
+    except (OSError, ValueError):
+        d = None
+    if d and d.get("candidates"):
+        c.log_spend("chat", model, 0, {"tag": f"s1:{Path(path).name}", "reused": key[:16]})
+        return {**d, "_cost": 0, "_reused": True}
+    d = read_photo_robust(path, vehicle, model)
+    if d.get("candidates"):
+        READS.mkdir(parents=True, exist_ok=True)
+        tmp = saved.with_name(f"{saved.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(d))
+        os.replace(tmp, saved)   # two runs at once never read a half-written file
     return d
 
 

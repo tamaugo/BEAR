@@ -27,10 +27,18 @@ def _env(name):
     return v.strip()
 
 
-def log_spend(kind, model, cost, extra=None):
+def tokens(usage):
+    """Token counts from an OpenRouter usage block, for the ledger: prompt, completion, reasoning."""
+    usage = usage or {}
+    return {"prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
+            "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")}
+
+
+def log_spend(kind, model, cost, extra=None, usage=None):
+    """One ledger line: cost, and the token counts (prompt, completion, reasoning) when known."""
     with LEDGER.open("a") as f:
         f.write(json.dumps({"t": time.time(), "kind": kind, "model": model,
-                            "cost": cost, **(extra or {})}) + "\n")
+                            "cost": cost, **tokens(usage), **(extra or {})}) + "\n")
 
 
 def total_spend():
@@ -95,6 +103,20 @@ def ebay_token():
 
 CAR_PARTS_CATEGORY = "131090"   # eBay UK Vehicle Parts & Accessories. Without it a misread
                                 # number ("0165-18", IMG_3931) matched a gold watch listing.
+
+
+def prune_ebay_cache(max_age_h=24):
+    """Delete eBay search results older than their 24-hour life (ebay_search_raw never reads them
+    again), and half-written temp files left by a stopped run. Returns how many went."""
+    gone, cutoff = 0, time.time() - max_age_h * 3600
+    for f in list(CACHE.glob("ebay_*.json")) + list(CACHE.glob("ebay_*.tmp")):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                gone += 1
+        except OSError:   # another run removed it first
+            pass
+    return gone
 
 
 def ebay_search_raw(q, limit=200, max_age_h=24, category=CAR_PARTS_CATEGORY):
@@ -219,7 +241,7 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
             with urllib.request.urlopen(req, timeout=120) as r:
                 d = json.loads(r.read())
             cost = (d.get("usage") or {}).get("cost") or 0
-            log_spend("chat", model, cost, {"tag": tag})
+            log_spend("chat", model, cost, {"tag": tag}, d.get("usage"))
             return d["choices"][0]["message"].get("content") or "", d
         except urllib.error.HTTPError as e:
             msg = e.read().decode(errors="replace")[:300]
@@ -277,5 +299,5 @@ def decide(model, state, questions, tag=""):
         _jev_fails[0] += 1
         raise JevFailed(f"Jev failed: {type(e).__name__}: {str(e)[:200]}") from None
     _jev_fails[0] = 0
-    log_spend("decisions", model, jev_client.get_cost(r), {"tag": tag})
+    log_spend("decisions", model, jev_client.get_cost(r), {"tag": tag}, r.get("usage"))
     return r
