@@ -10,12 +10,21 @@ The NSF/NSR/OSF/OSR location words were removed from the server code (the bot na
 001.jpg ...), so the finished line carries the tidied name as-is and the filename is passed
 through untouched, even when it contains a location word.
 
+Also bear2/run.py's handling of photos that can't be read: one bad photo becomes a FAILED row and
+the rest of the folder carries on (pipeline_checks, all faked: no network).
+
 usage: python3 tests/test_names_offline.py
 """
-import sys
+import json, os, sys, tempfile
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bear2"))
+ROOT = Path(__file__).resolve().parent.parent
+TMP = Path(tempfile.mkdtemp(prefix="bear-names-test-"))
+os.environ["BEAR_SPEND_LEDGER"] = str(TMP / "spend.jsonl")   # never the real ledger
+sys.path.insert(0, str(ROOT / "bear2"))
+sys.path.insert(0, str(ROOT / "tools"))
 import assemble as a  # noqa: E402
+import run as R  # noqa: E402
+from agent3_validator import run_validator  # noqa: E402
 
 V = "HYUNDAI 140 MK1 SEDAN 2015 1.7 DIESEL"
 FOG_OSF = ["IMG_4969-OSF.JPEG", "922023Z010", "HYUNDAI I40 FRONT RIGHT FOG LIGHT 92202-3Z010",
@@ -56,8 +65,81 @@ def main():
         if got != exp:
             bad += 1
             print(f"FAIL line\n  got  {got}\n  want {exp}")
+    bad += pipeline_checks()
     print("all passed" if not bad else f"{bad} failed")
     return 1 if bad else 0
+
+
+def pipeline_checks():
+    """run.py: a photo that can't be read is its own FAILED row; outages still stop the run."""
+    from PIL import Image
+    fails = []
+
+    def check(what, got, want):
+        if got != want:
+            fails.append(what)
+            print(f"FAIL {what}: got {got!r}, want {want!r}")
+
+    photos = TMP / "photos"
+    photos.mkdir()
+    for n in ("001.jpg", "002.jpg", "004.jpg"):
+        Image.new("RGB", (32, 32), "white").save(photos / n, "JPEG")
+    (photos / "003.jpg").write_bytes(b"not a photo at all")   # corrupt upload
+    ps = sorted(photos.iterdir())
+
+    def read(p):
+        if p.name == "002.jpg":
+            raise RuntimeError("OpenRouter HTTP 503: upstream down")   # failed after its retries
+        if p.name == "003.jpg":
+            Image.open(p)   # what the real read does first: raises on a corrupt file
+        return {"candidates": [{"text": f"PN{p.stem}", "role": "primary"}]}
+    reads, unread = R.read_all(ps, read)
+    check("good photos read", sorted(k for k, v in reads.items() if v), ["001.jpg", "004.jpg"])
+    check("model failure row", unread["002.jpg"][0], R.FAIL_READ)
+    check("corrupt photo row", unread["003.jpg"][0], R.FAIL_PHOTO)
+    check("reason kept", "HTTP 503" in unread["002.jpg"][1], True)
+
+    for msg in ("spend cap reached: $1.0000 this run (cap $1.00)", "OpenRouter HTTP 402: no credit",
+                "OpenRouter HTTP 401: bad key"):
+        def stop(p, msg=msg):
+            if p.name == "004.jpg":
+                raise RuntimeError(msg)
+            return {"candidates": []}
+        try:
+            R.read_all(ps, stop)
+            check(f"stops the run: {msg[:25]}", "carried on", "raised")
+        except RuntimeError as e:
+            check(f"stops the run: {msg[:25]}", str(e), msg)   # same text the bot's K01/K02 look for
+    try:
+        R.read_all(ps, lambda p: (_ for _ in ()).throw(TimeoutError("timed out")))
+        check("every photo failing stops the run", "carried on", "raised")
+    except TimeoutError:
+        pass
+
+    # The whole of run.py main(): the folder finishes with every row, bad photos as FAILED rows.
+    out = TMP / "results"
+    saved = R.s1m.read_photo_robust, R.process, R.finish, sys.argv
+    R.s1m.read_photo_robust = lambda p, vehicle: read(p)
+    R.process = lambda name, s1, *rest: (f"{name} | {s1['candidates'][0]['text']} | Title | 1 | 19.99 | https://e/x", {})
+    R.finish = lambda *args, **kw: None
+    sys.argv = ["run.py", str(photos), V, str(out)]
+    try:
+        R.main()
+    finally:
+        R.s1m.read_photo_robust, R.process, R.finish, sys.argv = saved
+    rows = (out / "agent2_results.md").read_text().splitlines()
+    check("every photo has a row, in order", [r.split(" | ")[0] for r in rows], ["001.jpg", "002.jpg", "003.jpg", "004.jpg"])
+    check("rows", rows[1:3], ["002.jpg | " + R.FAIL_READ, "003.jpg | " + R.FAIL_PHOTO])
+    check("trace says why", "HTTP 503" in json.loads((out / "trace.json").read_text())["002.jpg"]["error"], True)
+
+    # The validator accepts the new FAILED rows as they come out of assemble.py
+    a3, a2 = TMP / "a3.txt", TMP / "a2.md"
+    a3.write_text("FAILED - Agent 1 - Photo Read Unavailable | | | | 002.jpg\n"
+                  "FAILED - Agent 1 - Photo Could Not Be Opened | | | | 003.jpg\n")
+    a2.write_text("002.jpg | " + R.FAIL_READ + "\n003.jpg | " + R.FAIL_PHOTO + "\n")
+    report, marked = run_validator(str(a3), str(a2))
+    check("validator: new FAILED rows are fine", marked, False)
+    return len(fails)
 
 
 if __name__ == "__main__":

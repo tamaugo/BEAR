@@ -26,12 +26,15 @@ import re
 import sys
 import tempfile
 
-# The four failure strings the v4 prompt defines verbatim (agent3_instructions section
-# "Input" + "Absolute rules"). Anything claiming to be a failure row that isn't exactly
+# The failure strings BEAR writes: the four the v4 prompt defines verbatim (agent3_instructions
+# section "Input" + "Absolute rules"), plus the two unreadable-photo rows from bear2/run.py
+# (FAIL_PHOTO, FAIL_READ). Anything claiming to be a failure row that isn't exactly
 # one of these -- or the NO PART NUMBER shape below -- is not something we can trust
 # enough to silently clean up, so it gets marked instead of repaired.
 FAILURE_PATTERNS = {
     "FAILED - Agent 1 - Could Not Produce Clear Part Number",
+    "FAILED - Agent 1 - Photo Could Not Be Opened",
+    "FAILED - Agent 1 - Photo Read Unavailable",
     "FAILED - Agent 2 - No eBay Listing Found",
     "FAILED - Agent 2 - eBay Lookup Unavailable",
     "FAILED - Agent 3 - Malformed Input Line",
