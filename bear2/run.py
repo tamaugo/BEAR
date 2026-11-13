@@ -4,9 +4,9 @@ the listing BEAR picked) for assemble.py + validator + make_xlsx.py, plus a JSON
 
 usage: python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> [--s1 cached_stage1.json]
        python3 bear2/run.py <photo_dir> "<VEHICLE STRING>" <out_dir> --names-only
-         (finish the names of a stopped run in out_dir; the web page's Finish names)
+         (finish only the names of a run in out_dir that stopped at the names)
 """
-import json, sys, threading, time, concurrent.futures as cf
+import json, sys, threading, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble, image_hints
@@ -105,29 +105,6 @@ def process(name, s1, vehicle, make, photo_path=None):
     return f"{name} | {out_number} | {title} | {s['category']} | {price} | {s['url']}", tr
 
 
-def first_line_check(photos, vehicle, make, read, ask, out_dir):
-    """Before the full run: top to bottom until a photo gets a listing, then the operator
-    approves its finished line (assemble.verify) and the approved name model is saved to
-    names_check.json. Every photo processed here is returned so the full run never redoes it."""
-    print("Checking the first part before the full run ...", file=sys.stderr, flush=True)
-    done = {}
-    for p in photos:
-        s1 = read(p)
-        try:
-            line, tr = process(p.name, s1, vehicle, make, p)
-        except Exception as e:
-            line, tr = f"{p.name} | {FAIL_UN}", {"error": f"{type(e).__name__}: {str(e)[:200]}"}
-        done[p.name] = (s1, line, tr)
-        f = assemble.parse_row(line)
-        if f[1] == "FAILED":
-            print(f"{p.name}: no listing, trying the next photo", file=sys.stderr, flush=True)
-            continue
-        model, name = assemble.verify(vehicle, f, ask, assemble.start_model())
-        assemble.save_check(out_dir, p.name, model, name)
-        break
-    return done
-
-
 def progress(label, total):
     """Thread-safe `label n/total` counter on stderr, so long jobs visibly move."""
     lock, done = threading.Lock(), [0]
@@ -147,21 +124,11 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     spend0 = c.total_spend()
     photos = sorted(p for p in photo_dir.iterdir() if p.suffix.lower() in c.PHOTO_EXT)
-    # Terminal runs ask in the Terminal, web page runs on the page (BEAR_WEB_ASK).
-    ask = assemble.asker()
     if "--names-only" in sys.argv:
-        return finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos), assemble.start_model() if ask else None)
+        return finish(out_dir, photo_dir, vehicle, spend0, len(photos))
     print(f"{len(photos)} photos to price. This takes a few minutes for a big job.", file=sys.stderr, flush=True)
     S1 = json.loads(Path(s1_cache).read_text()) if s1_cache else {}
-    done = {}
-    if ask:
-        read1 = (lambda p: S1.get(p.name)) if s1_cache else (lambda p: s1m.read_photo_robust(p, vehicle))
-        try:
-            done = first_line_check(photos, vehicle, make, read1, ask, out_dir)
-        except assemble.Stop as e:
-            assemble.stop_exit(e)
-    rest = [p for p in photos if p.name not in done]
-    S1.update({k: v[0] for k, v in done.items()})
+    rest = photos
     if not s1_cache:
         tick = progress("Reading part numbers", len(rest))
 
@@ -173,8 +140,7 @@ def main():
         with cf.ThreadPoolExecutor(6) as ex:
             S1.update(zip([p.name for p in rest], ex.map(read, rest)))
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
-    lines = {k: v[1] for k, v in done.items()}
-    trace = {k: v[2] for k, v in done.items()}
+    lines, trace = {}, {}
     with cf.ThreadPoolExecutor(6) as ex:
         futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make, p): p.name for p in rest}
         tick = progress("Pricing on eBay", len(rest))
@@ -189,14 +155,14 @@ def main():
     ordered = [lines[p.name] for p in photos]
     (out_dir / "agent2_results.md").write_text("\n".join(ordered) + "\n")
     (out_dir / "trace.json").write_text(json.dumps(trace, indent=1, default=str))
-    finish(out_dir, photo_dir, vehicle, ask, spend0, len(photos))
+    finish(out_dir, photo_dir, vehicle, spend0, len(photos))
 
 
-def finish(out_dir, photo_dir, vehicle, ask, spend0, n, model=None):
-    """Names, results.xlsx and image hints. model: see assemble.main (names-only reruns)."""
+def finish(out_dir, photo_dir, vehicle, spend0, n):
+    """Names, results.xlsx and image hints."""
     print("Building results.xlsx ...", file=sys.stderr, flush=True)
     try:
-        print(assemble.main(out_dir, vehicle, ask, model))
+        print(assemble.main(out_dir, vehicle))
     except assemble.Stop as e:
         assemble.stop_exit(e)
     print("Looking for possible matches for unpriced photos ...", file=sys.stderr, flush=True)

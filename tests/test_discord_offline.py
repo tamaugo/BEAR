@@ -107,8 +107,7 @@ for text, code in LOGS:
     check(f"classify {code}", fo.classify("5 photos to price.\nReading part numbers 4/4\n" + text), code)
 check("partial: cap", fo.partial_problem('{"003.jpg": {"error": "RuntimeError: spend cap reached: $1"}}'), "BEAR-K02")
 check("partial: clean", fo.partial_problem('{"003.jpg": {"s1": {}}}'), None)
-rep = fo.error_report("Q184", "BEAR-D05", "<#9>", "x" * 5000)
-check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D05` — fix: "), len(rep) <= 2000), (True, True))
+check("error report lives in look.py only", hasattr(fo, "error_report"), False)
 check("every code has a meaning and a fix", all(len(v) == 2 and all(v) for v in fo.ERRORS.values()), True)
 
 # Renaming: every photo people posted, in order, flags or not; other files and the bot's left out.
