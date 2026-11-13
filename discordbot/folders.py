@@ -41,6 +41,8 @@ ERRORS = {
     "BEAR-V01": ("BEAR's final check flagged rows in the spreadsheet it couldn't confirm (e.g. a part number that doesn't "
                  "match what was read off the photo, or a price it couldn't read). The spreadsheet was posted.",
                  "Check the flagged rows below in the spreadsheet before listing them; the attached log has the full report."),
+    "BEAR-E01": ("Most parts weren't priced because eBay, Jev or a model was down or failing during the run.",
+                 "/run again later (the photos are saved). If it keeps happening, the log and trace.json say which service failed."),
     "BEAR-T01": ("The BEAR run took too long and was stopped.",
                  "/run again. If it happens again, the owner looks at the log."),
     "BEAR-R01": ("The BEAR run failed.",
@@ -182,6 +184,17 @@ def validator_problem(log):
         elif file_level and line.strip().startswith("- "):
             flagged.append(line.strip())
     return "BEAR-V01", "\n".join(flagged) or log[m.start():][:1200]
+
+
+OUTAGE = re.compile(r" \| FAILED \| [^|]*\| [^|]*Unavailable\s*$")   # eBay Lookup / Jev / Model ... Unavailable
+
+
+def outage_problem(agent2_text):
+    """BEAR-E01 when most rows (more than half) failed because a service was down, not because of
+    the photos: the run still ends green with its spreadsheet, so this says why so little was priced."""
+    rows = [l for l in agent2_text.splitlines() if l.strip()]
+    down = sum(1 for l in rows if OUTAGE.search(l))
+    return "BEAR-E01" if rows and down * 2 > len(rows) else None
 
 
 def error_report(folder, code, where, detail=""):

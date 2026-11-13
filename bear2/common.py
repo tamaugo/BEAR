@@ -53,20 +53,42 @@ def _check_cap():
 _tok = {"v": None, "exp": 0}
 
 
+# eBay hiccups (HTTP 429/5xx, a timeout, a dropped connection) are retried with backoff,
+# 2+4+8s (or Retry-After), before a search counts as "eBay Lookup Unavailable". Other 4xx
+# answers mean the request itself is wrong, so they are not retried.
+EBAY_ATTEMPTS = 4
+EBAY_DOWN_AFTER = 3   # this many searches in a row failing even with retries = eBay is down: later
+_ebay_fails = [0]     # searches try once, no backoff, until one works (a run can't stall for hours)
+NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError)
+
+
+def _transient(e):
+    return isinstance(e, NETWORK_ERRORS) and not isinstance(e, urllib.error.HTTPError) or \
+        isinstance(e, urllib.error.HTTPError) and (e.code == 429 or e.code >= 500)
+
+
 def ebay_token():
     if _tok["v"] and time.time() < _tok["exp"] - 60:
         return _tok["v"]
     basic = base64.b64encode(f"{_env('EBAY_APP_ID')}:{_env('EBAY_CERT_ID')}".encode()).decode()
     body = urllib.parse.urlencode({"grant_type": "client_credentials",
                                    "scope": "https://api.ebay.com/oauth/api_scope"}).encode()
-    req = urllib.request.Request("https://api.ebay.com/identity/v1/oauth2/token", data=body, method="POST")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    req.add_header("Authorization", f"Basic {basic}")
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            d = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"eBay OAuth failed HTTP {e.code}") from None
+    attempts = 1 if _ebay_fails[0] >= EBAY_DOWN_AFTER else EBAY_ATTEMPTS   # eBay down: fail fast
+    for attempt in range(attempts):
+        req = urllib.request.Request("https://api.ebay.com/identity/v1/oauth2/token", data=body, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        req.add_header("Authorization", f"Basic {basic}")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                d = json.loads(r.read())
+            break
+        except Exception as e:
+            if not _transient(e) or attempt + 1 == attempts:
+                if _transient(e):
+                    _ebay_fails[0] += 1   # a login outage counts towards "eBay is down" too
+                why = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else type(e).__name__
+                raise RuntimeError(f"eBay OAuth failed {why}") from None
+            time.sleep(_retry_wait(e, attempt))
     _tok["v"], _tok["exp"] = d["access_token"], time.time() + int(d.get("expires_in", 7200))
     return _tok["v"]
 
@@ -84,13 +106,26 @@ def ebay_search_raw(q, limit=200, max_age_h=24, category=CAR_PARTS_CATEGORY):
     if category:
         params["category_ids"] = category
     items = []
-    for attempt in range(3):
+    attempts = 1 if _ebay_fails[0] >= EBAY_DOWN_AFTER else EBAY_ATTEMPTS
+    for attempt in range(attempts):
         req = urllib.request.Request("https://api.ebay.com/buy/browse/v1/item_summary/search?"
                                      + urllib.parse.urlencode(params))
         req.add_header("Authorization", f"Bearer {ebay_token()}")
         req.add_header("X-EBAY-C-MARKETPLACE-ID", "EBAY_GB")
-        with urllib.request.urlopen(req, timeout=45) as r:
-            items = json.loads(r.read()).get("itemSummaries", []) or []
+        try:
+            with urllib.request.urlopen(req, timeout=45) as r:
+                items = json.loads(r.read()).get("itemSummaries", []) or []
+        except Exception as e:
+            if isinstance(e, urllib.error.HTTPError) and e.code == 401 and attempt + 1 < attempts:
+                _tok["v"] = None   # token expired early: get a new one and try again
+                continue
+            if not _transient(e) or attempt + 1 == attempts:
+                if _transient(e):
+                    _ebay_fails[0] += 1
+                raise
+            time.sleep(_retry_wait(e, attempt))
+            continue
+        _ebay_fails[0] = 0
         # Measured (IMG_3974): eBay occasionally returns a degraded payload with no
         # condition field on any item, which silently disables the used-first rule.
         if not items or sum(1 for i in items if i.get("condition")) >= 0.5 * len(items):
@@ -194,7 +229,7 @@ def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=Non
             if attempt + 1 < attempts:
                 time.sleep(_retry_wait(e, attempt))
         except Exception as e:  # network
-            last = e
+            last = RuntimeError(f"OpenRouter call failed: {type(e).__name__}: {str(e)[:200]}")
             if attempt + 1 < attempts:
                 time.sleep(2 ** attempt)
     raise last
@@ -220,9 +255,27 @@ def jev(state, questions, tag=""):
     return decide(JEV_MODEL, state, questions, tag)
 
 
+class JevFailed(RuntimeError):
+    """A Decisions (Jev) call failed after its retries. Its own type, so a part it costs is
+    labelled "Jev Unavailable", not blamed on eBay (bear2/run.py fail_cause)."""
+
+
+JEV_DOWN_AFTER = 3   # this many Jev calls in a row failing after their minute of retries = Jev is
+_jev_fails = [0]     # down: later calls try once, until one works (a run can't stall for hours)
+
+
 def decide(model, state, questions, tag=""):
-    """One Decisions API call (Jev, or openai/gpt-6-luna-decisions, which also takes photos)."""
+    """One Decisions API call (Jev, or openai/gpt-6-luna-decisions, which also takes photos).
+    Retried like chat calls (CHAT_ATTEMPTS, about a minute), not jev_client's own ~3 seconds."""
     _check_cap()
-    r = jev_client.call_decisions(model, state, questions)
+    attempts = 1 if _jev_fails[0] >= JEV_DOWN_AFTER else CHAT_ATTEMPTS
+    try:
+        r = jev_client.call_decisions(model, state, questions, max_attempts=attempts, wait=_retry_wait)
+    except jev_client.JevPaymentError as e:   # same words as chat's 402, so the bot reports BEAR-K01
+        raise JevFailed(f"OpenRouter HTTP 402 (Jev): {str(e)[:200]}") from None
+    except Exception as e:
+        _jev_fails[0] += 1
+        raise JevFailed(f"Jev failed: {type(e).__name__}: {str(e)[:200]}") from None
+    _jev_fails[0] = 0
     log_spend("decisions", model, jev_client.get_cost(r), {"tag": tag})
     return r

@@ -67,7 +67,7 @@ UPLOADER_FIX = {
     "BEAR-D07": "The photos couldn't be renamed. **/rename** again with the same SKU; if it keeps happening, "
                 "re-send the photo below.",
     "BEAR-N01": None, "BEAR-N02": None, "BEAR-N03": None,
-    "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None, "BEAR-V01": None,
+    "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None, "BEAR-V01": None, "BEAR-E01": None,
 }
 
 # Short titles for the problem card, so the code means something at a glance.
@@ -84,6 +84,7 @@ TITLES = {
     "BEAR-K01": "Out of OpenRouter credit",
     "BEAR-K02": "Folder hit BEAR's spend cap",
     "BEAR-V01": "Final check flagged rows",
+    "BEAR-E01": "eBay or the AI models were down",
     "BEAR-T01": "Run took too long",
     "BEAR-R01": "BEAR run failed",
 }

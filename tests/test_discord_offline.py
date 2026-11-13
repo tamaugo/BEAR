@@ -107,6 +107,144 @@ for text, code in LOGS:
     check(f"classify {code}", fo.classify("5 photos to price.\nReading part numbers 4/4\n" + text), code)
 check("partial: cap", fo.partial_problem('{"003.jpg": {"error": "RuntimeError: spend cap reached: $1"}}'), "BEAR-K02")
 check("partial: clean", fo.partial_problem('{"003.jpg": {"s1": {}}}'), None)
+# Most rows lost to an outage (eBay, Jev, a model): BEAR-E01 under the green card.
+DOWN = "| FAILED | Agent 2 | eBay Lookup Unavailable\n"
+check("outage: most rows down", fo.outage_problem(f"001.jpg | 1 | T | 1 | 9.99 | u\n002.jpg {DOWN}003.jpg "
+                                                  "| FAILED | Agent 2 | Jev Unavailable\n"), "BEAR-E01")
+check("outage: half is not most", fo.outage_problem(f"001.jpg | 1 | T | 1 | 9.99 | u\n002.jpg {DOWN}"), None)
+check("outage: photo failures aren't outages", fo.outage_problem(
+    "001.jpg | FAILED | Agent 2 | No eBay Listing Found\n002.jpg | FAILED | Agent 1 | Could Not Produce Clear Part Number\n"), None)
+check("outage: empty", fo.outage_problem(""), None)
+
+
+def bear_retry_checks():
+    """bear2: eBay and Jev hiccups are retried; a part that still fails names the real cause."""
+    import io, tempfile, urllib.error, json as _json
+    import common as c, run as R, stage2b_rescue as s2b, stage2_numbers as s2
+    import jev_client as jc
+    from agent3_validator import FAILURE_PATTERNS
+    c.CACHE = Path(tempfile.mkdtemp())
+    c.LEDGER = c.CACHE / "spend.jsonl"   # never the real ledger
+    slept, calls = [], []
+    real = (c.time.sleep, jc.time.sleep, c.urllib.request.urlopen, jc.urllib.request.urlopen, c.ebay_token,
+            jc.resolve_api_key)
+    c.time.sleep = jc.time.sleep = slept.append
+    jc.resolve_api_key = lambda: "test-key"   # no real key needed (GitHub has none)
+    c.ebay_token = lambda: "t"
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    def http(code):
+        return urllib.error.HTTPError("u", code, "x", {}, io.BytesIO(b"{}"))
+
+    def opener(script):
+        def urlopen(req, timeout=None):
+            calls.append(1)
+            step = script.pop(0)
+            if isinstance(step, BaseException):
+                raise step
+            return Resp(_json.dumps(step).encode())
+        return urlopen
+    try:
+        item = {"itemId": "1", "title": "x", "condition": "Used"}
+        c.urllib.request.urlopen = opener([http(503), TimeoutError("read timed out"), {"itemSummaries": [item]}])
+        check("eBay: 503 and a timeout are retried", c.ebay_search_raw("ABC123"), [item])
+        check("eBay: backoff 2s then 4s", slept, [2, 4])
+        calls.clear()
+        c.urllib.request.urlopen = opener([http(400)])
+        try:
+            c.ebay_search_raw("BAD")
+            check("eBay: 400 raises", "no error", "HTTPError")
+        except urllib.error.HTTPError:
+            check("eBay: 400 is not retried", len(calls), 1)
+        c.urllib.request.urlopen = opener([http(503)] * c.EBAY_ATTEMPTS)
+        check("eBay: still down after its retries", s2.ebay_for("XYZ999", quick=True), (None, "HTTPError"))
+        # eBay down: after EBAY_DOWN_AFTER searches fail in a row, the rest try once with no wait
+        c.urllib.request.urlopen = opener([http(503)] * c.EBAY_ATTEMPTS * (c.EBAY_DOWN_AFTER - 1) + [http(503)] * 2)
+        for q in range(c.EBAY_DOWN_AFTER - 1):
+            s2.ebay_for(f"DOWN{q}", quick=True)
+        slept.clear()
+        check("eBay down: one try, no waiting", (s2.ebay_for("DOWN9", quick=True), slept), ((None, "HTTPError"), []))
+        c.urllib.request.urlopen = opener([{"itemSummaries": [item]}, http(503), {"itemSummaries": [item]}])
+        c.ebay_search_raw("BACK1")
+        check("eBay back: retries again", (c.ebay_search_raw("BACK2"), c._ebay_fails[0]), ([item], 0))
+
+        # Jev gets the same backoff as chat calls (about a minute), not 1+2 seconds.
+        slept.clear()
+        jc.urllib.request.urlopen = opener([http(429)] * 5 + [{"answers": {}, "usage": {"cost": 0}}])
+        check("Jev: 5 busy answers then fine", c.decide("m", "s", {})["answers"], {})
+        check("Jev: waits like chat", slept, [2, 4, 8, 16, 30])
+        # Jev down: after JEV_DOWN_AFTER calls fail in a row, the rest try once with no wait
+        jc.urllib.request.urlopen = opener([http(503)] * (c.CHAT_ATTEMPTS * c.JEV_DOWN_AFTER + 1))
+        for _ in range(c.JEV_DOWN_AFTER):
+            try:
+                c.decide("m", "s", {})
+            except c.JevFailed:
+                pass
+        slept.clear()
+        try:
+            c.decide("m", "s", {})
+        except c.JevFailed:
+            check("Jev down: one try, no waiting", slept, [])
+        c._jev_fails[0] = 0
+        # eBay login down counts towards eBay being down
+        c.ebay_token, c._ebay_fails[0], c._tok["v"] = real[4], 0, None
+        c._env = lambda name: "x"
+        c.urllib.request.urlopen = opener([http(503)] * (c.EBAY_ATTEMPTS + 1))
+        try:
+            c.ebay_token()
+        except RuntimeError:
+            check("eBay login outage counted", c._ebay_fails[0], 1)
+        c.ebay_token, c._ebay_fails[0] = (lambda: "t"), 0
+        jc.urllib.request.urlopen = opener([http(402)])
+        try:
+            c.decide("m", "s", {})
+        except c.JevFailed as e:
+            check("Jev 402 reads as BEAR-K01", fo.partial_problem(str(e)), "BEAR-K01")
+
+        # rescue() reports eBay errors instead of dropping them
+        errs = []
+        s2b.s2.ebay_for, saved = (lambda t, quick=False: (None, "HTTPError")), s2.ebay_for
+        check("rescue: nothing found", s2b.rescue({"candidates": [{"text": "0165-18", "role": "primary"}]}, "VW", errs), [])
+        check("rescue: errors kept", bool(errs) and errs[0].endswith("HTTPError"), True)
+        s2b.s2.ebay_for = saved
+    finally:
+        (c.time.sleep, jc.time.sleep, c.urllib.request.urlopen, jc.urllib.request.urlopen, c.ebay_token,
+         jc.resolve_api_key) = real
+
+    # A part that still fails is labelled by what failed, not always "eBay Lookup Unavailable".
+    for e, want in [(c.JevFailed("Jev failed: JevAPIError: 503"), R.FAIL_JEV),
+                    (RuntimeError("OpenRouter HTTP 503: down"), R.FAIL_MODEL),
+                    (RuntimeError("OpenRouter call failed: TimeoutError"), R.FAIL_MODEL),
+                    (RuntimeError("spend cap reached: $1.00"), R.FAIL_MONEY),
+                    (c.JevFailed("OpenRouter HTTP 402 (Jev): no credit"), R.FAIL_MONEY),
+                    (RuntimeError("eBay OAuth failed HTTP 500"), R.FAIL_UN),
+                    (urllib.error.URLError("down"), R.FAIL_UN),
+                    (KeyError("price"), R.FAIL_ERR)]:
+        got = R.fail_cause(e)
+        check(f"cause of {type(e).__name__}: {str(e)[:30]}", got, want)
+        check(f"validator knows {got}", got.replace(" | ", " - ") in FAILURE_PATTERNS, True)
+
+    # A reading whose eBay search failed, and nothing else found: eBay, not "no listing".
+    saved = s2.verify, s2b.rescue
+    R.s2.verify = lambda s1, make: [{"text": "1K0615601", "cand": {"role": "primary"}, "listings": [], "make_hits": 0,
+                                     "error": "HTTPError"},
+                                    {"text": "1K0615GO1", "cand": {"role": "unclear"}, "listings": [], "make_hits": 0}]
+    R.s2b.rescue = lambda s1, make, errors=None: []
+    try:
+        line, tr = R.process("001.jpg", {"candidates": [{"text": "1K0615601", "role": "primary",
+                                                         "legibility": "clear"}]}, "VW GOLF", "VW")
+        check("eBay error + nothing found = eBay Lookup Unavailable", line, "001.jpg | " + R.FAIL_UN)
+    finally:
+        R.s2.verify, R.s2b.rescue = saved
+
+
+bear_retry_checks()
 rep = fo.error_report("Q184", "BEAR-D05", "<#9>", "x" * 5000)
 check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D05` — fix: "), len(rep) <= 2000), (True, True))
 check("every code has a meaning and a fix", all(len(v) == 2 and all(v) for v in fo.ERRORS.values()), True)

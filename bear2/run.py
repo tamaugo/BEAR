@@ -70,6 +70,26 @@ def read_all(photos, read, tick=None):
     return reads, {k: (why, f"{type(e).__name__}: {str(e)[:200]}") for k, (why, e) in errors.items()}
 
 
+FAIL_JEV = "FAILED | Agent 2 | Jev Unavailable"
+FAIL_MODEL = "FAILED | Agent 2 | Model Unavailable"        # an OpenRouter chat call (the photo check)
+FAIL_MONEY = "FAILED | Agent 2 | Spend Limit Reached"      # BEAR's cap or OpenRouter credit (K02 / K01)
+FAIL_ERR = "FAILED | Agent 2 | Unexpected Error"
+
+
+def fail_cause(e):
+    """The FAILED row for a part whose pricing raised e: the service that really failed."""
+    text = str(e)
+    if "spend cap reached" in text or "OpenRouter HTTP 402" in text:
+        return FAIL_MONEY
+    if isinstance(e, c.JevFailed):
+        return FAIL_JEV
+    if "OpenRouter" in text:
+        return FAIL_MODEL
+    if "eBay" in text or isinstance(e, c.NETWORK_ERRORS):
+        return FAIL_UN
+    return FAIL_ERR
+
+
 def no_match_fail(s1):
     """A clearly-read primary number that no UK seller lists (or only lists as a different
     component) is an eBay miss, not a reading failure - tell the operator which it was."""
@@ -87,12 +107,13 @@ def process(name, s1, vehicle, make, photo_path=None):
                        "err": v.get("error")} for v in verified]
     if verified and all(v.get("error") for v in verified):
         return f"{name} | {FAIL_UN}", tr
+    ebay_errors = [f"{v['text']}: {v['error']}" for v in verified if v.get("error")]
     live = s3.drop_substring_readings(verified)
     # Rescue unless a PRIMARY-role reading is strongly listed. Secondary junk like "10 10 3"
     # (150 substring hits) must not suppress the rescue (IMG_3931, pt2).
     if not any(len(v["listings"]) >= s2b.STRONG and v["cand"].get("role") == "primary" for v in live):
         # hard read: try confusable-character / revision-suffix rescues
-        rescued = s2b.rescue(s1, make)
+        rescued = s2b.rescue(s1, make, ebay_errors)
         tr["rescued"] = [{"text": v["text"], "n": len(v["listings"]), "from": v["cand"].get("read_as"),
                           "how": v["cand"].get("rescue")} for v in rescued]
         live = s3.drop_substring_readings(live + rescued)
@@ -108,6 +129,9 @@ def process(name, s1, vehicle, make, photo_path=None):
                 live = [{"text": tok, "cand": {"role": "primary", "rescue": "image-corroborated"},
                          "listings": items, "make_hits": 0}]
     if not live:
+        if ebay_errors:   # a search that failed might have found it: say eBay, not "no listing"
+            tr["ebay_errors"] = ebay_errors[:20]
+            return f"{name} | {FAIL_UN}", tr
         return f"{name} | {no_match_fail(s1)}", tr
     chosen, info = s3.choose_number(s1, live, vehicle)
     tr["choose"] = {"text": chosen["text"], **info}
@@ -170,7 +194,7 @@ def first_line_check(photos, vehicle, make, read, ask, out_dir):
         try:
             line, tr = process(p.name, s1, vehicle, make, p)
         except Exception as e:
-            line, tr = f"{p.name} | {FAIL_UN}", {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+            line, tr = f"{p.name} | {fail_cause(e)}", {"error": f"{type(e).__name__}: {str(e)[:200]}"}
         done[p.name] = (s1, line, tr)
         f = assemble.parse_row(line)
         if f[1] == "FAILED":
@@ -237,7 +261,7 @@ def main():
             try:
                 lines[futs[f]], trace[futs[f]] = f.result()
             except Exception as e:
-                lines[futs[f]] = f"{futs[f]} | {FAIL_UN}"
+                lines[futs[f]] = f"{futs[f]} | {fail_cause(e)}"
                 trace[futs[f]] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
     ordered = [lines[p.name] for p in photos]
     (out_dir / "agent2_results.md").write_text("\n".join(ordered) + "\n")
