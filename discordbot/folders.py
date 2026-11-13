@@ -38,6 +38,9 @@ ERRORS = {
                  "Top up OpenRouter or raise the key's cap, then /run again."),
     "BEAR-K02": ("BEAR's own spend cap for one folder was reached, so some parts were not priced.",
                  "Raise BEAR_RUN_CAP_USD in the server's .env, then /run again."),
+    "BEAR-V01": ("BEAR's final check flagged rows in the spreadsheet it couldn't confirm (e.g. a part number that doesn't "
+                 "match what was read off the photo, or a price it couldn't read). The spreadsheet was posted.",
+                 "Check the flagged rows below in the spreadsheet before listing them; the attached log has the full report."),
     "BEAR-T01": ("The BEAR run took too long and was stopped.",
                  "/run again. If it happens again, the owner looks at the log."),
     "BEAR-R01": ("The BEAR run failed.",
@@ -157,6 +160,28 @@ def partial_problem(trace_text):
     if "spend cap reached" in trace_text:
         return "BEAR-K02"
     return None
+
+
+VALIDATOR = re.compile(r"^validator exit (\d+)", re.M)
+
+
+def validator_problem(log):
+    """(BEAR-V01, the flagged rows) when the final check (tools/agent3_validator.py, run by
+    bear2/assemble.py) found rows it couldn't confirm, else (None, "")."""
+    m = VALIDATOR.search(log)
+    if not m or m.group(1) == "0":
+        return None, ""
+    flagged, row, file_level = [], "", False
+    for line in log[m.end():].splitlines():
+        if line.startswith("Line (image="):
+            row, file_level = line.strip(), False
+        elif line.startswith("File-level issues"):
+            file_level = True
+        elif "[MARKED]" in line:
+            flagged.append(f"{row} {line.split('[MARKED]', 1)[1].strip()}".strip())
+        elif file_level and line.strip().startswith("- "):
+            flagged.append(line.strip())
+    return "BEAR-V01", "\n".join(flagged) or log[m.start():][:1200]
 
 
 def error_report(folder, code, where, detail=""):

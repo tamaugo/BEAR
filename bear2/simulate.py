@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import assemble
 
-SCENARIOS = ["ok", "wrong-line", "all-wrong", "check-rate-limit", "rate-limit", "no-response", "unusable", "crash"]
+SCENARIOS = ["ok", "wrong-line", "all-wrong", "check-rate-limit", "rate-limit", "no-response", "unusable", "crash", "flagged"]
 SCENARIO = os.environ.get("BEAR_SIM") if os.environ.get("BEAR_SIM") in SCENARIOS else "ok"
 PAUSE = float(os.environ.get("BEAR_SIM_PAUSE", "0.15"))   # seconds per fake step, so progress is visible
 FIRST_FILE = "sim_first_model.txt"
@@ -82,6 +82,8 @@ assemble.clean_names = fake_clean_names
 
 
 def agent2_line(p):
+    if SCENARIO == "flagged" and PARTS.index(p) == 1:   # a price the final check can't read
+        return f"{p[0]} | {p[1]} | {p[2]} | 9886 | ?? | https://www.ebay.co.uk/itm/200000000002"
     if p[1] is None:
         return f"{p[0]} | FAILED | Agent 2 | No eBay Listing Found"
     return f"{p[0]} | {p[1]} | {p[2]} | 9886 | {p[3]} | https://www.ebay.co.uk/itm/2000000000{PARTS.index(p) + 1:02d}"

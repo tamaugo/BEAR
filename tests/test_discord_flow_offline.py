@@ -228,6 +228,14 @@ async def main():
         await run(ch, sim)
         check(f"sim {sim}", f"`{code}`" in last_error(), True)
 
+    # The final check flags a row: the owner hears (BEAR-V01, the row), the uploader's card stays green.
+    ERRORS.sent.clear()
+    ch = await run(folder(27), "flagged")
+    check("flagged: spreadsheet posted", card(ch)[1], "Q184-mitsubishi-shogun-2007.xlsx")
+    check("flagged: card stays green", "Done" in card(ch)[0], True)
+    check("flagged: V01 to the owner", "`BEAR-V01`" in last_error() and "price unparseable" in last_error(), True)
+    check("flagged: one error post", len(ERRORS.sent), 1)
+
     # Upload still arriving: /run waits for a quiet spell, then runs.
     ch = folder(30)
     ch.add(files=["IMG_99.jpg"], ago=0)

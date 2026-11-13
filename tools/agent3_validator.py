@@ -114,10 +114,11 @@ def join_fields(fields):
 
 
 def normalize_partnum(text):
-    """Part numbers are written with hyphens/spaces stripped and uppercased -- the
-    exact transform the v4 prompt's "Part number" section specifies for the output,
-    so applying it to the input side too lets us compare like with like."""
-    return re.sub(r"[-\s]+", "", text).upper()
+    """Letters and digits only, uppercased: the same as bear2/common.py norm(), which
+    bear2/assemble.py uses to write the number into the finished line. Stripping only
+    hyphens and spaces here flagged numbers read with dots or slashes (4F0.820.511.A,
+    8A61-A27000/01, 96.728.750.80) as "invented" when they were the same number."""
+    return "".join(ch for ch in text.upper() if ch.isalnum())
 
 
 def parse_input_file(path):

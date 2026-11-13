@@ -110,6 +110,19 @@ check("partial: clean", fo.partial_problem('{"003.jpg": {"s1": {}}}'), None)
 rep = fo.error_report("Q184", "BEAR-D05", "<#9>", "x" * 5000)
 check("error report format", (rep.startswith("**Q184** encountered an issue — `BEAR-D05` — fix: "), len(rep) <= 2000), (True, True))
 check("every code has a meaning and a fix", all(len(v) == 2 and all(v) for v in fo.ERRORS.values()), True)
+# The final check's verdict in bear.log (bear2/assemble.py prints it): exit 2 is BEAR-V01 with the rows.
+VLOG = ("Writing results.xlsx ...\nvalidator exit 2 | wrote results.xlsx\nAgent 3 output validation report\n"
+        "File-level issues:\n  - line count deficit: 2 output lines vs 3 input lines\n\n"
+        "Line (image='008.jpeg'):\n  [repaired] price normalized: '19' -> '19.99'\n"
+        "  [MARKED]   part number '4F0820511B' not found among input records\n"
+        "Line (image='002.jpeg'):\n  [repaired] price normalized\nrun cost $0.01\n")
+code, flagged = fo.validator_problem(VLOG)
+check("validator: exit 2 is V01", code, "BEAR-V01")
+check("validator: only what was flagged", flagged.splitlines(),
+      ["- line count deficit: 2 output lines vs 3 input lines",
+       "Line (image='008.jpeg'): part number '4F0820511B' not found among input records"])
+check("validator: exit 0 is fine", fo.validator_problem("validator exit 0 | wrote results.xlsx\n"), (None, ""))
+check("validator: no check ran", fo.validator_problem("crash"), (None, ""))
 
 # Renaming: every photo people posted, in order, flags or not; other files and the bot's left out.
 both = msg(files=["a.jpg", "b.HEIC", "clip.mov"])
