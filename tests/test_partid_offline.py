@@ -9,6 +9,7 @@ Jev failure fails the read) with the Decisions call faked.
 usage: .venv/bin/python tests/test_partid_offline.py
 """
 import asyncio, json, logging, os, sys, tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
 
@@ -54,7 +55,7 @@ def message(channel, files=(), mid=500):
         r = NS(id=mid * 10 + len(replies), content=content, view=view)
         replies.append(r)
         return r
-    return NS(id=mid, author=NS(bot=False), guild=NS(id=1), channel=channel, type=None,
+    return NS(id=mid, author=NS(bot=False), guild=NS(id=1), channel=channel, type=None, created_at=datetime.now(timezone.utc),
               jump_url=f"https://discord.com/channels/1/5/{mid}", attachments=[Att(f) for f in files],
               reply=reply), replies
 
@@ -90,8 +91,12 @@ def button(view, custom_id):
     return next((b for b in view.children if b.custom_id == custom_id), None)
 
 
+LOC = ["partid:loc:nsr", "partid:loc:nsf", "partid:loc:osr", "partid:loc:osf"]   # the 4 location buttons, row 2
+
+
 def styles(view):
-    return [b.style.name for b in view.children]
+    """The number buttons' colours (the location buttons are checked on their own)."""
+    return [b.style.name for b in view.children if not b.custom_id.startswith("partid:loc:")]
 
 
 async def main():
@@ -108,7 +113,7 @@ async def main():
     check("says Jev", "scored by Jev" in card_msg.content, True)
     check("default answer", "Answer: **1** `39R293-1200` (nobody has picked, so 1)" in card_msg.content, True)
     check("buttons", [b.custom_id for b in card_msg.view.children],
-          ["partid:pick:1", "partid:pick:2", "partid:pick:3", "partid:type"])
+          ["partid:pick:1", "partid:pick:2", "partid:pick:3", "partid:type", *LOC])
     check("1 is green", styles(card_msg.view), ["success", "secondary", "secondary", "primary"])
     saved = json.loads((TMP / "part-id" / "cards" / f"{card_msg.id}.json").read_text())
     check("saved default", (saved["choice"], saved["answer"], saved["how"]), (1, "39R293-1200", "default"))
@@ -155,7 +160,7 @@ async def main():
     # No number found: only ✏️, no answer yet.
     empty = {"card": 1, "photo_name": "x.jpg", "options": [], "choice": None, "answer": None, "how": "default"}
     check("no number text", "Agent 1 found no part number" in P.card_text(empty) and "Answer: none yet" in P.card_text(empty), True)
-    check("no number buttons", [b.custom_id for b in P.Buttons(empty).children], ["partid:type"])
+    check("no number buttons", [b.custom_id for b in P.Buttons(empty).children], ["partid:type", *LOC])
 
     # Two photos and a HEIC in one message: a card each, and HEIC is refused.
     m, replies = message(part_id, ["a.jpg", "b.png", "c.heic", "notes.pdf"], 501)

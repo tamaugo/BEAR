@@ -1,0 +1,27 @@
+# Runs the offline tests (no network, no credits, no keys) on every pull request into discord-bear,
+# so a broken change shows a red cross on the pull request before the owner merges it.
+name: Offline tests
+on:
+  pull_request:
+    branches: [discord-bear]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"   # the server's Debian 13 Python
+      - run: pip install -r requirements.txt -r discordbot/requirements.txt
+      - name: Offline tests
+        run: |
+          set -e
+          for t in test_names_offline test_discord_offline test_discord_look_offline \
+                   test_discord_flow_offline test_partid_offline test_agent3_validator; do
+            echo "== $t"
+            python tests/$t.py
+          done
