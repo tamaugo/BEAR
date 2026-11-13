@@ -99,6 +99,10 @@ check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status
 
 # Renaming: every state fits, the offer says when it closes, the done card names the zips.
 fits("stopped", look.stopped_card("Q184", dev=True))
+fits("stopped by a restart", look.stopped_card("Q184", dev=True, restarted=True))
+restart = look.stopped_card("Q184", restarted=True)["embeds"][0]
+check("restart card says what happened", "Stopped by a restart" in restart["title"] and "**/run**" in restart["description"])
+check("restart card says folder, not box", "box" not in str(restart) and "folder" in restart["description"])
 for state in ("offer", "skipped", "stopped", "nothing", "waiting", "saving", "posting", "done"):
     fits(f"rename {state}", look.rename_card(state, "MYSKU", "Q184", deadline=100, photos=40, got=10, zips=3,
                                              first="MYSKU-1.jpg", last="MYSKU-40.jpg", others=2,

@@ -7,7 +7,8 @@ Plays /run through the real bot code against a fake car channel, with BEAR's dev
 person can cause, the name model failures (N01-N03) and a crash (R01) landing in the error
 channel, and three folders at once with two slots (one waits in the queue). Then the renaming
 (/run's offer is off unless BEAR_RENAME_OFFER is on): the SKU typed in that offer, the zip of
-every photo posted after the spreadsheet, /rename on its own, and /quit stopping a run. Last, the shadow test with its models faked: every photo logged,
+every photo posted after the spreadsheet, /rename on its own, and /quit stopping a run. A restart in the
+middle of a run: the next start marks its card stopped. Last, the shadow test with its models faked: every photo logged,
 reruns not counted twice, and the note in the error channel.
 
 usage: .venv/bin/python tests/test_discord_flow_offline.py
@@ -108,6 +109,12 @@ class Channel:
             ch.posted(attachments[0] if attachments else None)
             m.content, m.embeds = content or "", embeds or []
         m.edit = edit
+        return m
+
+    async def fetch_message(self, mid):
+        m = next((m for m in self.msgs if m.id == mid), None)
+        if m is None:
+            raise B.discord.DiscordException(f"Unknown Message {mid}")
         return m
 
 
@@ -211,6 +218,7 @@ async def main():
           [["001.jpg", "IMG_1.jpg"], ["002.jpg", "IMG_2.jpg"], ["003.jpg", "IMG_10.jpg"], ["004.webp", "IMG_11.webp"]])
     check("own spend ledger used", (run_dir / "results" / "results.xlsx").exists(), True)
     check("no error posted", ERRORS.sent, [])
+    check("finished run leaves no restart note", list(B.RUNNING_DIR.glob("*.json")), [])
 
     # read_folder stops at the newest marker, with exactly the answer reading all HISTORY_LIMIT
     # messages and splitting them gave (the old way); D02 the same when no marker is in reach.
@@ -416,6 +424,44 @@ async def main():
     await B.quit_cmd.callback(q)
     check("/quit with nothing running", any("Nothing is running" in r for r in q.replies), True)
     os.environ.pop("BEAR_RENAME_OFFER")
+    check("/quit leaves no restart note", list(B.RUNNING_DIR.glob("*.json")), [])
+
+    # A restart while a folder runs: the run dies without a word (here: its task is cancelled the
+    # way the bot's shutdown cancels it), its note stays, and the next start marks the card stopped.
+    os.environ["BEAR_SIM_PAUSE"] = "1"
+    ch = folder(90, name="Q190")
+    task = asyncio.create_task(run(ch))
+    while B.ACTIVE.get(ch.id, {}).get("state") != "running":
+        await asyncio.sleep(0.02)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    os.environ["BEAR_SIM_PAUSE"] = "0.02"
+    note = B.RUNNING_DIR / "90.json"
+    check("restart: note kept", note.exists(), True)
+    check("restart: card left on running", "Running 4 parts" in card(ch)[0], True)
+    check("restart: note names the card", B.json.loads(note.read_text())["message_id"] in [m.id for m in ch.msgs], True)
+    gone_msg = folder(91)
+    (B.RUNNING_DIR / "91.json").write_text(B.json.dumps({"channel_id": 91, "message_id": 123, "folder": "X"}))
+    (B.RUNNING_DIR / "92.json").write_text(B.json.dumps({"channel_id": 92, "message_id": 1, "folder": "Y"}))
+    (B.RUNNING_DIR / "93.json").write_text("not json")
+    chans = {90: ch, 91: gone_msg}
+
+    async def no_channel(cid):
+        raise B.discord.DiscordException(f"Unknown Channel {cid}")
+    B.bot.get_channel, B.bot.fetch_channel = chans.get, no_channel
+    errors_before = len(ERRORS.sent)
+
+    async def no_heartbeat():
+        pass
+    B.heartbeat, B.hb.update_log = no_heartbeat, lambda path: None
+    B.bot.started = False
+    await B.bot.on_ready()
+    await asyncio.sleep(0)
+    check("restart: card marked stopped", "Q190 · Stopped by a restart" in card(ch)[0] and "/run" in card(ch)[0], True)
+    check("restart: still one card", len(ch.sent), 1)
+    check("restart: missing channel, card and bad notes skipped, all tidied", list(B.RUNNING_DIR.glob("*.json")), [])
+    check("restart: started message still posted", len(ERRORS.sent), errors_before + 1)
+    check("restart: other channels untouched", gone_msg.sent, [])
 
     # Shadow test: never in dev mode; switched on here with the Decisions models faked (no network).
     shadow_log = TMP / "shadow" / "shadow.jsonl"
