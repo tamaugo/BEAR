@@ -454,12 +454,16 @@ async def sheet(inter: discord.Interaction):
 
 
 async def read_folder(ch):
-    """(name, messages after the latest marker oldest first, the marker). Raises D02 if there is no folder."""
-    history = [m async for m in ch.history(limit=HISTORY_LIMIT)]
-    name, marker, after = fo.split_folder(history, bot.user.id)
-    if not name:
-        raise fo.FolderError("BEAR-D02")
-    return name, after, marker
+    """(name, messages after the latest marker oldest first, the marker). Raises D02 if there is no folder.
+    Reads back from the newest message and stops at the marker (the same answer as fo.split_folder
+    over all HISTORY_LIMIT messages), so a folder of 40 photos reads about 40 messages, not 5000."""
+    after = []
+    async for m in ch.history(limit=HISTORY_LIMIT):
+        name = fo.marker_name(m, bot.user.id)
+        if name:
+            return name, after[::-1], m
+        after.append(m)
+    raise fo.FolderError("BEAR-D02")
 
 
 async def settled_folder(ch, seen=None, waiting=None):
