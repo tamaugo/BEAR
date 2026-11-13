@@ -78,8 +78,8 @@ In the build, `/newbox` became `/newfolder` and `end` is part of `/run`.
 | Parallel runs | **One VM, one bot**, up to 2 BEAR runs at once (`BEAR_MAX_RUNS`, default 2). A 3rd `/run` waits in a queue and the bot says it is queued. Never the same car twice at once: one folder per car channel. |
 | Status command | `/status` lists running and queued folders. |
 | Same part number twice in a folder | No special handling for now. Add a "DUPLICATE? check" mark only if it becomes a problem. |
-| Location (NSF/NSR/OSF/OSR) | **Being tested.** Staff write NF/OF/NR/OR in marker on the part, so it is in the part-number photo. The shadow test (below) logs what Decisions models read there; four custom emoji reactions on the photo stay the fallback. |
-| Shadow test | After each `/run`, every photo goes to `openai/gpt-6-luna-decisions`, `typesafe/jev-1.13` and `cloudflare/clef` (which location?). Logged, never posted. Folders from before 2026-10-27 also logged whether Luna could find the 💸 photo; with no 💸 any more, new folders add location data only. A note in the error channel every 300 part photos (`BEAR_SHADOW_PING_PARTS`); then `shadow_report.py`. |
+| Location (NSF/NSR/OSF/OSR) | **Tested, not adopted.** Staff write NF/OF/NR/OR in marker on the part, so it is in the part-number photo. The shadow test (below, switched off 2026-11-13) logged what Decisions models read there; four custom emoji reactions on the photo stay the fallback. |
+| Shadow test | **Switched off 2026-11-13** (code and the 214 photos' data kept; `BEAR_SHADOW=1` turns it back on). When on, after each `/run`, every photo goes to `openai/gpt-6-luna-decisions`, `typesafe/jev-1.13` and `cloudflare/clef` (which location?). Logged, never posted. Folders from before 2026-10-27 also logged whether Luna could find the 💸 photo; with no 💸 any more, new folders add location data only. A note in the error channel every 300 part photos (`BEAR_SHADOW_PING_PARTS`); then `shadow_report.py`. |
 | Image column in the spreadsheet | Kept as it is for now. |
 | Channel limit (500/server, 50/category) | Fine for now; archive or delete finished cars. |
 

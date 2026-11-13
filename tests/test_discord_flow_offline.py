@@ -488,9 +488,22 @@ async def main():
     check("restart: started message still posted", len(ERRORS.sent), errors_before + 1)
     check("restart: other channels untouched", gone_msg.sent, [])
 
-    # Shadow test: never in dev mode; switched on here with the Decisions models faked (no network).
+    # Shadow test: off unless BEAR_SHADOW=1, never in dev mode; switched on here with the Decisions
+    # models faked (no network).
     shadow_log = TMP / "shadow" / "shadow.jsonl"
     check("no shadow test in dev mode", shadow_log.exists(), False)
+    dev_was = B.dev
+    B.dev = lambda: False
+    os.environ.pop("BEAR_SHADOW", None)
+    check("shadow: off when not set", B.shadow_on(), False)
+    os.environ["BEAR_SHADOW"] = "0"
+    check("shadow: off with 0", B.shadow_on(), False)
+    os.environ["BEAR_SHADOW"] = "1"
+    check("shadow: on with 1", B.shadow_on(), True)
+    B.dev = lambda: True
+    check("shadow: never in dev mode", B.shadow_on(), False)
+    B.dev = dev_was
+    os.environ.pop("BEAR_SHADOW")
     asked = []
 
     def fake_check(model, uri, with_label):

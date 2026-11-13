@@ -9,8 +9,9 @@ an update it lists what changed in #update-log (heartbeat.py).
 Renaming (renames.py) is separate from BEAR: /rename renames every photo in the folder to
 SKU-1, SKU-2 ... and posts them as zips. /run's offer to do the same is dormant (BEAR_RENAME_OFFER).
 /quit stops everything /run or /rename is doing in the channel.
-After each /run, the shadow test (shadow.py) quietly asks Decisions models to read the location on
-every photo in the folder and logs the answers; nothing is posted until there is enough data to look at.
+The shadow test (shadow.py) is switched off since 2026-11-13; its code and data are kept. With
+BEAR_SHADOW=1, after each /run it quietly asks Decisions models to read the location on every photo
+in the folder and logs the answers; nothing is posted until there is enough data to look at.
 #part-id (partid_bot.py) is apart from all of this: a photo posted there is read by Agent 1, Jev scores
 the readings, and the top 3 come back to pick from, or type your own, plus the location. /sheet there
 posts every part number since the last /sheet as a spreadsheet.
@@ -29,7 +30,7 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_RENAME_DOWNLOADS  photos downloaded at once by /run and /rename, across all channels (6)
   BEAR_ZIP_MB          biggest zip posted, in MiB (10: Discord's limit without server boosts)
   BEAR_SIM             dev mode: run bear2/simulate.py with this scenario, no credits spent
-  BEAR_SHADOW          0 turns the shadow test off (on by default, never in dev mode); read at each /run
+  BEAR_SHADOW          1 turns the shadow test back on (off since 2026-11-13, never in dev mode); read at each /run
   BEAR_SHADOW_PING_PARTS  the error channel is told to look at the shadow data every this many part photos (300)
   BEAR_SHADOW_PING_USER   a Discord user ID to @mention in that note (blank: no mention)
   BEAR_HEARTBEAT_URL   the healthchecks.io ping URL checked in with every 10 minutes (blank: off)
@@ -893,8 +894,9 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
 # --- Shadow test (shadow.py) ------------------------------------------------------------------
 
 def shadow_on():
-    """Read at each /run. Off in dev mode: it would spend credit."""
-    return not dev() and setting("BEAR_SHADOW", "1").lower() not in ("0", "off", "no", "false")
+    """Read at each /run. Off unless BEAR_SHADOW=1 (switched off 2026-11-13, data kept), and never
+    in dev mode: it would spend credit."""
+    return not dev() and setting("BEAR_SHADOW", "0").lower() in ("1", "on", "yes", "true")
 
 
 def start_shadow(ch, folder, marker_id, msgs):

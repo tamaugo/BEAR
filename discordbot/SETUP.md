@@ -164,7 +164,7 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60; only with the offer on). No restart. |
 | What was renamed | `cat /var/lib/bear/runs/renames/renames.log` (one line per rename: when, channel, folder, SKU, what happened, photos, zips) |
 | Shadow test results | `/opt/bear/.venv/bin/python /opt/bear/discordbot/shadow_report.py /var/lib/bear/runs/shadow/shadow.jsonl`. Add `--review /tmp/review.csv` for a sheet of 💸 photos to fill in the right location, then `--truth /tmp/review.csv` to score the models. |
-| Turn the shadow test off | In `.env`: `BEAR_SHADOW=0`. No restart. `BEAR_SHADOW_PING_PARTS=300` sets how often it reminds you; `BEAR_SHADOW_PING_USER=<your user ID>` @mentions you. |
+| Shadow test on/off | **Off since 2026-11-13**; the code and data are kept. To turn it back on: in `.env`, `BEAR_SHADOW=1`. No restart. `BEAR_SHADOW_PING_PARTS=300` sets how often it reminds you; `BEAR_SHADOW_PING_USER=<your user ID>` @mentions you. |
 | Swap the name model (Qwen keeps failing, `BEAR-N01`–`N03`) | In `.env`: `BEAR_NAME_MODEL=google/gemini-3.1-flash-lite` (or `anthropic/claude-haiku-5.5`) |
 | Disk space | `df -h /var/lib/bear/runs` and `du -sh /var/lib/bear/runs/*` |
 | Delete runs older than 60 days | `find /var/lib/bear/runs -mindepth 2 -maxdepth 2 -type d -mtime +60 -exec rm -rf {} +` |
@@ -181,8 +181,9 @@ stays (new name, Discord name, message link), and so does the line in `renames/r
 A photo too big for Discord stays in `photos/` so it can be handed over by hand.
 
 The shadow test logs to `/var/lib/bear/runs/shadow/shadow.jsonl` (one line per photo per model,
-with a link to its message) and counts its reminders in `shadow/pinged`. It runs only when live
-(never in dev mode), after the spreadsheet is posted, and nothing it does can fail a `/run`.
+with a link to its message) and counts its reminders in `shadow/pinged`. It is switched off
+(since 2026-11-13; 214 photos logged, kept). With `BEAR_SHADOW=1` it runs only when live (never in
+dev mode), after the spreadsheet is posted, and nothing it does can fail a `/run`.
 
 | Problem | Fix |
 |---|---|
