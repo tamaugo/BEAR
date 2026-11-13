@@ -55,8 +55,18 @@ def read_all(photos, read, tick=None):
                 tick()
     with cf.ThreadPoolExecutor(6) as ex:
         reads = dict(zip([p.name for p in photos], ex.map(one, photos)))
-    if photos and len(errors) == len(photos):
+    # The reading model failed on some photos (a busy spell): give each one more try at the end.
+    for p in [p for p in photos if errors.get(p.name, ("",))[0] == FAIL_READ]:
+        try:
+            reads[p.name] = read(p)
+            del errors[p.name]
+        except Exception as e:
+            if stops_run(e):
+                raise
+            errors[p.name] = (FAIL_READ, e)
+    if errors and len(errors) == len(photos) and any(why != FAIL_PHOTO for why, _ in errors.values()):
         raise next(iter(errors.values()))[1]   # nothing was read at all: an outage, not a photo
+    reads = {k: v for k, v in reads.items() if k not in errors}   # stage1.json holds real reads only
     return reads, {k: (why, f"{type(e).__name__}: {str(e)[:200]}") for k, (why, e) in errors.items()}
 
 

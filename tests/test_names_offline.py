@@ -89,7 +89,7 @@ def pipeline_checks():
 
     def read(p):
         if p.name == "002.jpg":
-            raise RuntimeError("OpenRouter HTTP 503: upstream down")   # failed after its retries
+            raise RuntimeError("OpenRouter HTTP 503: upstream down")   # failed after its retries, twice
         if p.name == "003.jpg":
             Image.open(p)   # what the real read does first: raises on a corrupt file
         return {"candidates": [{"text": f"PN{p.stem}", "role": "primary"}]}
@@ -98,6 +98,22 @@ def pipeline_checks():
     check("model failure row", unread["002.jpg"][0], R.FAIL_READ)
     check("corrupt photo row", unread["003.jpg"][0], R.FAIL_PHOTO)
     check("reason kept", "HTTP 503" in unread["002.jpg"][1], True)
+    check("failed reads left out of stage1", sorted(reads), ["001.jpg", "004.jpg"])
+
+    # A busy spell: the photo's first read fails, the retry at the end works.
+    tries = []
+
+    def busy(p):
+        tries.append(p.name)
+        if p.name == "001.jpg" and tries.count("001.jpg") == 1:
+            raise RuntimeError("OpenRouter HTTP 429: busy")
+        return {"candidates": [{"text": "X1234567", "role": "primary"}]}
+    reads, unread = R.read_all([ps[0], ps[3]], busy)
+    check("busy photo read on its second try", (sorted(reads), unread, tries.count("001.jpg")), (["001.jpg", "004.jpg"], {}, 2))
+
+    # A folder of one corrupt photo is a FAILED row, not a stopped run.
+    reads, unread = R.read_all([ps[2]], read)
+    check("one corrupt photo alone", unread["003.jpg"][0], R.FAIL_PHOTO)
 
     for msg in ("spend cap reached: $1.0000 this run (cap $1.00)", "OpenRouter HTTP 402: no credit",
                 "OpenRouter HTTP 401: bad key"):
