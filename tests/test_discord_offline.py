@@ -318,6 +318,12 @@ for t in sorted((ROOT / "tests").glob("test_*.py")):
     check(f"setup.sh runs {t.name}", f"tests/{t.name}" in setup_sh, True)
     check(f"GitHub runs {t.name}", t.stem in workflow, True)
 
+# AGENTS.md (read by every assistant) points pull requests at the live branch, not the old main
+agents = (ROOT / "AGENTS.md").read_text()
+check("AGENTS.md: PRs into discord-bear", "gh pr create --base discord-bear" in agents, True)
+check("AGENTS.md: never into main", "--base main" in agents, False)
+check("AGENTS.md: lists every offline test", all(t.name in agents for t in (ROOT / "tests").glob("test_*.py")), True)
+
 if fails:
     print("\n".join(fails))
     sys.exit(f"{len(fails)} failed")
