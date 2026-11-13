@@ -122,6 +122,7 @@ check("validator: only what was flagged", flagged.splitlines(),
       ["- line count deficit: 2 output lines vs 3 input lines",
        "Line (image='008.jpeg'): part number '4F0820511B' not found among input records"])
 check("validator: exit 0 is fine", fo.validator_problem("validator exit 0 | wrote results.xlsx\n"), (None, ""))
+check("validator: the check crashing is not V01", fo.validator_problem("validator exit 1 | x\nTraceback ...\n"), (None, ""))
 check("validator: no check ran", fo.validator_problem("crash"), (None, ""))
 
 # Renaming: every photo people posted, in order, flags or not; other files and the bot's left out.

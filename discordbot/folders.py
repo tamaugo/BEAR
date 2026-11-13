@@ -169,7 +169,7 @@ def validator_problem(log):
     """(BEAR-V01, the flagged rows) when the final check (tools/agent3_validator.py, run by
     bear2/assemble.py) found rows it couldn't confirm, else (None, "")."""
     m = VALIDATOR.search(log)
-    if not m or m.group(1) == "0":
+    if not m or m.group(1) != "2":   # 2 = rows flagged; anything else is not a verdict on the rows
         return None, ""
     flagged, row, file_level = [], "", False
     for line in log[m.end():].splitlines():
