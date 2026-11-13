@@ -228,6 +228,12 @@ async def main():
         await run(ch, sim)
         check(f"sim {sim}", f"`{code}`" in last_error(), True)
 
+    # eBay down for most of the run: the spreadsheet is still posted, plus BEAR-E01 in amber.
+    ch = await run(folder(26), "outage")
+    check("outage: spreadsheet still posted", any(f == "Q184-mitsubishi-shogun-2007.xlsx" for _, f in ch.sent), True)
+    check("outage: E01 in the error channel", "`BEAR-E01`" in last_error(), True)
+    check("outage: amber note under the card", "Some parts not priced" in card(ch)[0], True)
+
     # Upload still arriving: /run waits for a quiet spell, then runs.
     ch = folder(30)
     ch.add(files=["IMG_99.jpg"], ago=0)

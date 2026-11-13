@@ -38,6 +38,8 @@ ERRORS = {
                  "Top up OpenRouter or raise the key's cap, then /run again."),
     "BEAR-K02": ("BEAR's own spend cap for one folder was reached, so some parts were not priced.",
                  "Raise BEAR_RUN_CAP_USD in the server's .env, then /run again."),
+    "BEAR-E01": ("Most parts weren't priced because eBay, Jev or a model was down or failing during the run.",
+                 "/run again later (the photos are saved). If it keeps happening, the log and trace.json say which service failed."),
     "BEAR-T01": ("The BEAR run took too long and was stopped.",
                  "/run again. If it happens again, the owner looks at the log."),
     "BEAR-R01": ("The BEAR run failed.",
@@ -157,6 +159,17 @@ def partial_problem(trace_text):
     if "spend cap reached" in trace_text:
         return "BEAR-K02"
     return None
+
+
+OUTAGE = re.compile(r" \| FAILED \| [^|]*\| [^|]*Unavailable\s*$")   # eBay Lookup / Jev / Model ... Unavailable
+
+
+def outage_problem(agent2_text):
+    """BEAR-E01 when most rows (more than half) failed because a service was down, not because of
+    the photos: the run still ends green with its spreadsheet, so this says why so little was priced."""
+    rows = [l for l in agent2_text.splitlines() if l.strip()]
+    down = sum(1 for l in rows if OUTAGE.search(l))
+    return "BEAR-E01" if rows and down * 2 > len(rows) else None
 
 
 def error_report(folder, code, where, detail=""):

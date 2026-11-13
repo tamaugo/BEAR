@@ -793,6 +793,7 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
                     file=discord.File(xlsx, filename=name))
     trace = results / "trace.json"
     code = fo.partial_problem(trace.read_text(errors="replace")) if trace.exists() else None
+    code = code or fo.outage_problem(a2.read_text() if a2.exists() else "")
     if code:   # a new message under the green card, which keeps its spreadsheet
         await bot.fail(ch, folder, code, "The spreadsheet was posted, but some parts failed because of this.",
                        logfile, partial=True, jump_url=jump_url)

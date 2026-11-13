@@ -198,7 +198,7 @@ with a link to its message) and counts its reminders in `shadow/pinged`. It runs
 Error codes in the error channel (fixes are in each message):
 `D01` no topic · `D02` no folder · `D03` no photos · `D05` photo BEAR can't
 read (HEIC) · `D06` download failed · `D07` renaming failed (a photo or zip) · `N01`/`N02`/`N03` name model rate limited / not responding /
-unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap · `T01` run took over
+unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap · `E01` most parts failed because eBay, Jev or a model was down (the spreadsheet is still posted) · `T01` run took over
 2 hours · `R01` anything else (log attached).
 
 ---
