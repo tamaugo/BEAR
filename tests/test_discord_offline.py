@@ -297,6 +297,12 @@ with zipfile.ZipFile(io.BytesIO(ps.xlsx([{"posted": when, "answer": "A<&>\x01", 
     sheet = z.read("xl/worksheets/sheet1.xml").decode()
 check("sheet: header, escaped number, location", all(t in sheet for t in ("who got the info", "A&lt;&amp;&gt;<", "off side front")), True)
 
+# AGENTS.md (read by every assistant) points pull requests at the live branch, not the old main
+agents = (ROOT / "AGENTS.md").read_text()
+check("AGENTS.md: PRs into discord-bear", "gh pr create --base discord-bear" in agents, True)
+check("AGENTS.md: never into main", "--base main" in agents, False)
+check("AGENTS.md: lists every offline test", all(t.name in agents for t in (ROOT / "tests").glob("test_*.py")), True)
+
 if fails:
     print("\n".join(fails))
     sys.exit(f"{len(fails)} failed")
