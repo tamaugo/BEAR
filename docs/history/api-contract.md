@@ -1,3 +1,5 @@
+> **History** (moved here 2026-11-13). Kept for the reasons behind decisions; it may be out of date. What BEAR does now is in [`docs/CURRENT.md`](../CURRENT.md).
+
 # Discord BEAR: front end ↔ back end contract
 
 Agreed between the front-end agent (Discord look, wording, server layout) and the back-end agent

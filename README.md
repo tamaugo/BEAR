@@ -1,12 +1,12 @@
 ## BEAR — Discord server edition
 
-This branch runs BEAR on a Debian 13 VM, fully managed through a Discord bot. Each car gets its own channel: create its photo folder with `/newfolder`, flag the part-number photo with 💸, then start the run with `/run`. The bot posts the finished spreadsheet back to the channel. Up to 2 folders can run at the same time. The Mac `bear` command and the `bear ui` web page are not on this branch; they live on `main`.
+This branch runs BEAR on a Debian 13 VM, fully managed through a Discord bot. Each car gets its own channel: create its photo folder with `/newfolder`, upload the part-number photos, then start the run with `/run`. The bot posts the finished spreadsheet back to the channel. Up to 2 folders can run at the same time. The Mac `bear` command and the `bear ui` web page are not on this branch; they live on `main`.
 
-**Cost:** about 0.2p per part (measured). Each folder has its own spend cap, `BEAR_RUN_CAP_USD` in `.env` on the server ($3 in the template).
+**Cost:** about 0.12p per part (measured, Nov 2026). Each folder has its own spend cap, `BEAR_RUN_CAP_USD` in `.env` on the server ($3 in the template).
 
+- **What BEAR does now: [docs/CURRENT.md](docs/CURRENT.md)**
 - Setup guide: [discordbot/SETUP.md](discordbot/SETUP.md)
-- Design: [discordbot/PLAN.md](discordbot/PLAN.md)
-- Research: [discordbot/RESEARCH.md](discordbot/RESEARCH.md)
+- Earlier plans, research and validation: [docs/history/](docs/history/)
 - Changes: [CHANGELOG.md](CHANGELOG.md)
 
 Offline tests (free, no network):

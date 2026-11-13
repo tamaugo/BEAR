@@ -1,7 +1,7 @@
 # Discord BEAR: the front end
 
 What people see and touch in the Discord server: the layout, the messages, the feel. The plan
-is in [PLAN.md](PLAN.md), and setting up the VM and the bot is in [SETUP.md](SETUP.md).
+is in [docs/CURRENT.md](../docs/CURRENT.md), and setting up the VM and the bot is in [SETUP.md](SETUP.md).
 
 - **Every message's look and wording** lives in [`look.py`](look.py). `bot.py` decides *when*
   to post, `look.py` decides *what it looks like*.

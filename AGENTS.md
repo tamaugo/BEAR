@@ -42,7 +42,9 @@ explain things in plain English, and keep pull request descriptions plain.
 | `discordbot/partid_bot.py`, `partid_sheet.py`, `partid/` | #part-id channel | Live, separate |
 | `discordbot/shadow.py`, `shadow_report.py` | Location shadow test | Dormant (off) |
 | `discordbot/deploy/` | Server install and update (`setup.sh`, systemd service) | Live |
-| `discordbot/*.md`, `docs/` | Plans, research, setup guide (`SETUP.md` is current) | Mostly history |
+| `docs/CURRENT.md` | What BEAR does today, in one page: read this first | Live |
+| `discordbot/SETUP.md`, `FRONTEND.md` | Server setup, how every Discord post looks | Live |
+| `docs/history/` | Earlier plans, research, validation, the front end ↔ back end contract | History |
 | `tools/` | `agent3_validator.py` (checks the finished lines), `jev_client.py` (Jev / Decisions API) | Live |
 | `harness/make_xlsx.py` | Writes `results.xlsx` | Live |
 | `legacy/` | Old code nothing imports | History |

@@ -1,3 +1,5 @@
+> **History** (moved here 2026-11-13). Kept for the reasons behind decisions; it may be out of date. What BEAR does now is in [`docs/CURRENT.md`](../CURRENT.md).
+
 # Discord BEAR — research notes
 
 Background for [PLAN.md](PLAN.md): what Discord allows, the blind spots found in the first
