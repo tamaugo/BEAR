@@ -28,6 +28,7 @@ NAME_MODELS = {MODEL: "Qwen 3.8 Flash",
                "google/gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
                "anthropic/claude-haiku-5.5": "Claude Haiku 5.5"}
 CHECK_FILE = "names_check.json"   # the approved first line: image, model, name
+NAME_BATCH = 25                   # rows per name-model call: a big folder can't be cut off at max_tokens
 CHECK_ATTEMPTS = 2                # the first-line check gives up on a busy model in seconds
 WEB = bool(os.environ.get("BEAR_WEB_ASK"))   # started by the web page, which answers on stdin
 WEB_MARK = "@@BEAR "              # web page messages: this prefix + one JSON object per stdout line
@@ -74,7 +75,16 @@ def label(model):
 
 def clean_names(rows, model=MODEL, attempts=c.CHAT_ATTEMPTS):
     """{id: agent2 row fields} -> {id: tidy name} for every row, or NamesFailed. Never partial,
-    never a mechanical stand-in: a name that can't be used stops the run like an outage does."""
+    never a mechanical stand-in: a name that can't be used stops the run like an outage does.
+    Sent NAME_BATCH rows per call, so a very large folder can't run past max_tokens."""
+    items, tidy = list(rows.items()), {}
+    for i in range(0, len(items), NAME_BATCH):
+        tidy.update(clean_batch(dict(items[i:i + NAME_BATCH]), model, attempts))
+    return tidy
+
+
+def clean_batch(rows, model, attempts):
+    """One name-model call for up to NAME_BATCH rows (clean_names)."""
     if not rows:
         return {}
     user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f) for k, f in rows.items()}, indent=0)

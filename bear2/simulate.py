@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import assemble
 
-SCENARIOS = ["ok", "wrong-line", "all-wrong", "check-rate-limit", "rate-limit", "no-response", "unusable", "crash", "flagged", "outage"]
+SCENARIOS = ["ok", "wrong-line", "all-wrong", "check-rate-limit", "rate-limit", "no-response", "unusable", "crash", "flagged", "outage", "names-once"]
 SCENARIO = os.environ.get("BEAR_SIM") if os.environ.get("BEAR_SIM") in SCENARIOS else "ok"
 PAUSE = float(os.environ.get("BEAR_SIM_PAUSE", "0.15"))   # seconds per fake step, so progress is visible
 FIRST_FILE = "sim_first_model.txt"
@@ -68,6 +68,8 @@ def fake_clean_names(rows, model=assemble.MODEL, attempts=None):
     if model == first and SCENARIO == "check-rate-limit" and check or model == first and SCENARIO == "rate-limit" and not check:
         raise assemble.NamesFailed(f'{lab} is unavailable: OpenRouter HTTP 429: {{"error":{{"message":'
                                    f'"Rate limit exceeded: {model} is temporarily rate-limited upstream","code":429}}}} (simulated)')
+    if model == first and SCENARIO == "names-once" and not check and "--names-only" not in sys.argv:
+        raise assemble.NamesFailed(f"{lab} is unavailable: <urlopen error timed out> (simulated, only the first time)")
     if model == first and SCENARIO == "no-response" and not check:
         raise assemble.NamesFailed(f"{lab} is unavailable: <urlopen error timed out> (simulated)")
     if model == first and SCENARIO == "unusable" and not check:

@@ -28,11 +28,11 @@ ERRORS = {
                  "/run again. If it keeps failing, re-upload that photo."),
     "BEAR-D07": ("The photos couldn't be renamed: one didn't download, or a zip couldn't be posted.",
                  "/rename again with the same SKU. If it keeps failing, re-upload that photo or look at the bot's log."),
-    "BEAR-N01": ("The name model is rate limited.",
+    "BEAR-N01": ("The name model is rate limited (BEAR already retried only the names, twice).",
                  "Wait a few minutes and /run again, or set BEAR_NAME_MODEL in the server's .env to another name model."),
-    "BEAR-N02": ("The name model is not responding.",
+    "BEAR-N02": ("The name model is not responding (BEAR already retried only the names, twice).",
                  "/run again later, or set BEAR_NAME_MODEL in the server's .env to another name model."),
-    "BEAR-N03": ("The name model gave part names BEAR can't use.",
+    "BEAR-N03": ("The name model gave part names BEAR can't use (BEAR already retried only the names, twice).",
                  "Set BEAR_NAME_MODEL in the server's .env to another name model, then /run again."),
     "BEAR-K01": ("OpenRouter refused: out of credit or the key's spend cap was reached (HTTP 402).",
                  "Top up OpenRouter or raise the key's cap, then /run again."),
@@ -138,6 +138,9 @@ def count_results(agent2_text):
 
 
 NAME_FAIL = re.compile(r"^(.+?) (is unavailable|gave an unusable answer|gave a name BEAR can't use)", re.M)
+
+
+NAME_CODES = ("BEAR-N01", "BEAR-N02", "BEAR-N03")
 
 
 def classify(log):
