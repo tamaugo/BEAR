@@ -14,6 +14,60 @@ import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as 
 FAIL1 = "FAILED | Agent 1 | Could Not Produce Clear Part Number"
 FAIL_NF = "FAILED | Agent 2 | No eBay Listing Found"
 FAIL_UN = "FAILED | Agent 2 | eBay Lookup Unavailable"
+FAIL_PHOTO = "FAILED | Agent 1 | Photo Could Not Be Opened"      # corrupt or not really an image
+FAIL_READ = "FAILED | Agent 1 | Photo Read Unavailable"          # the reading model failed after its retries
+
+
+def stops_run(e):
+    """Errors that would hit every photo, so the run still stops and the bot reports them:
+    BEAR's spend cap (BEAR-K02), OpenRouter out of credit (HTTP 402, BEAR-K01), a bad key (401)."""
+    return any(t in str(e) for t in ("spend cap reached", "OpenRouter HTTP 402", "OpenRouter HTTP 401"))
+
+
+def read_failure(path, e):
+    """The FAILED reason for a photo whose read raised e: the photo itself, or the reading model."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            im.load()
+    except Exception:
+        return FAIL_PHOTO
+    return FAIL_READ
+
+
+def read_all(photos, read, tick=None):
+    """{name: stage 1 read} for every photo, read 6 at a time. One photo that can't be read (a
+    corrupt image, or a model call that fails after all its retries) becomes a FAILED row instead
+    of ending the run: returns (reads, {name: (FAILED reason, error text)}). Errors that would hit
+    every photo (stops_run), or every photo failing, still stop the run as before."""
+    errors = {}
+
+    def one(p):
+        try:
+            return read(p)
+        except Exception as e:
+            if stops_run(e):
+                raise
+            errors[p.name] = (read_failure(p, e), e)
+            return None
+        finally:
+            if tick:
+                tick()
+    with cf.ThreadPoolExecutor(6) as ex:
+        reads = dict(zip([p.name for p in photos], ex.map(one, photos)))
+    # The reading model failed on some photos (a busy spell): give each one more try at the end.
+    for p in [p for p in photos if errors.get(p.name, ("",))[0] == FAIL_READ]:
+        try:
+            reads[p.name] = read(p)
+            del errors[p.name]
+        except Exception as e:
+            if stops_run(e):
+                raise
+            errors[p.name] = (FAIL_READ, e)
+    if errors and len(errors) == len(photos) and any(why != FAIL_PHOTO for why, _ in errors.values()):
+        raise next(iter(errors.values()))[1]   # nothing was read at all: an outage, not a photo
+    reads = {k: v for k, v in reads.items() if k not in errors}   # stage1.json holds real reads only
+    return reads, {k: (why, f"{type(e).__name__}: {str(e)[:200]}") for k, (why, e) in errors.items()}
 
 
 def no_match_fail(s1):
@@ -163,18 +217,17 @@ def main():
     rest = [p for p in photos if p.name not in done]
     S1.update({k: v[0] for k, v in done.items()})
     if not s1_cache:
-        tick = progress("Reading part numbers", len(rest))
-
-        def read(p):
-            try:
-                return s1m.read_photo_robust(p, vehicle)
-            finally:
-                tick()
-        with cf.ThreadPoolExecutor(6) as ex:
-            S1.update(zip([p.name for p in rest], ex.map(read, rest)))
+        reads, unread = read_all(rest, lambda p: s1m.read_photo_robust(p, vehicle),
+                                 progress("Reading part numbers", len(rest)))
+        S1.update(reads)
+    else:
+        unread = {}
     (out_dir / "stage1.json").write_text(json.dumps(S1, indent=1))
     lines = {k: v[1] for k, v in done.items()}
     trace = {k: v[2] for k, v in done.items()}
+    for name, (why, err) in unread.items():
+        lines[name], trace[name] = f"{name} | {why}", {"error": err}
+    rest = [p for p in rest if p.name not in unread]
     with cf.ThreadPoolExecutor(6) as ex:
         futs = {ex.submit(process, p.name, S1.get(p.name), vehicle, make, p): p.name for p in rest}
         tick = progress("Pricing on eBay", len(rest))

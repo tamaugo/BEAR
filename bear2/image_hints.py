@@ -91,7 +91,11 @@ def main(run_dir, photo_dir, vehicle):
         if not (len(f) == 5 and f[0].strip().startswith(("FAILED", "NO PART NUMBER"))):
             continue
         img = f[4].strip()
-        top = rank(search_by_image(photo_dir / img), ctx)[:PER_PHOTO]
+        try:
+            found = search_by_image(photo_dir / img)
+        except Exception:   # e.g. a corrupt photo: no hints for it, the others still get theirs
+            found = []
+        top = rank(found, ctx)[:PER_PHOTO]
         trace[img] = [(it.get("title"), it["price"]["value"]) for it in top]
         if not top:
             out.append(f"\u21b3 POSSIBLE MATCH - none found by image search | | | | {img}")
