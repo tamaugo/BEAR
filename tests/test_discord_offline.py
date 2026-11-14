@@ -442,7 +442,33 @@ check("sheet: typed", ps.who({"answer": "A1", "how": "typed", "choice": "typed"}
 check("sheet: no answer", ps.who({"answer": None, "how": "default", "choice": None}), "")
 when = datetime(2026, 7, 1, 11, 35, 12, tzinfo=timezone.utc).timestamp()   # 12:35:12 in UK summer time
 check("sheet: row", ps.row({"posted": when, "answer": "1K0 615 601", "how": "picked", "choice": 2, "location": None}),
-      (datetime(2026, 7, 1, 12, 35, 12), "1K0 615 601", "jev option 2", ""))
+      (datetime(2026, 7, 1, 12, 35, 12), "1K0 615 601", "jev option 2", "", ""))
+check("sheet: marked no part number", ps.who({"answer": None, "how": "none", "choice": "none", "by": "<@a>"}), "human")
+check("sheet: agent 1 found none", ps.who({"answer": None, "how": "none", "choice": "none", "by": None}), "agent 1")
+nonum = {"posted": when, "answer": None, "how": "none", "choice": "none", "by": "<@a>", "location": "near side rear",
+         "photo_name": "IMG_9.jpg", "message": "https://discord.com/channels/1/5/9",
+         "matches": [{"title": 'Ford "Focus" 2015 door  handle', "price": 12.5, "url": "https://www.ebay.co.uk/itm/1"}]}
+check("sheet: no-number row", ps.row(nonum),
+      (datetime(2026, 7, 1, 12, 35, 12), "NO PART NUMBER", "human", "near side rear",
+       ps.Link("https://discord.com/channels/1/5/9", "IMG_9.jpg")))
+check("sheet: look-alike rows", ps.match_rows(nonum),
+      [("", '\u21b3 POSSIBLE MATCH 1 (check by eye) - Ford "Focus" 2015 door handle - listed \u00a312.50',
+        "eBay photo search", "", ps.Link("https://www.ebay.co.uk/itm/1", "eBay listing"))])
+check("sheet: none found", ps.match_rows({**nonum, "matches": []})[0][1], "\u21b3 POSSIBLE MATCH - none found by eBay photo search")
+check("sheet: search failed", "search the photo by hand" in ps.match_rows({**nonum, "matches": None})[0][1], True)
+check("sheet: no look-alikes once a number is given", ps.match_rows({**nonum, "how": "typed", "answer": "X1"}), [])
+with zipfile.ZipFile(io.BytesIO(ps.xlsx([nonum, {**nonum, "how": "picked", "answer": "B2", "choice": 1}]))) as z:
+    sheet = z.read("xl/worksheets/sheet1.xml").decode()
+    styles = z.read("xl/styles.xml").decode()
+check("sheet: look-alike under its part, then the next part", [r.split('"')[1] for r in sheet.split("<row r=")[1:]],
+      ["1", "2", "3", "4"])
+check("sheet: shaded, linked", all(t in sheet for t in (
+    '<c r="B3" s="3"', '<c r="A3" s="3"', '<c r="E3" s="5" t="str"><f>HYPERLINK("https://www.ebay.co.uk/itm/1","eBay listing")',
+    '<c r="E2" s="4" t="str"><f>HYPERLINK("https://discord.com/channels/1/5/9","IMG_9.jpg")</f><v>IMG_9.jpg</v>',
+    '<c r="B4" t="inlineStr"><is><t xml:space="preserve">B2<')), True)
+check("sheet: link quotes doubled", '<f>HYPERLINK("u","a""b &amp;")</f>' in ps.cell_row(2, ("", "", "", "", ps.Link("u", 'a"b &'))), True)
+check("sheet: link too long for a formula is plain text", "HYPERLINK" in ps.cell_row(2, [ps.Link("u" * 300, "x")]), False)
+check("sheet: 6 styles", 'cellXfs count="6"' in styles and styles.count("<xf ") == 7, True)
 with zipfile.ZipFile(io.BytesIO(ps.xlsx([{"posted": when, "answer": "A<&>\x01", "how": "typed", "choice": "typed",
                                           "location": "off side front"}]))) as z:
     sheet = z.read("xl/worksheets/sheet1.xml").decode()

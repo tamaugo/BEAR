@@ -289,20 +289,32 @@ possible reading of it, then **Jev** scores all of them from most to least likel
 top 3, best first, each with Jev's score. The order is always Jev's, never Gemini's. If Jev fails, the
 card says to send the photo again.
 
-Buttons **1**, **2**, **3** and **✏️ Type your own**. Until someone picks or types, the answer is
-**1**. A blank ✏️ box also means 1. Answers can be changed; the last one counts and the card shows
-who gave it. One card per photo, as soon as it is read (about 2 s). Text is left alone.
+Buttons **1**, **2**, **3**, **✏️ Type your own** and **🚫 No part number**. Until someone picks or
+types, the answer is **1**. A blank ✏️ box also means 1. Answers can be changed; the last one counts and
+the card shows who gave it. One card per photo, as soon as it is read (about 2 s). Text is left alone.
+
+**🚫 No part number** is for a part with no number on it. The answer becomes *No part number* and the
+same photo is sent to eBay's search-by-image (car parts, UK sellers, used first). The 3 closest-looking
+listings appear on the card with their price, to check by eye. They are never a BEAR price. If Agent 1
+finds no number at all, the card starts as *No part number* and searches straight away. Clicking 🚫 again goes back
+to option 1; picking 1-3 or typing a number replaces it. The search is free (eBay's API only); if it
+fails, the card says so and `/sheet` tries it again.
 
 Under them, four location buttons: **Near side rear**, **Near side front**, **Off side rear**,
 **Off side front**. Nothing picked leaves the location blank; clicking the picked one again clears it.
 
-**/sheet** (in `#part-id`) posts a spreadsheet of every part number since the last `/sheet`, the first
+**/sheet** (in `#part-id`) posts a spreadsheet of every part since the last `/sheet`, the first
 posted at the top: date & time posted, the number, who got it (`jev option 1/2/3`, or `human` if typed
-with ✏️; nothing picked = `jev option 1`) and the location. Run it once every photo is right: answers
+with ✏️ or marked 🚫; nothing picked = `jev option 1`; `agent 1` if it found no number and nobody changed
+that), the location, and the photo (its name, a link to it in `#part-id`). A part with no number says
+`NO PART NUMBER` and has the eBay look-alikes as shaded rows right under it
+(`↳ POSSIBLE MATCH 1 (check by eye) - title - listed £x`, the listing linked in the photo column), the
+same layout `/run` uses for photos it couldn't price. Run it once every photo is right: answers
 changed after a `/sheet` don't go in a later one. The first `/sheet` takes every card ever saved.
 
 Nothing here touches `/run`: `partid/agent1.py` is its own copy of Agent 1 (one head-on read),
-`partid/jev.py` the scoring, `partid/part_id.py` runs the two. The card's look is `card_text()` in
+`partid/jev.py` the scoring, `partid/part_id.py` runs the two, `partid/photo_search.py` is the eBay
+photo search (it uses `bear2/image_hints.py`'s eBay call as it is). The card's look is `card_text()` in
 `discordbot/partid_bot.py`.
 
 The channel: run `/opt/bear/.venv/bin/python /opt/bear/discordbot/setup_server.py --write-env`
@@ -311,4 +323,4 @@ once (it adds `#part-id` under BEAR, open to everyone, and writes `PART_ID_CHANN
 
 Photos are kept in `/var/lib/bear/runs/part-id/`, each card's answer and the whole read (Agent 1's raw answer, Jev's scores) in its
 `cards/` (one file per card), a copy of each `/sheet` in its `sheets/`, spend in its `spend.jsonl`. Dev mode
-(`BEAR_SIM`) gives a made-up read, no credit spent.
+(`BEAR_SIM`) gives a made-up read and made-up look-alikes, no credit spent.
