@@ -2,7 +2,8 @@
 """Offline checks of #part-id (no Discord, no network, no credits). Needs discord.py (the server's
 .venv has it). A photo posted in #part-id goes through the real bot and the real partid/agent1.py in
 dev mode: the card with Jev's top 3 and their scores, the answer 1 until someone picks, the 1/2/3 buttons, ✏️ Type your
-own (typed and blank), 🚫 No part number and its eBay photo search (on the card and in /sheet), the
+own (typed and blank), 🚫 No part number and its eBay photo search (on the card and in /sheet), each
+answer's eBay category (looked up when it becomes the answer, in /sheet), the
 buttons after a restart, Agent 1's ranking, and other channels, text, HEIC and failures. Then Jev doing the scoring (its order, not Agent 1's; a
 Jev failure fails the read) with the Decisions call faked.
 
@@ -29,6 +30,7 @@ import agent1 as A  # noqa: E402
 import jev as J  # noqa: E402
 import part_id as R  # noqa: E402
 import photo_search as S  # noqa: E402
+import ebay_category as E  # noqa: E402
 from PIL import Image  # noqa: E402
 
 logging.disable(logging.CRITICAL)
@@ -124,6 +126,7 @@ async def main():
     check("saved default", (saved["choice"], saved["answer"], saved["how"]), (1, "39R293-1200", "default"))
     check("raw read kept", saved["read"]["agent1"]["raw"], A.SIM_RAW)
     check("Jev's scores kept", saved["read"]["jev"]["method"], "jev (dev mode)")
+    check("option 1's eBay category looked up", saved["categories"], {"39R293-1200": E.SIM})
 
     # Pick 2, then 3: the last pick counts.
     i = Inter(card_msg)
@@ -135,6 +138,7 @@ async def main():
     saved = P.load(card_msg.id)
     check("picked 3", (saved["choice"], saved["answer"], saved["how"], saved["by_name"]),
           (3, "97420-3Z000", "picked", "Ali"))
+    check("each picked number looked up once", sorted(saved["categories"]), ["39R293-1200", "97420-3Z000", "97420-3Z0O0"])
 
     # ✏️ Type your own: the box, a typed number, then a blank box goes back to 1.
     i = Inter(card_msg)
@@ -145,6 +149,7 @@ async def main():
     await i.modal.on_submit(i)
     saved = P.load(card_msg.id)
     check("typed", (saved["choice"], saved["answer"], saved["how"]), ("typed", "97420-3Z010", "typed"))
+    check("typed number looked up", saved["categories"].get("97420-3Z010"), E.SIM)
     check("typed shown", "Answer: ✏️ `97420-3Z010`, typed by <@Sam>" in (i.edited or ""), True)
     check("type is green", styles(card_msg.view), ["secondary", "secondary", "secondary", "success", "secondary"])
     i = Inter(card_msg)
@@ -170,6 +175,7 @@ async def main():
     check("no number shown", "Answer: 🚫 **No part number**, marked by <@Jo>" in (i.edited or ""), True)
     check("search shown as looking first", "eBay photo search: looking…" in (i.edited or ""), True)
     check("photo searched", [m["title"] for m in saved["matches"]], [m["title"] for m in S.SIM])
+    check("look-alikes carry their category", [m["category"] for m in saved["matches"]], ["33646", "33647", "33648"])
     check("card redrawn with the look-alikes", ("`1` [(dev mode) made-up look-alike listing 1](<https://www.ebay.co.uk/itm/100000000001>)"
                                                " · listed £14.99") in card_msg.content, True)
     check("no number is green", styles(card_msg.view), ["secondary", "secondary", "secondary", "primary", "success"])
@@ -197,6 +203,7 @@ async def main():
     check("none found = no part number", (blank["choice"], blank["answer"], blank["how"], blank["by"]), ("none", None, "none", None))
     check("none found shown", "Answer: 🚫 **No part number** (Agent 1 found none)" in replies[0].content, True)
     check("none found searched at once", (len(blank["matches"]), replies[0].edits), (3, 1))
+    check("no number, no category lookup", blank["categories"], {})
     check("none found buttons", [b.custom_id for b in replies[0].view.children][:2], ["partid:type", "partid:none"])
     i = Inter(replies[0])
     await button(replies[0].view, "partid:type").callback(i)
@@ -306,7 +313,23 @@ async def main():
         "R1": 0.1, "R2": 0.05, "R3": 0.4, "R4": 0.15, "R5": 0.3}}}, "usage": {"cost": 0}}
     check("top 3 of 5", [o["text"] for o in R.run("x.jpg")["options"]], ["NUM-3", "NUM-5", "NUM-4"])
 
+    # The eBay category of a number: the one most listings carrying it are filed under, a tie to eBay's first.
+    check("category: most listings", E.pick(["33546", "50459", "50459", ""]), "50459")
+    check("category: tie goes to the first", E.pick(["33546", "50459"]), "33546")
+    check("category: no listings", E.pick(["", ""]), "")
+    import common as C
+    asked = []
+    real_exact = C.ebay_exact
+    C.ebay_exact = lambda n: asked.append(n) or [{"leafCategoryIds": ["9886"]}, {"categories": [{"categoryId": "33648"}]},
+                                                 {"leafCategoryIds": ["33648"]}]
+    check("category: real lookup", E.lookup("KD45676NXA"), {"number": "KD45676NXA", "category": "33648", "listings": 3})
+    check("category: searched by the number", asked, ["KD45676NXA"])
+    C.ebay_exact = real_exact
+
     os.environ["BEAR_SIM"] = "ok"   # dev mode again: the retried photo search is made up
+    lost = P.load(card_msg.id)   # as if the category lookup had failed: /sheet looks it up
+    lost["categories"] = {}
+    P.save(lost)
     # /sheet: deferred (photo searches take time), the failed search is retried, and the spreadsheet has
     # each no-number part with its look-alikes under it.
     sent = {}
@@ -327,6 +350,9 @@ async def main():
     check("sheet has no-number rows", sheet.count("NO PART NUMBER"), 2)
     check("sheet has look-alike rows", sheet.count("POSSIBLE MATCH"), 6)
     check("sheet links the photos", 'HYPERLINK("https://discord.com/channels/1/5/505","blank.jpg")' in sheet, True)
+    check("missing category looked up at /sheet", P.load(card_msg.id)["categories"], {"97420-3Z0O0": E.SIM})
+    # 3 numbered parts (this card and a.jpg, b.png) and 2 no-number parts, each with look-alike 1
+    check("sheet has the categories", (sheet.count(f">{E.SIM}<"), sheet.count(">33646<")), (3, 2))
     check("all marked", all(P.load(c)["sheet"] for c in (shiny.id, blank["card"], card_msg.id)), True)
 
 asyncio.run(main())
