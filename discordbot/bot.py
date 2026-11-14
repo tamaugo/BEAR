@@ -190,7 +190,7 @@ class Bot(discord.Client):
         self.started = False
 
     async def setup_hook(self):
-        partid_bot.setup(STORAGE)
+        partid_bot.setup(STORAGE, run_env)   # run_env: the eBay keys and BEAR_SIM for #part-id's photo search
         self.add_view(partid_bot.Buttons())   # #part-id cards' buttons, also on cards from before a restart
         guild = discord.Object(GUILD_ID)
         self.tree.copy_global_to(guild=guild)

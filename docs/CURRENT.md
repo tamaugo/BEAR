@@ -23,7 +23,8 @@ in the channel topic.
 7. The card in the channel ends green with the spreadsheet, or red with what to do.
 
 Unpriced photos get up to 3 eBay search-by-image suggestions, shaded, to check by eye.
-`#part-id` is separate: a photo posted there gets Jev's top 3 part numbers to pick from (`partid/`).
+`#part-id` is separate: a photo posted there gets Jev's top 3 part numbers to pick from (`partid/`). A part
+with no number is marked 🚫 and looked up on eBay by its photo; `/sheet` lists the look-alikes under it.
 
 **Cost:** about 0.12p a part (Nov 2026). Each folder has its own cap, `BEAR_RUN_CAP_USD`. The spend
 ledger (`spend.jsonl` in each run folder) records cost and token counts per call.

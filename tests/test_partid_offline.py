@@ -2,8 +2,8 @@
 """Offline checks of #part-id (no Discord, no network, no credits). Needs discord.py (the server's
 .venv has it). A photo posted in #part-id goes through the real bot and the real partid/agent1.py in
 dev mode: the card with Jev's top 3 and their scores, the answer 1 until someone picks, the 1/2/3 buttons, ✏️ Type your
-own (typed and blank), the buttons after a restart, Agent 1's ranking, and other channels, text,
-HEIC and failures. Then Jev doing the scoring (its order, not Agent 1's; a
+own (typed and blank), 🚫 No part number and its eBay photo search (on the card and in /sheet), the
+buttons after a restart, Agent 1's ranking, and other channels, text, HEIC and failures. Then Jev doing the scoring (its order, not Agent 1's; a
 Jev failure fails the read) with the Decisions call faked.
 
 usage: .venv/bin/python tests/test_partid_offline.py
@@ -28,6 +28,7 @@ import partid_bot as P  # noqa: E402
 import agent1 as A  # noqa: E402
 import jev as J  # noqa: E402
 import part_id as R  # noqa: E402
+import photo_search as S  # noqa: E402
 from PIL import Image  # noqa: E402
 
 logging.disable(logging.CRITICAL)
@@ -52,7 +53,11 @@ def message(channel, files=(), mid=500):
     replies = []
 
     async def reply(content=None, file=None, view=None, mention_author=True):
-        r = NS(id=mid * 10 + len(replies), content=content, view=view)
+        r = NS(id=mid * 10 + len(replies), content=content, view=view, edits=0)
+
+        async def edit(content=None, view=None):
+            r.content, r.view, r.edits = content, view, r.edits + 1
+        r.edit = edit
         replies.append(r)
         return r
     return NS(id=mid, author=NS(bot=False), guild=NS(id=1), channel=channel, type=None, created_at=datetime.now(timezone.utc),
@@ -113,8 +118,8 @@ async def main():
     check("says Jev", "scored by Jev" in card_msg.content, True)
     check("default answer", "Answer: **1** `39R293-1200` (nobody has picked, so 1)" in card_msg.content, True)
     check("buttons", [b.custom_id for b in card_msg.view.children],
-          ["partid:pick:1", "partid:pick:2", "partid:pick:3", "partid:type", *LOC])
-    check("1 is green", styles(card_msg.view), ["success", "secondary", "secondary", "primary"])
+          ["partid:pick:1", "partid:pick:2", "partid:pick:3", "partid:type", "partid:none", *LOC])
+    check("1 is green", styles(card_msg.view), ["success", "secondary", "secondary", "primary", "secondary"])
     saved = json.loads((TMP / "part-id" / "cards" / f"{card_msg.id}.json").read_text())
     check("saved default", (saved["choice"], saved["answer"], saved["how"]), (1, "39R293-1200", "default"))
     check("raw read kept", saved["read"]["agent1"]["raw"], A.SIM_RAW)
@@ -124,7 +129,7 @@ async def main():
     i = Inter(card_msg)
     await button(card_msg.view, "partid:pick:2").callback(i)
     check("picked 2", "Answer: **2** `97420-3Z0O0`, picked by <@Sam>" in (i.edited or ""), True)
-    check("2 is green", styles(card_msg.view), ["secondary", "success", "secondary", "primary"])
+    check("2 is green", styles(card_msg.view), ["secondary", "success", "secondary", "primary", "secondary"])
     i = Inter(card_msg, "Ali")
     await button(card_msg.view, "partid:pick:3").callback(i)
     saved = P.load(card_msg.id)
@@ -141,7 +146,7 @@ async def main():
     saved = P.load(card_msg.id)
     check("typed", (saved["choice"], saved["answer"], saved["how"]), ("typed", "97420-3Z010", "typed"))
     check("typed shown", "Answer: ✏️ `97420-3Z010`, typed by <@Sam>" in (i.edited or ""), True)
-    check("type is green", styles(card_msg.view), ["secondary", "secondary", "secondary", "success"])
+    check("type is green", styles(card_msg.view), ["secondary", "secondary", "secondary", "success", "secondary"])
     i = Inter(card_msg)
     await button(card_msg.view, "partid:type").callback(i)
     i.modal.number._value = "   "
@@ -157,10 +162,63 @@ async def main():
     await button(P.Buttons(), "partid:pick:1").callback(i)
     check("unknown card", i.private, "This card isn't saved any more.")
 
+    # 🚫 No part number: the answer, then eBay's photo search on the same photo, shown on the card.
+    i = Inter(card_msg, "Jo")
+    await button(card_msg.view, "partid:none").callback(i)
+    saved = P.load(card_msg.id)
+    check("no number saved", (saved["choice"], saved["answer"], saved["how"], saved["by_name"]), ("none", None, "none", "Jo"))
+    check("no number shown", "Answer: 🚫 **No part number**, marked by <@Jo>" in (i.edited or ""), True)
+    check("search shown as looking first", "eBay photo search: looking…" in (i.edited or ""), True)
+    check("photo searched", [m["title"] for m in saved["matches"]], [m["title"] for m in S.SIM])
+    check("card redrawn with the look-alikes", ("`1` [(dev mode) made-up look-alike listing 1](<https://www.ebay.co.uk/itm/100000000001>)"
+                                               " · listed £14.99") in card_msg.content, True)
+    check("no number is green", styles(card_msg.view), ["secondary", "secondary", "secondary", "primary", "success"])
+    # 🚫 again: back to option 1, and the look-alikes are kept (not searched twice)
+    i = Inter(card_msg)
+    await button(card_msg.view, "partid:none").callback(i)
+    saved = P.load(card_msg.id)
+    check("🚫 again = 1", (saved["choice"], saved["answer"], saved["how"]), (1, "39R293-1200", "default"))
+    check("look-alikes not on a numbered card", "eBay photo search" in (i.edited or ""), False)
+    searched, P.SEARCH = P.SEARCH, TMP / "must-not-run.py"
+    await button(card_msg.view, "partid:none").callback(Inter(card_msg))
+    check("searched once per card", P.load(card_msg.id)["matches_error"], None)
+    P.SEARCH = searched
+    await button(card_msg.view, "partid:pick:2").callback(Inter(card_msg))
+    check("a pick replaces no number", P.load(card_msg.id)["how"], "picked")
+
+    # Agent 1 finds no number: the card starts as no part number and is searched by its photo at once.
+    fake = TMP / "no_number_read.py"
+    fake.write_text('import json; print(json.dumps({"options": [], "readings": [], "cost": 0}))')
+    real, P.RUN = P.RUN, fake
+    m, replies = message(part_id, ["blank.jpg"], 505)
+    await B.bot.on_message(m)
+    P.RUN = real
+    blank = P.load(replies[0].id)
+    check("none found = no part number", (blank["choice"], blank["answer"], blank["how"], blank["by"]), ("none", None, "none", None))
+    check("none found shown", "Answer: 🚫 **No part number** (Agent 1 found none)" in replies[0].content, True)
+    check("none found searched at once", (len(blank["matches"]), replies[0].edits), (3, 1))
+    check("none found buttons", [b.custom_id for b in replies[0].view.children][:2], ["partid:type", "partid:none"])
+    i = Inter(replies[0])
+    await button(replies[0].view, "partid:type").callback(i)
+    i.modal.number._value = ""
+    await i.modal.on_submit(i)
+    check("blank box with no options = no part number", P.load(replies[0].id)["how"], "none")
+
+    # The photo search failing says so on the card; /sheet tries it again before the spreadsheet.
+    searched, P.SEARCH, P.RUN = P.SEARCH, TMP / "missing-search.py", fake
+    m, replies = message(part_id, ["shiny.jpg"], 506)
+    await B.bot.on_message(m)
+    P.RUN = real
+    shiny = replies[0]
+    failed = P.load(shiny.id)
+    check("search failed kept", (failed["matches"], bool(failed["matches_error"])), (None, True))
+    check("search failed shown", "eBay photo search: failed, tried again at /sheet" in shiny.content, True)
+    P.SEARCH = searched
+
     # No number found: only ✏️, no answer yet.
     empty = {"card": 1, "photo_name": "x.jpg", "options": [], "choice": None, "answer": None, "how": "default"}
     check("no number text", "Agent 1 found no part number" in P.card_text(empty) and "Answer: none yet" in P.card_text(empty), True)
-    check("no number buttons", [b.custom_id for b in P.Buttons(empty).children], ["partid:type", *LOC])
+    check("no number buttons", [b.custom_id for b in P.Buttons(empty).children], ["partid:type", "partid:none", *LOC])
 
     # Two photos and a HEIC in one message: a card each, and HEIC is refused.
     m, replies = message(part_id, ["a.jpg", "b.png", "c.heic", "notes.pdf"], 501)
@@ -247,6 +305,29 @@ async def main():
     J.c.jev = lambda state, questions, tag="": {"answers": {"number": {"type": "choice", "probabilities": {
         "R1": 0.1, "R2": 0.05, "R3": 0.4, "R4": 0.15, "R5": 0.3}}}, "usage": {"cost": 0}}
     check("top 3 of 5", [o["text"] for o in R.run("x.jpg")["options"]], ["NUM-3", "NUM-5", "NUM-4"])
+
+    os.environ["BEAR_SIM"] = "ok"   # dev mode again: the retried photo search is made up
+    # /sheet: deferred (photo searches take time), the failed search is retried, and the spreadsheet has
+    # each no-number part with its look-alikes under it.
+    sent = {}
+
+    async def defer(thinking=False):
+        sent["deferred"] = thinking
+
+    async def followup(content=None, file=None):
+        sent["content"], sent["file"] = content, file
+    i = NS(user=User("Sam"), response=NS(defer=defer), followup=NS(send=followup))
+    await P.sheet(i)
+    check("sheet deferred", sent.get("deferred"), True)
+    check("sheet says parts", (sent.get("content") or "").startswith("**Sheet** · "), True)
+    check("failed search retried", len(P.load(shiny.id)["matches"]), 3)
+    import zipfile, io
+    with zipfile.ZipFile(io.BytesIO(sent["file"].fp.read())) as z:
+        sheet = z.read("xl/worksheets/sheet1.xml").decode()
+    check("sheet has no-number rows", sheet.count("NO PART NUMBER"), 2)
+    check("sheet has look-alike rows", sheet.count("POSSIBLE MATCH"), 6)
+    check("sheet links the photos", 'HYPERLINK("https://discord.com/channels/1/5/505","blank.jpg")' in sheet, True)
+    check("all marked", all(P.load(c)["sheet"] for c in (shiny.id, blank["card"], card_msg.id)), True)
 
 asyncio.run(main())
 if fails:
