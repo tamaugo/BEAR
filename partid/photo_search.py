@@ -6,7 +6,8 @@ then in eBay's own order. They are suggestions to check by eye, never a BEAR pri
 The eBay call is bear2/image_hints.py's search_by_image, used as it is (shared plumbing like
 bear2/common.py; nothing in bear2/ changes for #part-id). Free: eBay's API only, no model.
 
-Prints one JSON object on stdout: {"seconds", "matches": [{"title", "price", "url", "image"}]} (up to 3).
+Prints one JSON object on stdout: {"seconds", "matches": [{"title", "price", "category", "url", "image"}]}
+(up to 3; category = the eBay category ID the listing is filed under, as in the main sheet).
 
 BEAR_SIM set (dev mode): made-up matches, no call.
 
@@ -20,11 +21,11 @@ sys.path.insert(0, str(ROOT / "bear2"))
 
 HOW_MANY = 3
 SIM = [{"title": f"(dev mode) made-up look-alike listing {k}", "price": round(10.0 * k + 4.99, 2),
-        "url": f"https://www.ebay.co.uk/itm/{100000000000 + k}", "image": None} for k in range(1, HOW_MANY + 1)]
+        "category": str(33645 + k), "url": f"https://www.ebay.co.uk/itm/{100000000000 + k}", "image": None} for k in range(1, HOW_MANY + 1)]
 
 
 def search(path):
-    """Up to 3 look-alike eBay UK listings for the photo: [{"title", "price", "url", "image"}]."""
+    """Up to 3 look-alike eBay UK listings for the photo: [{"title", "price", "category", "url", "image"}]."""
     if os.environ.get("BEAR_SIM"):
         return [dict(m) for m in SIM]
     import common as c
@@ -33,7 +34,8 @@ def search(path):
     out = []
     for it in items:
         s = c.summarize(it)
-        out.append({"title": s["title"] or "", "price": s["price"], "url": s["url"], "image": s["image"]})
+        out.append({"title": s["title"] or "", "price": s["price"], "category": s["category"], "url": s["url"],
+                    "image": s["image"]})
     return out
 
 

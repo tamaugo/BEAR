@@ -2,14 +2,16 @@
 
   date & time         when the photo was posted (UK time), a real date so it sorts
   the numbers         the card's answer, or NO PART NUMBER (🚫 on the card, or Agent 1 found none)
+  ebay ID Category:   the eBay category ID the number's listings are filed under (as in the main sheet),
+                      blank if eBay has no listing with that number
   who got the info    jev option 1/2/3 (nothing picked = jev option 1), human (typed with ✏️ or marked 🚫),
                       or agent 1 (it found no number and nobody changed that)
   location            near side rear / near side front / off side rear / off side front, blank if none picked
   photo               the photo's name, a link to it in #part-id
 
 A NO PART NUMBER part has up to 3 shaded rows directly under it: the eBay photo search's look-alike
-listings for that same photo ("↳ POSSIBLE MATCH k (check by eye) - title - listed £x", the listing linked
-in the photo column), like the possible-match rows /run puts under an unpriced photo. Never a BEAR price.
+listings for that same photo ("↳ POSSIBLE MATCH k (check by eye) - title - listed £x", each with its
+own eBay category, the listing linked in the photo column), like the possible-match rows /run puts under an unpriced photo. Never a BEAR price.
 
 Standard library only, like harness/make_xlsx.py: an .xlsx is a zip of XML files.
 """
@@ -24,8 +26,8 @@ try:
 except Exception:   # no time zone data: the server's own time
     UK = None
 
-HEADER = ("date & time", "the numbers", "who got the info", "location", "photo")
-WIDTHS = (21, 60, 20, 18, 24)
+HEADER = ("date & time", "the numbers", "ebay ID Category:", "who got the info", "location", "photo")
+WIDTHS = (21, 60, 18, 20, 18, 24)
 NO_NUMBER = "NO PART NUMBER"
 MATCH = "\u21b3 POSSIBLE MATCH"
 
@@ -46,25 +48,26 @@ def who(card):
 
 
 def row(card):
-    """(posted datetime in UK time, number, who, location, photo link) for one card."""
+    """(posted datetime in UK time, number, eBay category, who, location, photo link) for one card."""
     when = datetime.fromtimestamp(card["posted"], timezone.utc).astimezone(UK).replace(tzinfo=None)
     number = NO_NUMBER if card.get("how") == "none" else card.get("answer") or ""
     name = card.get("photo_name") or ""
     photo = Link(card["message"], name or "photo") if card.get("message") else name
-    return when, number, who(card), card.get("location") or "", photo
+    category = "" if card.get("how") == "none" else (card.get("categories") or {}).get(card.get("answer")) or ""
+    return when, number, category, who(card), card.get("location") or "", photo
 
 
 def match_rows(card):
-    """The shaded look-alike rows under a NO PART NUMBER part: ("", text, "", "", listing link) each."""
+    """The shaded look-alike rows under a NO PART NUMBER part: ("", text, category, who, "", listing link)."""
     if card.get("how") != "none":
         return []
     found = card.get("matches")
     if found is None:
-        return [("", f"{MATCH} - eBay photo search failed, search the photo by hand", "", "", "")]
+        return [("", f"{MATCH} - eBay photo search failed, search the photo by hand", "", "", "", "")]
     if not found:
-        return [("", f"{MATCH} - none found by eBay photo search", "", "", "")]
+        return [("", f"{MATCH} - none found by eBay photo search", "", "", "", "")]
     return [("", f"{MATCH} {k} (check by eye) - {' '.join(str(m.get('title') or '').split())} - "
-                 f"listed \u00a3{float(m.get('price') or 0):.2f}", "eBay photo search", "",
+                 f"listed \u00a3{float(m.get('price') or 0):.2f}", m.get("category") or "", "eBay photo search", "",
              Link(m["url"], "eBay listing") if m.get("url") else "")
             for k, m in enumerate(found, 1)]
 
@@ -94,7 +97,7 @@ def xlsx(cards):
 
 def cell_row(r, values, header=False, shaded=False):
     cells = []
-    for col, v in zip("ABCDE", values):
+    for col, v in zip("ABCDEF", values):
         ref = f"{col}{r}"
         if isinstance(v, datetime):   # Excel's date number: days since 30/12/1899
             cells.append(f'<c r="{ref}" s="2"><v>{(v - datetime(1899, 12, 30)).total_seconds() / 86400:.8f}</v></c>')

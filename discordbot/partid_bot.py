@@ -14,6 +14,11 @@ look-alike listings go on the card and, as shaded rows under the part, in the /s
 part without a number is never a blank row. A photo Agent 1 finds no number on starts as no part number
 on its own. Clicking 🚫 again goes back to option 1; picking 1-3 or typing a number replaces it.
 
+The eBay category (owner, 2026-11-14), the "ebay ID Category:" column of the main sheet: each look-alike
+carries the category its listing is filed under, and a part number is looked up on eBay
+(partid/ebay_category.py, free) as soon as it is the answer (option 1 when the card is posted, then each
+pick or typed number). The category goes in /sheet, not on the card; /sheet looks up any still missing.
+
 Each photo's card is kept in <storage>/part-id/cards/<reply message id>.json: the photo, the options,
 the answer (choice 1-3 or "typed", how: default / picked / typed, by whom, when), the location, when the
 photo was posted, and the whole read (Agent 1's raw answer, every reading, Jev's scores).
@@ -38,11 +43,13 @@ from renames import is_image
 log = logging.getLogger("bear-bot")
 RUN = Path(__file__).resolve().parent.parent / "partid" / "part_id.py"
 SEARCH = Path(__file__).resolve().parent.parent / "partid" / "photo_search.py"
+CATEGORY = Path(__file__).resolve().parent.parent / "partid" / "ebay_category.py"
 CHANNEL = "part-id"
 HOW_MANY = 3                   # options shown (partid/part_id.py HOW_MANY)
 READS = asyncio.Semaphore(4)   # photos read at once
-SEARCHES = asyncio.Semaphore(2)   # eBay photo searches at once
+SEARCHES = asyncio.Semaphore(2)   # eBay photo searches and category lookups at once
 SEARCHING = set()              # cards whose photo search is running now
+LOOKING = set()                # (card, number) whose category lookup is running now
 TIMEOUT = 180                  # seconds before a read or a photo search is stopped
 LOCATIONS = {"nsr": "near side rear", "nsf": "near side front", "osr": "off side rear", "osf": "off side front"}
 SHEETING = asyncio.Lock()      # one /sheet at a time
@@ -136,6 +143,7 @@ class Pick(discord.ui.Button):
             return await inter.response.send_message("This card isn't saved any more.", ephemeral=True)
         answer(card, self.i, card["options"][self.i - 1]["text"], "picked", inter.user)
         await inter.response.edit_message(content=card_text(card), view=Buttons(card))
+        await find_category(card["card"], card["answer"])
 
 
 class TypeOwn(discord.ui.Button):
@@ -171,6 +179,8 @@ class TypeBox(discord.ui.Modal, title="Type the part number"):
         await inter.response.edit_message(content=card_text(card), view=Buttons(card))
         if card["how"] == "none":
             await find_matches(card["card"], inter.message)
+        else:
+            await find_category(card["card"], card["answer"])
 
 
 class NoNumber(discord.ui.Button):
@@ -189,6 +199,8 @@ class NoNumber(discord.ui.Button):
         await inter.response.edit_message(content=card_text(card), view=Buttons(card))
         if card["how"] == "none":
             await find_matches(card["card"], inter.message)
+        else:
+            await find_category(card["card"], card["answer"])
 
 
 class Location(discord.ui.Button):
@@ -266,7 +278,7 @@ async def one(msg, att, n, env):
                 "posted": msg.created_at.timestamp(), "location": None, "location_by": None,
                 "options": options, "choice": 1 if options else "none", "answer": options[0]["text"] if options else None,
                 "how": "default" if options else "none", "by": None, "by_name": None, "at": time.time(),
-                "matches": None, "matches_error": None, "read": out}
+                "matches": None, "matches_error": None, "categories": {}, "read": out}
         reply = await msg.reply(card_text(card), view=Buttons(card), mention_author=False)
         card["card"] = reply.id
         save(card)
@@ -279,6 +291,30 @@ async def one(msg, att, n, env):
         return
     if card["how"] == "none":   # no number found: look for the part by its photo straight away
         await find_matches(card["card"], reply, env)
+    else:
+        await find_category(card["card"], card["answer"], env)
+
+
+async def find_category(card_id, number, env=None):
+    """The eBay category of one part number, saved on the card under that number (so changing the answer
+    back and forth looks each number up once). A failed lookup saves nothing: /sheet tries again."""
+    card = load(card_id)
+    if card is None or not number or number in (card.get("categories") or {}) or (card_id, number) in LOOKING:
+        return
+    LOOKING.add((card_id, number))
+    try:
+        async with SEARCHES:
+            category = (await script(CATEGORY, number, env or ENV()))["category"]
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.warning("part-id eBay category lookup failed for %s: %s", number, e)
+        return
+    finally:
+        LOOKING.discard((card_id, number))
+    card = load(card_id) or card
+    card.setdefault("categories", {})[number] = category
+    save(card)
 
 
 async def find_matches(card_id, message, env=None):
@@ -370,9 +406,12 @@ async def sheet(inter):
             return await inter.response.send_message("No new part numbers since the last sheet.", ephemeral=True)
         await inter.response.defer(thinking=True)   # photo searches can take longer than Discord's 3 s
         unsearched = [c for c in cards if c.get("how") == "none" and c.get("matches") is None]
-        await asyncio.gather(*(find_matches(c["card"], None) for c in unsearched))
-        for c in unsearched:
-            c.update({k: (load(c["card"]) or c).get(k) for k in ("matches", "matches_error")})
+        unknown = [c for c in cards if c.get("how") != "none" and c.get("answer")
+                   and c["answer"] not in (c.get("categories") or {})]
+        await asyncio.gather(*(find_matches(c["card"], None) for c in unsearched),
+                             *(find_category(c["card"], c["answer"]) for c in unknown))
+        for c in unsearched + unknown:
+            c.update({k: (load(c["card"]) or c).get(k) for k in ("matches", "matches_error", "categories")})
         name = f"part-id-{datetime.now(partid_sheet.UK).strftime('%Y-%m-%d-%H%M%S')}.xlsx"
         data = await asyncio.to_thread(partid_sheet.xlsx, cards)
         sheets = FOLDER / "sheets"

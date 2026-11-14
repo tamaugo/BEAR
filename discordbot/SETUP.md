@@ -304,17 +304,22 @@ Under them, four location buttons: **Near side rear**, **Near side front**, **Of
 **Off side front**. Nothing picked leaves the location blank; clicking the picked one again clears it.
 
 **/sheet** (in `#part-id`) posts a spreadsheet of every part since the last `/sheet`, the first
-posted at the top: date & time posted, the number, who got it (`jev option 1/2/3`, or `human` if typed
+posted at the top: date & time posted, the number, its **ebay ID Category:** (the same column as the
+main sheet: the eBay category most listings with that number are filed under, blank if eBay has none),
+who got it (`jev option 1/2/3`, or `human` if typed
 with ✏️ or marked 🚫; nothing picked = `jev option 1`; `agent 1` if it found no number and nobody changed
 that), the location, and the photo (its name, a link to it in `#part-id`). A part with no number says
 `NO PART NUMBER` and has the eBay look-alikes as shaded rows right under it
-(`↳ POSSIBLE MATCH 1 (check by eye) - title - listed £x`, the listing linked in the photo column), the
+(`↳ POSSIBLE MATCH 1 (check by eye) - title - listed £x`, each with its own eBay category, the listing
+linked in the photo column), the
 same layout `/run` uses for photos it couldn't price. Run it once every photo is right: answers
 changed after a `/sheet` don't go in a later one. The first `/sheet` takes every card ever saved.
 
 Nothing here touches `/run`: `partid/agent1.py` is its own copy of Agent 1 (one head-on read),
 `partid/jev.py` the scoring, `partid/part_id.py` runs the two, `partid/photo_search.py` is the eBay
-photo search (it uses `bear2/image_hints.py`'s eBay call as it is). The card's look is `card_text()` in
+photo search (it uses `bear2/image_hints.py`'s eBay call as it is), `partid/ebay_category.py` looks a
+number's category up (with `bear2/common.py`'s eBay search, as it is). A number is looked up as soon as it
+becomes the answer, so `/sheet` is quick; any lookup that failed is done again at `/sheet`. Free. The card's look is `card_text()` in
 `discordbot/partid_bot.py`.
 
 The channel: run `/opt/bear/.venv/bin/python /opt/bear/discordbot/setup_server.py --write-env`
