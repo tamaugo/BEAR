@@ -5,7 +5,7 @@ it finds what's already there and only adds what's missing, then updates the pin
     🐻 BEAR     #how-to-bear (guide, pinned; read-only)   #bear-errors (the error channel; read-only)
                #update-log (what changed in each update; read-only)
                #part-id (post a part-number photo, pick 1/2/3 or type your own; for testing)
-    🚗 Cars     one channel per car, the topic is the car  (text-only messages are deleted here)
+    🚗 Cars     one channel per car, the topic is the car  (photos are priced; text is ignored)
     🗄️ Done     finished cars, dragged here by hand         (read-only, commands refused)
 
 Needs DISCORD_TOKEN and DISCORD_GUILD_ID in .env, and the bot invited with Manage Channels and

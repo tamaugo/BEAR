@@ -20,7 +20,7 @@ edited as it goes, that ends green with the spreadsheet or red with what to do.
 
 Settings come from the environment, then .env at the repo root (discordbot/SETUP.md):
   DISCORD_TOKEN, DISCORD_GUILD_ID, ERROR_CHANNEL_ID   required
-  CARS_CATEGORY_ID     car channels live in this category; text-only messages are deleted there
+  CARS_CATEGORY_ID     car channels live in this category
   BEAR_MAX_RUNS        folders running at once (2)
   BEAR_UPLOAD_WAIT     seconds with no new upload before /run starts (30)
   BEAR_RUN_TIMEOUT     seconds before a run is stopped (7200)
@@ -64,7 +64,6 @@ SIM_PY = REPO / "bear2" / "simulate.py"
 HISTORY_LIMIT = 5000      # messages read back looking for the folder marker
 NAME_RETRY_WAITS = (60, 180)   # a name-model failure: retry only the names after these many seconds
 MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this many seconds
-NOTICE_GAP = 60           # seconds between "text was removed" notices in one channel
 LINK = __import__("re").compile(r"https://discord\.com/channels/\S+")
 
 
@@ -121,7 +120,6 @@ DOWNLOADS = asyncio.Semaphore(RENAME_DOWNLOADS)
 ZIPPING = asyncio.Semaphore(2)
 ACTIVE = {}   # channel id -> {"folder", "state", "parts", "since", "task"}: one /run per car channel at a time
 RENAMES = {}  # channel id -> set of /rename tasks, so /quit can stop them
-NOTICED = {}  # channel id -> when the last "text was removed" notice was posted
 SHADOW = set()   # running shadow tests (kept so they aren't garbage collected mid-way)
 SHADOW_CALLS = asyncio.Semaphore(4)   # photos asked about at once, across all folders
 
@@ -234,27 +232,12 @@ class Bot(discord.Client):
             log.exception("can't post in %s", ch)
 
     async def on_message(self, msg):
-        """Text is never read: in car channels a message without a file is deleted. Photos in
+        """Only #part-id photos are handled here. Text in car channels is left alone: notes
+        people type are never read, so they can't change a folder or the sheet. Photos in
         #part-id go to its own Agent 1 (partid_bot.py)."""
         if (msg.attachments and not msg.author.bot and msg.guild
                 and partid_bot.is_partid(msg.channel, PART_ID_CHANNEL_ID)):
             return await partid_bot.handle(msg, run_env())
-        if (CARS_CATEGORY_ID is None or msg.author.bot or not msg.guild or msg.attachments
-                or getattr(msg.channel, "category_id", None) != CARS_CATEGORY_ID
-                or msg.channel.id == ERROR_CHANNEL_ID
-                or msg.type not in (discord.MessageType.default, discord.MessageType.reply)):
-            return
-        try:
-            await msg.delete()
-        except discord.DiscordException as e:
-            return log.warning("can't delete a text message in %s: %s", msg.channel, e)
-        # Say why, at most once a minute per channel, and let the notice tidy itself away.
-        if time.time() - NOTICED.get(msg.channel.id, 0) >= NOTICE_GAP:
-            NOTICED[msg.channel.id] = time.time()
-            try:
-                await msg.channel.send(look.reply("text_removed"), delete_after=10)
-            except discord.DiscordException:
-                pass
 
 
 bot = Bot()

@@ -82,7 +82,7 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 | Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every photo in it*, `/status` *See which folders BEAR is working on*, `/rename` *Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip*, `/quit` *Stop everything /run or /rename is doing in this channel* | `COMMANDS` |
 | `/newfolder Q184` | `📁 Folder **Q184**` + a brand-red card: the car, then the three steps | `folder_card` |
 | `/newfolder` while the last folder was never run | Only you: *"Heads up: folder Q183 was never run…"* | `open_folder_warning` |
-| Someone types text | Their message disappears; a notice explains why, then deletes itself after 10 s | `reply("text_removed")` |
+| Someone types text | Nothing: it stays in the channel and BEAR ignores it (only photos are read) | none |
 | `/run` | One card: *Checking the folder* | `run_card("checking")` |
 | …photos still arriving | Same card, amber: *Waiting for uploads* | `run_card("waiting")` |
 | …photos found | Same card: **Running 12 parts**, saving 7/12, with *"uploaded more? some photos aren't in this folder"* | `run_card("downloading")` |
@@ -120,7 +120,6 @@ every post goes through `look.py`. Other changes:
 - "priced X of Y parts".
 - A private heads-up on `/newfolder` when the previous folder was never run, or when the topic
   doesn't start with the make.
-- A self-deleting "text was removed" notice, at most once a minute per channel.
 - A DEV MODE footer on simulated runs.
 - `/status` is a private card.
 - Command descriptions come from `look.COMMANDS`.

@@ -57,7 +57,7 @@ Optional but handy: give the VM a fixed IP (a DHCP reservation on the router) so
    ```
    That gives it: View Channels, Send Messages, Read Message History, Attach Files,
    **Embed Links** (the bot's cards don't show without it), Add Reactions, Manage Messages (to
-   delete text-only messages), **Pin Messages** (to pin the guide; Discord split it from Manage
+   tidy up), **Pin Messages** (to pin the guide; Discord split it from Manage
    Messages), Use Application Commands, plus **Manage
    Channels** and **Manage Roles**, which only the one-off layout script in §3 uses. You can take
    those two away afterwards (Server Settings > Roles > BEAR).
@@ -124,7 +124,7 @@ real (folders, downloads, queue, errors) but the photo reads, eBay results and n
 
 1. In Cars, make a channel `test-car` with topic `MITSUBISHI SHOGUN 2007 3.2 DI-D`.
 2. `/newfolder name: T1` → the bot posts **📁 Folder T1**.
-3. Upload two photos. Type some text: it is deleted.
+3. Upload two photos. Type some text: it stays, and BEAR ignores it.
 4. `/run` → one card that changes as it goes: "Checking the folder", "Running 2 parts", then green
    "Done" with the spreadsheet `T1-mitsubishi-shogun-2007.xlsx` attached. The footer says DEV MODE.
 5. Try the mistakes: `/run` in a new folder with no photos (→ `BEAR-D03`), an iPhone HEIC photo
@@ -192,7 +192,6 @@ dev mode), after the spreadsheet is posted, and nothing it does can fail a `/run
 | `/newfolder` and `/run` don't appear | Wrong `DISCORD_GUILD_ID`, or the bot was invited without `applications.commands`: re-open the invite link (§2.4). Then restart. |
 | Log says `PrivilegedIntentsRequired` | Turn on Message Content Intent (§2.2), restart. |
 | Log says `Improper token` / `LoginFailure` | Token wrong or reset: paste the new one in `.env`, restart. |
-| Text messages aren't deleted | `CARS_CATEGORY_ID` missing/wrong, the channel isn't in Cars, or the bot lacks Manage Messages. |
 | Nothing arrives in the error channel | Wrong `ERROR_CHANNEL_ID`, or the bot can't see/post there (channel permissions). |
 | Setup stops at "flow test failed" | The last lines show why; the full output is in `/var/lib/bear/flow-test.log`. |
 

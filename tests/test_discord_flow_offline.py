@@ -221,6 +221,37 @@ async def main():
     check("no error posted", ERRORS.sent, [])
     check("finished run leaves no restart note", list(B.RUNNING_DIR.glob("*.json")), [])
 
+    # People can type notes between the photos: text is never deleted, never answered, and never
+    # changes what is sent to BEAR (same photos, same names as the folder above).
+    B.CARS_CATEGORY_ID = 555
+    ch = Channel(14)
+    ch.category_id = 555
+    ch.add(ME, fo.marker("Q184"))
+    ch.add(PERSON, "bumper bracket LH, cracked")
+    ch.add(files=["IMG_1.jpg", "IMG_2.jpg"])
+    ch.add(PERSON, "part 2 is the 2012 type, check fit")
+    ch.add(files=["IMG_10.jpg"], content="caption on a photo")
+    ch.add(files=["IMG_11.webp"])
+    ch.add(PERSON, "that's the box done")
+    notes = [m for m in ch.msgs if m.author is PERSON and not m.attachments]
+    for m in notes:
+        m.delete_calls = 0
+        m.guild, m.channel, m.type = True, ch, B.discord.MessageType.default
+
+        async def delete(m=m):
+            m.delete_calls += 1
+        m.delete = delete
+        await B.bot.on_message(m)
+    check("typed notes are kept", [m.delete_calls for m in notes], [0, 0, 0])
+    check("typed notes get no notice", ch.sent, [])
+    B.CARS_CATEGORY_ID = None
+    await run(ch)
+    run_dir = next((TMP / "car-14-14").iterdir())
+    check("notes don't change the photos", sorted(p.name for p in (run_dir / "photos").iterdir()),
+          ["001.jpg", "002.jpg", "003.jpg", "004.webp"])
+    check("notes don't change the parts", "priced **6 of 7** parts" in card(ch)[0], True)
+    check("notes cause no error", ERRORS.sent, [])
+
     # read_folder stops at the newest marker, with exactly the answer reading all HISTORY_LIMIT
     # messages and splitting them gave (the old way); D02 the same when no marker is in reach.
     async def old_read_folder(ch):
