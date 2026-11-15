@@ -171,8 +171,10 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 
 **Where things are:** each run is in
 `/var/lib/bear/runs/<channel>-<id>/<folder>-<date-time>/`: `photos/` (every photo in the folder,
-each one a part, `001.jpg`, … in upload order), `photos.tsv` (which Discord message each photo
-came from, so a spreadsheet row can be traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
+each one a part, `001.jpg`, … in upload order; a zip's photos sit at the zip's place, in their name
+order inside it), `zips/` (every zip uploaded to the folder, as it was, kept to look into later),
+`photos.tsv` (which Discord message each photo came from, and for a zip the photo's name inside it,
+so a spreadsheet row can be traced back), `results/` (`results.xlsx`, `agent2_results.md`, `trace.json`, …), `bear.log` and
 `spend.jsonl` (what that folder cost).
 
 Renames are in `/var/lib/bear/runs/renames/<channel>-<id>/<SKU>-<date-time>/`, on the same disk
@@ -197,7 +199,7 @@ dev mode), after the spreadsheet is posted, and nothing it does can fail a `/run
 
 Error codes in the error channel (fixes are in each message):
 `D01` no topic · `D02` no folder · `D03` no photos · `D05` photo BEAR can't
-read (HEIC) · `D06` download failed · `D07` renaming failed (a photo or zip) · `N01`/`N02`/`N03` name model rate limited / not responding /
+read (HEIC) · `D06` download failed · `D07` renaming failed (a photo or zip) · `D08` an uploaded zip couldn't be opened or is too big · `N01`/`N02`/`N03` name model rate limited / not responding /
 unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap · `V01` the final check flagged rows in a posted spreadsheet (check them before listing) · `E01` most parts failed because eBay, Jev or a model was down (the spreadsheet is still posted) · `T01` run took over
 2 hours · `R01` anything else (log attached).
 

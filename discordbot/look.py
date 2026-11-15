@@ -70,6 +70,8 @@ UPLOADER_FIX = {
     "BEAR-D06": "Discord didn't hand over a photo. **/run** again; if it keeps happening, re-send that photo.",
     "BEAR-D07": "The photos couldn't be renamed. **/rename** again with the same SKU; if it keeps happening, "
                 "re-send the photo below.",
+    "BEAR-D08": "A zip below couldn't be opened, or holds too many photos. Make the zip again, send it, "
+                "**delete the old one**, then **/run** again.",
     "BEAR-N01": None, "BEAR-N02": None, "BEAR-N03": None,
     "BEAR-K01": None, "BEAR-K02": None, "BEAR-T01": None, "BEAR-R01": None, "BEAR-V01": None, "BEAR-E01": None,
 }
@@ -82,6 +84,7 @@ TITLES = {
     "BEAR-D05": "Photo type BEAR can't read",
     "BEAR-D06": "A photo didn't download",
     "BEAR-D07": "Photos couldn't be renamed",
+    "BEAR-D08": "A zip couldn't be opened",
     "BEAR-N01": "Name model is busy",
     "BEAR-N02": "Name model isn't answering",
     "BEAR-N03": "Name model gave bad names",

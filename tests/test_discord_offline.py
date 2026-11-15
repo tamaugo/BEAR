@@ -76,6 +76,36 @@ except fo.FolderError as e:
     check("D05 says which message", heic.jump_url in e.detail, True)
 check("BEAR and the bot read the same photo types", fo.PHOTO_EXT, __import__("common").PHOTO_EXT)
 
+# Zips of photos: a zip counts as an upload (its photos are parts), the bot's own /rename zips don't.
+check("zip picked with the photos", [a.filename for _, a in fo.part_photos([label, msg(files=["parts.zip"])])],
+      ["IMG_4821.JPG", "parts.zip"])
+raises("bot's own zip isn't a folder upload", lambda: fo.part_photos([msg(BOT, files=["SKU-1.zip"])]), "BEAR-D03")
+import tempfile, zipfile  # noqa: E402
+ztmp = Path(tempfile.mkdtemp(prefix="bear-zip-test-"))
+
+
+def make_zip(name, members):
+    path = ztmp / name
+    with zipfile.ZipFile(path, "w") as z:
+        for m in members:
+            z.writestr(m, b"x" * 10)
+    return path
+
+
+good = make_zip("good.zip", ["10.jpg", "2.jpg", "pics/1.JPG", "__MACOSX/._2.jpg", "._3.jpg", ".DS_Store",
+                             "notes.txt", "pics/"])
+check("zip photos in name order, clutter skipped", fo.zip_photos(good, "good.zip"), ["2.jpg", "10.jpg", "pics/1.JPG"])
+check("zip with no photos", fo.zip_photos(make_zip("none.zip", ["a.txt"]), "none.zip"), [])
+raises("HEIC inside a zip", lambda: fo.zip_photos(make_zip("h.zip", ["1.jpg", "2.HEIC"]), "h.zip"), "BEAR-D05")
+(ztmp / "bad.zip").write_bytes(b"not a zip")
+raises("broken zip", lambda: fo.zip_photos(ztmp / "bad.zip", "bad.zip"), "BEAR-D08")
+fo.ZIP_MAX_PHOTOS, _max = 2, fo.ZIP_MAX_PHOTOS
+raises("too many photos in a zip", lambda: fo.zip_photos(good, "good.zip"), "BEAR-D08")
+fo.ZIP_MAX_PHOTOS = _max
+fo.unzip_photo(good, "pics/1.JPG", ztmp / "001.jpg", "good.zip")
+check("photo copied out of the zip", (ztmp / "001.jpg").read_bytes(), b"x" * 10)
+check("zip left as it was", good.exists() and fo.zip_photos(good, "good.zip")[-1], "pics/1.JPG")
+
 # Upload wait: the newest file from a person counts, not the bot's messages.
 check("upload age", fo.seconds_since_last_upload([p1, msg(files=["n.jpg"], ago=5), msg(BOT, files=["r.xlsx"], ago=1)], NOW), 5)
 check("no uploads", fo.seconds_since_last_upload([msg(content="x")], NOW), None)

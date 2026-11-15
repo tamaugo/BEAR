@@ -4,15 +4,18 @@ discord.py so they can be tested offline (tests/test_discord_offline.py).
 Messages are anything shaped like a discord.py Message: .author (.id, .bot), .attachments
 (.filename, .content_type), .reactions (.emoji), .created_at, .jump_url, .content.
 """
-import re
+import re, zipfile
 from datetime import datetime, timezone
 from pathlib import PurePath
 
-from renames import is_image
+from renames import IMAGE_EXT, is_image
 
 MARKER = re.compile(r"^\N{FILE FOLDER} Folder \*\*([A-Za-z0-9][A-Za-z0-9_-]{0,39})\*\*")
 FOLDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")   # same as bear2/common.py PHOTO_EXT
+ZIP_EXT = (".zip",)
+# Limits on what one uploaded zip may unpack to, so a broken or hostile zip can't fill the disk.
+ZIP_MAX_PHOTOS, ZIP_MAX_PHOTO_BYTES, ZIP_MAX_BYTES = 500, 60 * 1024 * 1024, 600 * 1024 * 1024
 
 # code: (what went wrong, how to fix it). D = Discord side, N = name model, K = credit, R = anything else.
 ERRORS = {
@@ -28,6 +31,9 @@ ERRORS = {
                  "/run again. If it keeps failing, re-upload that photo."),
     "BEAR-D07": ("The photos couldn't be renamed: one didn't download, or a zip couldn't be posted.",
                  "/rename again with the same SKU. If it keeps failing, re-upload that photo or look at the bot's log."),
+    "BEAR-D08": ("A zip in the folder couldn't be opened, or unpacks to more than BEAR takes "
+                 f"({ZIP_MAX_PHOTOS} photos, {ZIP_MAX_BYTES // 2**20} MB).",
+                 "Make the zip again and re-upload it, delete the old one, then /run again. The old zip is kept on the server."),
     "BEAR-N01": ("The name model is rate limited (BEAR already retried only the names, twice).",
                  "Wait a few minutes and /run again, or set BEAR_NAME_MODEL in the server's .env to another name model."),
     "BEAR-N02": ("The name model is not responding (BEAR already retried only the names, twice).",
@@ -86,17 +92,22 @@ def is_photo(att):
     return PurePath(att.filename).suffix.lower() in PHOTO_EXT
 
 
+def is_zip(att):
+    return PurePath(att.filename).suffix.lower() in ZIP_EXT
+
+
 def part_photos(messages):
-    """[(message, attachment)] for every photo people posted, oldest first, in the order Discord
-    shows them within a message. Each one is a part: only part-number photos are uploaded (owner,
-    2026-10-27; no 💸 needed). Raises FolderError D05 for an image BEAR can't read (HEIC), D03 if
-    there are no photos. Bot messages and files that aren't images (videos, PDFs) are left out."""
+    """[(message, attachment)] for every photo and zip of photos people posted, oldest first, in the
+    order Discord shows them within a message. Each photo is a part: only part-number photos are
+    uploaded (owner, 2026-10-27; no 💸 needed); a zip stands for the photos in it (zip_photos).
+    Raises FolderError D05 for an image BEAR can't read (HEIC), D03 if there are no photos or zips.
+    Bot messages (so the bot's own /rename zips) and other files (videos, PDFs) are left out."""
     picks, unreadable = [], []
     for msg in messages:
         if msg.author.bot:
             continue
         for att in msg.attachments:
-            if is_photo(att):
+            if is_photo(att) or is_zip(att):
                 picks.append((msg, att))
             elif is_image(att):
                 unreadable.append((msg, att.filename))
@@ -105,6 +116,52 @@ def part_photos(messages):
     if not picks:
         raise FolderError("BEAR-D03")
     return picks
+
+
+def _natural(name):
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+def zip_photos(path, label):
+    """The photos inside the zip at path, in name order (001.jpg, 002.jpg ... 010.jpg, as Finder and
+    Explorer show them), skipping folders and Mac/Windows clutter (__MACOSX, ._x, .DS_Store).
+    label is how the zip is named in errors. Raises FolderError D08 if it can't be opened or is
+    too big, D05 if it holds an image BEAR can't read (HEIC). A zip with no photos gives []."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            infos = z.infolist()
+    except (zipfile.BadZipFile, OSError, ValueError) as e:
+        raise FolderError("BEAR-D08", f"{label}: {type(e).__name__}: {e}")
+    photos, unreadable = [], []
+    for info in infos:
+        name = PurePath(info.filename)
+        if info.is_dir() or "__MACOSX" in name.parts or name.name.startswith("."):
+            continue
+        ext = name.suffix.lower()
+        if ext in PHOTO_EXT:
+            photos.append(info)
+        elif ext in IMAGE_EXT:
+            unreadable.append(info.filename)
+    if unreadable:
+        raise FolderError("BEAR-D05", "\n".join(f"{label}: {n}" for n in unreadable))
+    if (len(photos) > ZIP_MAX_PHOTOS or any(i.file_size > ZIP_MAX_PHOTO_BYTES for i in photos)
+            or sum(i.file_size for i in photos) > ZIP_MAX_BYTES):
+        raise FolderError("BEAR-D08", f"{label}: {len(photos)} photos, "
+                                      f"{sum(i.file_size for i in photos) // 2**20} MB unpacked")
+    return [i.filename for i in sorted(photos, key=lambda i: _natural(i.filename))]
+
+
+def unzip_photo(path, member, dest, label):
+    """Copy one photo (a name zip_photos gave) out of the zip at path to dest. The zip itself is
+    left as it is. Raises FolderError D08 if it can't be read or is bigger than its header said."""
+    try:
+        with zipfile.ZipFile(path) as z, z.open(member) as src, open(dest, "wb") as out:
+            while chunk := src.read(1024 * 1024):
+                out.write(chunk)
+                if out.tell() > ZIP_MAX_PHOTO_BYTES:
+                    raise zipfile.BadZipFile("photo bigger than its header says")
+    except (zipfile.BadZipFile, OSError, ValueError, KeyError, RuntimeError) as e:
+        raise FolderError("BEAR-D08", f"{label}: {member}: {type(e).__name__}: {e}")
 
 
 def seconds_since_last_upload(messages, now=None):

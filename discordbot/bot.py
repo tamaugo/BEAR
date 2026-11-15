@@ -43,7 +43,7 @@ usage: python3 discordbot/bot.py       (systemd runs this: discordbot/deploy/bea
 """
 import asyncio, json, logging, os, shutil, signal, sys, time, traceback
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -255,7 +255,8 @@ def car_channel_problem(ch):
 
 def never_run(msgs):
     """True if a folder (messages after its marker) has photos but /run never posted a card."""
-    has_photos = any(not m.author.bot and any(fo.is_photo(att) for att in m.attachments) for m in msgs)
+    has_photos = any(not m.author.bot and any(fo.is_photo(att) or fo.is_zip(att) for att in m.attachments)
+                     for m in msgs)
     has_card = any(m.author.bot and getattr(m, "embeds", None) for m in msgs)
     return has_photos and not has_card
 
@@ -527,21 +528,28 @@ async def run_folder(ch, card, a, ready):
     ready.set_result((folder, msgs))
     if not car:
         raise fo.FolderError("BEAR-D01")
-    picks = fo.part_photos(msgs)   # every photo in the folder: each one is a part
-    a.update(state="downloading photos", parts=len(picks))
-    await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))
+    uploads = fo.part_photos(msgs)   # every photo (and zip of photos) in the folder: each photo is a part
+    a.update(state="downloading photos")
 
     # Download now: Discord's file links expire after 24 hours.
     run_dir = new_dir(STORAGE / f"{fo.slug(ch.name)}-{ch.id}", folder)
     photos, results = run_dir / "photos", run_dir / "results"
     photos.mkdir(parents=True)
-    names = [fo.photo_name(i, att.filename) for i, (_, att) in enumerate(picks, 1)]
+    picks = await unpack_zips(uploads, run_dir / "zips")   # [(message, attachment, photo in its zip or None)]
+    a.update(parts=len(picks))
+    await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))
+    names = [fo.photo_name(i, member or att.filename) for i, (_, att, member) in enumerate(picks, 1)]
 
     async def progress(got):
         await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=got, dev=dev()))
-    await download_all([(m, att, photos / n) for n, (m, att) in zip(names, picks)], "BEAR-D06", progress, every=5)
-    (run_dir / "photos.tsv").write_text("".join(   # 001.jpg -> the Discord message
-        f"{n}\t{att.filename}\t{m.jump_url}\n" for n, (m, att) in zip(names, picks)))
+    await download_all([(m, att, photos / n) for n, (m, att, member) in zip(names, picks) if member is None],
+                       "BEAR-D06", progress, every=5)
+    for n, (m, att, member) in zip(names, picks):
+        if member is not None:
+            await asyncio.to_thread(fo.unzip_photo, att.local_zip, member, photos / n, att.filename)
+    (run_dir / "photos.tsv").write_text("".join(   # 001.jpg -> the Discord message (and the photo's name in its zip)
+        f"{n}\t{att.filename + '/' + member if member else att.filename}\t{m.jump_url}\n"
+        for n, (m, att, member) in zip(names, picks)))
 
     started = time.time()
     if SLOTS.locked():
@@ -557,6 +565,39 @@ async def run_folder(ch, card, a, ready):
     rc, log_from = await retry_names(a, photos, car, results, run_dir / "bear.log", rc)
     await report(ch, card, folder, car, rc, run_dir, results, started, a.get("marker_url"), log_from)
     return folder
+
+
+class _Zip:
+    """A zip attachment, plus where its copy on the server is."""
+
+    def __init__(self, att, local_zip):
+        self.att, self.local_zip, self.filename = att, local_zip, att.filename
+
+
+async def unpack_zips(uploads, zips):
+    """Turn [(message, attachment)] into [(message, attachment, photo in its zip or None)], each zip
+    standing in for the photos in it, in their name order, at the zip's place in the folder. Every
+    zip is downloaded to zips/ (01-<its name>.zip ...) and kept there to look into later, as it is
+    kept in Discord. Raises FolderError D06 (download), D08 (bad zip), D05 (HEIC inside), D03 if
+    the folder ends up with no photos."""
+    got = [(m, att) for m, att in uploads if fo.is_zip(att)]
+    if got:
+        zips.mkdir(parents=True, exist_ok=True)
+        paths = [zips / f"{k:02d}-{PurePath(att.filename).name}" for k, (_, att) in enumerate(got, 1)]
+        await download_all([(m, att, p) for (m, att), p in zip(got, paths)], "BEAR-D06")
+        local = {id(att): p for (_, att), p in zip(got, paths)}
+    picks = []
+    for m, att in uploads:
+        if not fo.is_zip(att):
+            picks.append((m, att, None))
+            continue
+        z = _Zip(att, local[id(att)])
+        members = await asyncio.to_thread(fo.zip_photos, z.local_zip, att.filename)
+        log.info("zip %s from %s holds %s photos", att.filename, m.jump_url, len(members))
+        picks += [(m, z, member) for member in members]
+    if not picks:
+        raise fo.FolderError("BEAR-D03")
+    return picks
 
 
 def remember_run(ch, card, a):
@@ -912,8 +953,10 @@ def start_shadow(ch, folder, marker_id, msgs):
     """Start the shadow test for a folder in the background: /run doesn't wait for it, and /quit
     doesn't stop it. Skipped when the folder had no usable photos (D03, D05)."""
     try:
-        photos = fo.part_photos(msgs)
+        photos = [(m, att) for m, att in fo.part_photos(msgs) if fo.is_photo(att)]   # not zips
     except fo.FolderError:
+        return
+    if not photos:
         return
     task = asyncio.create_task(shadow_folder(ch, folder, marker_id, photos))
     SHADOW.add(task)
