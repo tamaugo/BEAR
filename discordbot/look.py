@@ -370,8 +370,6 @@ REPLIES = {
                    "`{first}`. BEAR uses the first word as the make.",
     "on_it": "On it: the card below shows how it's going.",
     "oops": "Something went wrong on BEAR's side (`BEAR-R01`). The owner can see it in the bot's log.",
-    "text_removed": "Only photos stay in car channels, so your message was removed. "
-                    "Use **/newfolder**, photos and **/run**.",
     "bad_sku": "SKUs are letters, numbers, `-` and `_` only, up to 40, e.g. `MYSKU`.",
     "too_late": "Too late: renaming closed after {wait} seconds. Use **/rename** to rename the photos.",
     "sku_ok": "Got it: the photos will be named **{sku}-1**, **{sku}-2** ...",
@@ -398,7 +396,7 @@ def guide(error_channel_id=None):
         "**4. /run** when the folder is done. BEAR says how many parts it found, then posts the "
         "spreadsheet. If that number is lower than you expect, a photo is missing."
     )
-    tips = ("Text messages are removed: car channels are photos only.\n"
+    tips = ("Type notes in car channels if you like: BEAR ignores all text and only reads photos.\n"
             "**/run** again re-does the whole folder.\n"
             "**/rename** renames every photo to `SKU-1`, `SKU-2` ... and posts them as a zip.\n"
             "**/quit** stops whatever is running in the channel.\n"

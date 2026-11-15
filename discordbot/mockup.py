@@ -86,10 +86,8 @@ def scenes():
         bot(folder, used="/newfolder name: Q184", when="Today at 13:50")
         + person(5, when="Today at 13:51", note="Only part-number photos; each photo is one part")
         + person(7, when="Today at 13:53")
-        + person(text="that's the box done", when="Today at 13:54", struck=True,
-                 note="Text is removed by the bot (a 10-second notice tells them why)")
-        + bot({"content": look.reply("text_removed"), "embeds": []}, when="Today at 13:54",
-              note="Notice, deletes itself after 10 s")
+        + person(text="that's the box done", when="Today at 13:54",
+                 note="Text stays; BEAR ignores it (only photos are read)")
         + bot({"content": look.reply("on_it"), "embeds": []}, used="/run",
               ephemeral=True, when="Today at 14:02", note="/run: a private \"on it\", then ONE live card, edited in place")
         + bot(look.run_card("checking", "Q184", CAR), note="Stage 1: checking")
