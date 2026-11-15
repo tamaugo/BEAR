@@ -72,7 +72,7 @@ def ping(kind=""):
 def update_failed_text(step):
     return (f"\N{LARGE RED CIRCLE} **Update failed** at: {step}\n"
             "BEAR was not restarted: it is still running the version from before. "
-            "The full output is on the VM, in the terminal that ran setup.sh.")
+            "The full output is on the VM: in the terminal that ran setup.sh, or `journalctl -u bear-update` after /update.")
 
 
 def post_error(text):

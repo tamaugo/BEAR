@@ -1,0 +1,13 @@
+# Runs setup.sh as root when /update asks for it (bear-update.path starts this). The same update as typing
+# "sudo bash /opt/bear/discordbot/deploy/setup.sh" by hand. setup.sh installs it as /etc/systemd/system/bear-update.service.
+#   output: journalctl -u bear-update
+# Its own service, not a child of bear-bot: setup.sh restarts the bot, which would kill anything the bot started.
+[Unit]
+Description=Update BEAR (setup.sh)
+
+[Service]
+Type=oneshot
+# Take the request away first, so the path unit doesn't start another update when this one ends.
+ExecStartPre=-/bin/rm -f /var/lib/bear/runs/update-request
+ExecStart=/bin/bash /opt/bear/discordbot/deploy/setup.sh
+TimeoutStartSec=30min

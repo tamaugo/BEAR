@@ -88,14 +88,14 @@ check("update log: older ones counted", "3 older changes" in e["description"])
 fits("update log, long", look.update_log([(i, "x" * 300) for i in range(15)], "0.4.13", more=40))
 fits("guide", look.guide(9))
 for key in look.REPLIES:
-    text = look.reply(key, folder="Q1", state="running", name="Q1", first="2012", wait=60, sku="MYSKU", what="Q1")
+    text = look.reply(key, folder="Q1", state="running", name="Q1", first="2012", wait=60, sku="MYSKU", what="Q1", n="2 folders")
     check(f"reply {key} fits", 0 < len(text) <= 2000)
 for name, c in look.COMMANDS.items():
     check(f"/{name} name", re.fullmatch(r"[a-z0-9_-]{1,32}", name) is not None)
     check(f"/{name} description", 1 <= len(c["description"]) <= 100)
     check(f"/{name} options", all(1 <= len(d) <= 100 for d in c["options"].values()))
 check("messages say folder, not box", "box" not in str([look.guide(), look.REPLIES, look.UPLOADER_FIX, look.TITLES]).replace("box of parts", ""))
-check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit", "sheet"})
+check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit", "sheet", "update"})
 
 # Renaming: every state fits, the offer says when it closes, the done card names the zips.
 fits("stopped", look.stopped_card("Q184", dev=True))
