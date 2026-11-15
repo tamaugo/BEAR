@@ -41,6 +41,8 @@ B.car_channel_problem = lambda ch: None
 B.NAME_RETRY_WAITS = (0, 0)   # retry the names at once in the test
 B.rename_wait = lambda: WAIT[0]   # the rename offer's minute, shortened for the test
 WAIT = [0.05]
+ZIPPED = {"door.zip": ["b/10.jpg", "b/2.jpg", "__MACOSX/b/._2.jpg"], "empty.zip": ["readme.txt"],
+          "bad.zip": []}
 
 
 class Att:
@@ -48,6 +50,13 @@ class Att:
         self.filename = filename
 
     async def save(self, path):
+        if self.filename.endswith(".zip"):   # a zip of photos from the owner's picker app
+            with zipfile.ZipFile(path, "w") as z:
+                for n in ZIPPED.get(self.filename, []):
+                    buf = io.BytesIO()
+                    Image.new("RGB", (64, 48), "white").save(buf, "JPEG")
+                    z.writestr(n, buf.getvalue())
+            return
         Image.new("RGB", (64, 48), "white").save(path, "JPEG" if Path(path).suffix != ".webp" else "WEBP")
 
     async def read(self):
@@ -220,6 +229,51 @@ async def main():
     check("own spend ledger used", (run_dir / "results" / "results.xlsx").exists(), True)
     check("no error posted", ERRORS.sent, [])
     check("finished run leaves no restart note", list(B.RUNNING_DIR.glob("*.json")), [])
+
+    # A zip of photos counts as its photos, at its place in the folder, in name order inside it.
+    # The zip stays in Discord and a copy stays on the server (zips/); nothing is deleted.
+    ch = Channel(15)
+    ch.add(ME, fo.marker("Q190"))
+    ch.add(files=["IMG_1.jpg"])
+    zmsg = ch.add(files=["door.zip", "empty.zip"])
+    ch.add(files=["IMG_9.webp"])
+    await run(ch)
+    check("zip: run counts the photos inside", any("Running 4 parts" in t for t in ch.shown), True)
+    check("zip: card ends done", "Done" in card(ch)[0], True)
+    run_dir = next((TMP / "car-15-15").iterdir())
+    check("zip: photos unpacked in order", sorted(p.name for p in (run_dir / "photos").iterdir()),
+          ["001.jpg", "002.jpg", "003.jpg", "004.webp"])
+    check("zip: photos.tsv says which zip and photo",
+          [l.split("\t")[:2] for l in (run_dir / "photos.tsv").read_text().splitlines()],
+          [["001.jpg", "IMG_1.jpg"], ["002.jpg", "door.zip/b/2.jpg"], ["003.jpg", "door.zip/b/10.jpg"],
+           ["004.webp", "IMG_9.webp"]])
+    check("zip: zips kept on the server", sorted(p.name for p in (run_dir / "zips").iterdir()),
+          ["01-door.zip", "02-empty.zip"])
+    check("zip: zip message kept in Discord", zmsg in ch.msgs, True)
+    check("zip: no error posted", ERRORS.sent, [])
+
+    ch = Channel(16)
+    ch.add(ME, fo.marker("Q191"))
+    ch.add(files=["empty.zip"])
+    await run(ch)
+    check("zip with no photos -> D03", "BEAR-D03" in last_error(), True)
+    ch = Channel(17)
+    ch.add(ME, fo.marker("Q192"))
+    ch.add(files=["IMG_1.jpg"])
+    ch.add(files=["bad.zip"])
+    os.environ["BEAR_SIM"] = "ok"
+    _save = Att.save
+
+    async def broken(self, path):
+        if self.filename == "bad.zip":
+            return Path(path).write_bytes(b"not a zip")
+        return await _save(self, path)
+    Att.save = broken
+    await run(ch)
+    Att.save = _save
+    check("broken zip -> D08", "BEAR-D08" in last_error(), True)
+    check("broken zip kept on the server", (next((TMP / "car-17-17").iterdir()) / "zips" / "01-bad.zip").exists(), True)
+    ERRORS.sent.clear()
 
     # People can type notes between the photos: text is never deleted, never answered, and never
     # changes what is sent to BEAR (same photos, same names as the folder above).
