@@ -158,7 +158,7 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Is it running? | `systemctl status bear-bot` |
 | Live log | `journalctl -u bear-bot -f` (Ctrl+C to stop watching) |
 | Restart | `systemctl restart bear-bot` (a running folder is lost; `/run` it again) |
-| Update to the latest `discord-bear` | `/status` in Discord first (updating restarts the bot), then `bash /opt/bear/discordbot/deploy/setup.sh`. With §7 set up the error channel says 🔴 down, then 🟢 up; a failed update says which step failed. |
+| Update to the latest `discord-bear` | Type **/update** in Discord (anyone can; it refuses while folders are running unless `force:True`), or `/status` first and then `sudo bash /opt/bear/discordbot/deploy/setup.sh` on the VM. `/update` works once `setup.sh` has been run by hand after this change (it installs `bear-update.path`, which runs `setup.sh` as root when the bot leaves a note). Its output: `journalctl -u bear-update`. With §7 set up the error channel says 🔴 down, then 🟢 up; a failed update says which step failed. |
 | Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM`, `BEAR_RENAME_OFFER`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
 | Bring back `/run`'s rename offer (off since 2026-10-25) | In `.env`: `BEAR_RENAME_OFFER=1`. No restart. `/rename` works either way. |
 | Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60; only with the offer on). No restart. |
@@ -236,7 +236,7 @@ One-time setup, about 5 minutes:
 | 🔴 BEAR is down, right after you ran `setup.sh` | The update is restarting the bot. 🟢 up follows within a minute. |
 | 🔴 BEAR is down, out of the blue | No check-in for 15 minutes: the VM, its internet or the bot stopped. `systemctl status bear-bot` on the VM, or check the VM in Proxmox. |
 | 🟢 BEAR is up | Check-ins started again. |
-| 🔴 Update failed at: *step* | `setup.sh` stopped part way. The bot wasn't restarted and still runs the version from before. The full output is in the terminal that ran it. |
+| 🔴 Update failed at: *step* | `setup.sh` stopped part way. The bot wasn't restarted and still runs the version from before. The full output is in the terminal that ran it, or `journalctl -u bear-update` if it was `/update`. |
 
 To turn it off, delete the `BEAR_HEARTBEAT_URL` line and restart the bot (pause the check on
 healthchecks.io, or it will say down).

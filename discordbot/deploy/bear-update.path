@@ -1,0 +1,12 @@
+# Watches for the file the bot's /update command writes, and starts bear-update.service when it appears.
+# The bot itself can't update itself (it runs as the unprivileged bear user and an update restarts it),
+# so it just leaves this note and systemd, which runs as root, does the rest. setup.sh installs it.
+[Unit]
+Description=Watch for a BEAR /update request
+
+[Path]
+PathExists=/var/lib/bear/runs/update-request
+Unit=bear-update.service
+
+[Install]
+WantedBy=multi-user.target

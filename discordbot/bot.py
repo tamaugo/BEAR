@@ -106,6 +106,8 @@ RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
 STORAGE = Path(setting("BEAR_STORAGE", str(REPO / "runs")))
 RENAMES_DIR = STORAGE / "renames"   # on the same disk as the runs (the SSD on the VM)
 SHADOW_DIR = STORAGE / "shadow"
+UPDATE_REQUEST = STORAGE / "update-request"   # /update leaves this; bear-update.path (root) sees it and runs setup.sh
+UPDATE_UNIT = Path("/etc/systemd/system/bear-update.path")   # there once setup.sh has installed /update's watcher
 RUNNING_DIR = STORAGE / "running"   # one note per /run still working: a restart marks its card stopped
 RENAME_DOWNLOADS = max(1, number("BEAR_RENAME_DOWNLOADS", 6))
 ZIP_MB = max(1, number("BEAR_ZIP_MB", 10))
@@ -444,6 +446,30 @@ async def sheet(inter: discord.Interaction):
     if not partid_bot.is_partid(inter.channel, PART_ID_CHANNEL_ID):
         return await inter.response.send_message("Use /sheet in #part-id.", ephemeral=True)
     await partid_bot.sheet(inter)
+
+
+@bot.tree.command(name="update", description=look.COMMANDS["update"]["description"])
+@app_commands.describe(**look.COMMANDS["update"]["options"])
+async def update(inter: discord.Interaction, force: bool = False):
+    """Anyone can ask. The bot can't update itself (it is the unprivileged bear user, and the update
+    restarts it), so it leaves a note: systemd's bear-update.path sees it and runs setup.sh as root."""
+    if not UPDATE_UNIT.exists():
+        return await inter.response.send_message(look.reply("update_off"), ephemeral=True)
+    if UPDATE_REQUEST.exists():
+        return await inter.response.send_message(look.reply("update_queued"), ephemeral=True)
+    working = set(ACTIVE) | {cid for cid, tasks in RENAMES.items() if any(not t.done() for t in tasks)}
+    if working and not force:
+        n = f"{len(working)} folder" + ("" if len(working) == 1 else "s")
+        return await inter.response.send_message(look.reply("update_busy", n=n), ephemeral=True)
+    try:
+        UPDATE_REQUEST.parent.mkdir(parents=True, exist_ok=True)
+        UPDATE_REQUEST.write_text(f"{inter.user} {datetime.now(timezone.utc).isoformat()}\n")
+    except OSError:
+        log.exception("can't write %s", UPDATE_REQUEST)
+        return await inter.response.send_message(look.reply("oops"), ephemeral=True)
+    log.info("/update by %s (force=%s)", inter.user, force)
+    await inter.response.send_message(look.reply("update_started"), ephemeral=True)
+    await bot.to_errors(look.update_requested(inter.user, bool(working)))
 
 
 async def read_folder(ch):

@@ -2,6 +2,7 @@
 # Sets up (or updates) the BEAR Discord bot on a Debian 13 VM. Run as root; safe to run again.
 #   first time:  wget -qO setup.sh https://raw.githubusercontent.com/tamaugo/BEAR/discord-bear/discordbot/deploy/setup.sh && bash setup.sh
 #   update:      bash /opt/bear/discordbot/deploy/setup.sh      (restarts the bot: check /status first)
+#                or type /update in Discord: the bot leaves a note, systemd (bear-update.path) runs this script as root
 # Installs: git + Python, a "bear" user, the code in /opt/bear (branch discord-bear), a Python venv,
 # /opt/bear/.env from discordbot/deploy/env.example, the bear-send command, the bear-bot systemd service, then runs the offline tests.
 # The error channel hears about it (discordbot/heartbeat.py): the outside monitor says "down" just before
@@ -71,8 +72,11 @@ ln -sf bear-send /usr/local/bin/bear-send:   # so "bear-send: my message @channe
 
 step "Service"
 install -m 644 "$DIR/discordbot/deploy/bear-bot.service" /etc/systemd/system/bear-bot.service
+install -m 644 "$DIR/discordbot/deploy/bear-update.service" /etc/systemd/system/bear-update.service
+install -m 644 "$DIR/discordbot/deploy/bear-update.path" /etc/systemd/system/bear-update.path
 systemctl daemon-reload
 systemctl enable -q bear-bot
+systemctl enable -q --now bear-update.path   # /update in Discord runs this script (no-op if it is already watching)
 if grep -q '=PASTE_HERE' "$DIR/.env"; then
   systemctl stop bear-bot 2>/dev/null || true
   echo

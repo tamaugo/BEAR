@@ -51,6 +51,10 @@ COMMANDS = {
         "description": "#part-id: every part number since the last /sheet, as a spreadsheet",
         "options": {},
     },
+    "update": {
+        "description": "Update BEAR to the latest version and restart it (anyone can)",
+        "options": {"force": "Update even though BEAR is working on folders: they are stopped and need /run again"},
+    },
 }
 
 # What the person in the car channel should do, per error code: short, phone-sized, no settings
@@ -308,6 +312,12 @@ def error_report(folder, code, meaning, fix, channel_id, car=None, detail="", ju
     return _post(_embed(RED, f"{TITLES.get(code, 'Problem')} · {code}", desc, fields, _footer(dev)), content=content)
 
 
+def update_requested(who, forced=False):
+    """Error channel: someone asked for an update (anyone can), so there is a record of who."""
+    text = f"{who} typed **/update**" + (" with **force**: any running folders are stopped." if forced else ".")
+    return _post(_embed(BRAND, "\N{ANTICLOCKWISE DOWNWARDS AND UPWARDS OPEN CIRCLE ARROWS} Update asked for", text))
+
+
 def bot_started(max_runs, sim=None, version=None):
     """Error channel, each time the bot starts (after an update, a restart or a crash)."""
     lines = [f"**Version {version}**" if version else None,
@@ -376,6 +386,14 @@ REPLIES = {
     "rename_on_it": "Renaming the photos as **{sku}-1**, **{sku}-2** ...: the card below shows how it's going.",
     "quit_none": "Nothing is running in this channel.",
     "quit_done": "Stopping {what}.",
+    "update_off": "This BEAR can't update itself yet. Someone with the server types **sudo bash "
+                  "/opt/bear/discordbot/deploy/setup.sh** once; after that **/update** works.",
+    "update_queued": "An update is already on its way.",
+    "update_busy": "BEAR is still working on {n}. Updating restarts it and stops that work, so wait for it "
+                   "to finish (**/status** shows what is running), or **/update force:True** to update now "
+                   "and **/run** those folders again afterwards.",
+    "update_started": "Updating BEAR. It restarts in a minute or so: the error channel says 🔴 down then "
+                      "🟢 up, and #update-log says what changed. If it fails, the error channel says which step.",
 }
 
 
@@ -400,7 +418,8 @@ def guide(error_channel_id=None):
             "**/run** again re-does the whole folder.\n"
             "**/rename** renames every photo to `SKU-1`, `SKU-2` ... and posts them as a zip.\n"
             "**/quit** stops whatever is running in the channel.\n"
-            "**/status** shows what BEAR is working on.")
+            "**/status** shows what BEAR is working on.\n"
+            "**/update** updates BEAR to the latest version (it restarts, so check **/status** first).")
     if error_channel_id:
         tips += f"\nProblems also go to <#{error_channel_id}>."
     return _post(_embed(BRAND, f"{BEAR} How to use BEAR", steps, [("Good to know", tips, False)]))

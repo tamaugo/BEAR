@@ -482,6 +482,35 @@ async def main():
     os.environ.pop("BEAR_RENAME_OFFER")
     check("/quit leaves no restart note", list(B.RUNNING_DIR.glob("*.json")), [])
 
+    # /update: anyone can; it leaves a note for systemd (bear-update.path) rather than running anything itself.
+    B.UPDATE_REQUEST, B.UPDATE_UNIT = TMP / "update-request", TMP / "bear-update.path"
+    B.UPDATE_REQUEST.unlink(missing_ok=True)
+    B.UPDATE_UNIT.unlink(missing_ok=True)
+    i = Inter(Channel(95))
+    await B.update.callback(i)
+    check("/update not set up", any("can't update itself" in r for r in i.replies) and not B.UPDATE_REQUEST.exists(), True)
+    B.UPDATE_UNIT.write_text("")
+    B.ACTIVE[95] = {"folder": "Q1", "state": "running", "parts": 1, "since": time.time()}
+    i = Inter(Channel(95))
+    await B.update.callback(i)
+    check("/update waits for a run", any("still working on 1 folder" in r for r in i.replies) and not B.UPDATE_REQUEST.exists(), True)
+    del B.ACTIVE[95]
+    ERRORS.sent.clear()
+    i = Inter(Channel(95))
+    await B.update.callback(i)
+    check("/update leaves the note", B.UPDATE_REQUEST.exists() and any("Updating BEAR" in r for r in i.replies), True)
+    check("/update tells the error channel", "/update" in str(ERRORS.sent), True)
+    i = Inter(Channel(95))
+    await B.update.callback(i)
+    check("/update twice is one update", any("already on its way" in r for r in i.replies), True)
+    B.UPDATE_REQUEST.unlink()
+    B.ACTIVE[95] = {"folder": "Q1", "state": "running", "parts": 1, "since": time.time()}
+    i = Inter(Channel(95))
+    await B.update.callback(i, force=True)
+    del B.ACTIVE[95]
+    check("/update force goes ahead", B.UPDATE_REQUEST.exists(), True)
+    B.UPDATE_REQUEST.unlink()
+
     # A restart while a folder runs: the run dies without a word (here: its task is cancelled the
     # way the bot's shutdown cancels it), its note stays, and the next start marks the card stopped.
     os.environ["BEAR_SIM_PAUSE"] = "1"
