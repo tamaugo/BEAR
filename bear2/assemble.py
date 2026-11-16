@@ -80,11 +80,14 @@ def clean_batch(rows, model, attempts):
     if not rows:
         return {}
     user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f) for k, f in rows.items()}, indent=0)
+    # Not held back by the folder's spend cap (BEAR_RUN_CAP_USD): the names cost a fraction of a
+    # penny and are what turns the parts already read and priced into a spreadsheet. With the cap
+    # applied here, a folder that reached it lost every part it had paid for, not just the rest.
     try:
         out, raw = c.chat(model, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
                           max_tokens=3000, response_format={"type": "json_object"},
                           extra={"reasoning": {"effort": "none", "exclude": True}}, tag="clean_names",
-                          attempts=attempts)
+                          attempts=attempts, capped=False)   # see below
     except Exception as e:
         raise NamesFailed(f"{label(model)} is unavailable: {str(e)[:160]}") from None
     m = re.search(r"\{.*\}", out, re.S)
@@ -138,7 +141,10 @@ def part_line(vehicle, f, name):
 
 def start_model():
     """The name model to start with: BEAR_NAME_MODEL (set in .env on the Discord server), else the default."""
-    m = os.environ.get("BEAR_NAME_MODEL")
+    m = (os.environ.get("BEAR_NAME_MODEL") or "").strip()
+    if m and m not in NAME_MODELS:   # a typo used to be ignored without a word
+        print(f"BEAR_NAME_MODEL {m!r} is not a name model BEAR knows ({', '.join(NAME_MODELS)}): "
+              f"using {label(MODEL)}", file=sys.stderr, flush=True)
     return m if m in NAME_MODELS else MODEL
 
 

@@ -71,10 +71,18 @@ def is_partid(channel, channel_id):
 
 # --- The card ------------------------------------------------------------------------------------
 
+def shown(text, n=80):
+    """A reading or file name as it goes on the card: one line, no backticks (they would end the
+    code style early) and cut to n characters, so three very long readings can't push the card past
+    Discord's 2000 and lose the reply. The saved answer and the /sheet keep the whole text."""
+    text = " ".join(str(text).replace("`", "'").split())
+    return text if len(text) <= n else text[: n - 1] + "\N{HORIZONTAL ELLIPSIS}"
+
+
 def card_text(card):
-    lines = [f"**Part number** · `{card['photo_name']}` · scored by Jev"]
+    lines = [f"**Part number** · `{shown(card['photo_name'])}` · scored by Jev"]
     for i, o in enumerate(card["options"], 1):
-        lines.append(f"**{i}** `{o['text']}` · {o['score']:.0%}" + ("  ← most likely" if i == 1 else ""))
+        lines.append(f"**{i}** `{shown(o['text'])}` · {o['score']:.0%}" + ("  ← most likely" if i == 1 else ""))
     if not card["options"]:
         lines.append("Agent 1 found no part number. If there is one, type it with ✏️.")
     lines.append("")
@@ -85,11 +93,11 @@ def card_text(card):
     elif card["answer"] is None:
         lines.append("Answer: none yet")
     elif card["how"] == "default":
-        lines.append(f"Answer: **1** `{card['answer']}` (nobody has picked, so 1)")
+        lines.append(f"Answer: **1** `{shown(card['answer'])}` (nobody has picked, so 1)")
     elif card["how"] == "picked":
-        lines.append(f"Answer: **{card['choice']}** `{card['answer']}`, picked by {card['by']}")
+        lines.append(f"Answer: **{card['choice']}** `{shown(card['answer'])}`, picked by {card['by']}")
     else:
-        lines.append(f"Answer: ✏️ `{card['answer']}`, typed by {card['by']}")
+        lines.append(f"Answer: ✏️ `{shown(card['answer'])}`, typed by {card['by']}")
     if card.get("location"):
         lines.append(f"Location: **{card['location']}**, picked by {card['location_by']}")
     else:

@@ -66,9 +66,31 @@ def read_photo(path, vehicle, model=MODEL, max_side=1600, rotate=0):
             # Measured r9: flash-lite sometimes repeats its candidate list until max_tokens,
             # truncating the JSON. The readings are still there - salvage them, then retry.
             d = salvage(out)
-    d["candidates"] = dedupe(d.get("candidates") or [])
+    d["candidates"] = dedupe(usable(d.get("candidates")))
     d["_cost"] = cost
     return d
+
+
+def usable(cands):
+    """The candidates in the shape every later stage expects: a dict whose text is a string and
+    whose alt_readings is a list of strings. A model now and then answers a little off (an
+    all-digit number as a JSON number, one alt reading as a bare string, a stray null in the list);
+    that used to crash the photo's read and cost the part. Readings themselves are never changed."""
+    out = []
+    for x in cands if isinstance(cands, list) else []:
+        if not isinstance(x, dict):
+            continue
+        text = x.get("text")
+        if isinstance(text, int) and not isinstance(text, bool):
+            text = str(text)
+        if not isinstance(text, str):
+            continue
+        alts = x.get("alt_readings")
+        alts = [alts] if isinstance(alts, (str, int)) and not isinstance(alts, bool) else alts
+        alts = [str(a) if isinstance(a, int) and not isinstance(a, bool) else a
+                for a in (alts if isinstance(alts, list) else [])]
+        out.append({**x, "text": text, "alt_readings": [a for a in alts if isinstance(a, str)]})
+    return out
 
 
 def dedupe(cands):

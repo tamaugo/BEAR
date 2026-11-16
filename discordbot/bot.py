@@ -64,6 +64,7 @@ SIM_PY = REPO / "bear2" / "simulate.py"
 HISTORY_LIMIT = 5000      # messages read back looking for the folder marker
 NAME_RETRY_WAITS = (60, 180)   # a name-model failure: retry only the names after these many seconds
 MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this many seconds
+UPDATE_STALE = 45 * 60    # an /update note older than this was never picked up (an update takes 30 minutes at most)
 LINK = __import__("re").compile(r"https://discord\.com/channels/\S+")
 
 
@@ -99,7 +100,7 @@ def number(name, default=None):
 TOKEN = setting("DISCORD_TOKEN")
 GUILD_ID = number("DISCORD_GUILD_ID")
 ERROR_CHANNEL_ID = number("ERROR_CHANNEL_ID")
-CARS_CATEGORY_ID = number("CARS_CATEGORY_ID", 0) or None   # unset: commands work anywhere, nothing is deleted
+CARS_CATEGORY_ID = number("CARS_CATEGORY_ID", 0) or None   # unset: commands work in any channel
 MAX_RUNS = max(1, number("BEAR_MAX_RUNS", 2))
 UPLOAD_WAIT = number("BEAR_UPLOAD_WAIT", 30)
 RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
@@ -158,15 +159,18 @@ class Card:
         self.ch, self.msg, self.on_post = ch, None, on_post   # on_post(): called each time a new message goes up
 
     async def show(self, post, file=None, view=False):
-        """view: buttons to put under the card, None to take them away, False to leave them."""
+        """view: buttons to put under the card, None to take them away, False to leave them.
+        file: a function that makes the discord.File to attach. It is called again for each try,
+        because discord.py closes a file once it has tried to send it: when the card couldn't be
+        edited (someone deleted it, or Discord hiccuped) the same File can't go on the new message."""
         buttons = {} if view is False else {"view": view}
         try:
             if self.msg is not None:
-                extra = {"attachments": [file]} if file else {}
+                extra = {"attachments": [file()]} if file else {}
                 return await self.msg.edit(**look.kwargs(post), **extra, **buttons)
         except discord.DiscordException:
             log.warning("can't edit the card in %s, posting a new one", self.ch, exc_info=True)
-        extra = {"file": file} if file else {}
+        extra = {"file": file()} if file else {}
         self.msg = await self.ch.send(**look.kwargs(post), **extra, **({"view": view} if view else {}))
         if self.on_post:
             self.on_post()
@@ -204,7 +208,10 @@ class Bot(discord.Client):
         self.heartbeat = asyncio.create_task(heartbeat())
         await self.to_errors(look.bot_started(MAX_RUNS, setting("BEAR_SIM"), version()))
         # First start on new code: say what changed in #update-log (nothing when the code is the same)
-        await asyncio.to_thread(hb.update_log, STORAGE / "update-log.last")
+        try:
+            await asyncio.to_thread(hb.update_log, STORAGE / "update-log.last")
+        except Exception:   # the update log is a nicety: cards cut off by the restart still get marked
+            log.exception("can't post the update log")
         await stopped_by_restart()
 
     async def error_channel(self):
@@ -213,8 +220,15 @@ class Bot(discord.Client):
     async def to_errors(self, post, files=None, mention=False):
         extra = {"allowed_mentions": discord.AllowedMentions(users=True)} if mention else {}
         try:
-            await (await self.error_channel()).send(**look.kwargs(post), files=files or [], **extra)
-        except discord.DiscordException:
+            try:
+                return await (await self.error_channel()).send(**look.kwargs(post), files=files or [], **extra)
+            except (discord.DiscordException, OSError, ValueError):
+                if not files:
+                    raise
+                # The report matters more than its log (too big for Discord, or unreadable): send it alone.
+                log.warning("can't attach the log to the error report, posting it without", exc_info=True)
+            await (await self.error_channel()).send(**look.kwargs(post), **extra)
+        except (discord.DiscordException, OSError, ValueError):
             log.exception("can't post to the error channel %s", ERROR_CHANNEL_ID)
 
     async def fail(self, ch, folder, code, detail="", logfile=None, card=None, partial=False, jump_url=None):
@@ -224,7 +238,7 @@ class Bot(discord.Client):
         log.warning("%s %s %s: %s", ch, label, code, detail[:300])
         files = [discord.File(logfile, filename=f"{label}-log.txt")] if logfile and Path(logfile).exists() else []
         meaning, fix = fo.ERRORS[code]
-        await self.to_errors(look.error_report(label, code, meaning, fix, ch.id, (ch.topic or "").strip() or None,
+        await self.to_errors(look.error_report(label, code, meaning, fix, ch.id, car_of(ch) or None,
                                                detail, jump_url, dev()), files)
         links = LINK.findall(detail) if code in ("BEAR-D05", "BEAR-D06", "BEAR-D07") else []
         post = look.problem_card(folder, code, ERROR_CHANNEL_ID, links, dev(), partial)
@@ -243,6 +257,13 @@ class Bot(discord.Client):
 
 
 bot = Bot()
+
+
+def car_of(ch):
+    """The car, from the channel topic, on one line. BEAR's result lines are one line each with
+    | between the fields, so a topic typed over two lines or with a | in it would break every row
+    of the spreadsheet: line breaks and | become spaces."""
+    return " ".join((getattr(ch, "topic", None) or "").replace("|", " ").split())
 
 
 def car_channel_problem(ch):
@@ -270,7 +291,7 @@ async def newfolder(inter: discord.Interaction, name: str):
         return await inter.response.send_message(problem, ephemeral=True)
     if not fo.FOLDER_NAME.fullmatch(name):
         return await inter.response.send_message(look.reply("bad_name"), ephemeral=True)
-    car = (ch.topic or "").strip()
+    car = car_of(ch)
     if not car:
         await inter.response.send_message(look.reply("no_topic", name=name), ephemeral=True)
         return await bot.fail(ch, name, "BEAR-D01")
@@ -341,7 +362,7 @@ async def whole_run(ch, card, a):
     """Everything one /run does: BEAR on the folder's photos, and, if BEAR_RENAME_OFFER is on, beside it
     the offer to rename every photo in the folder, whose zip is posted after the spreadsheet. The
     two don't depend on each other: either can fail on its own. Cancelling this task (/quit) stops both."""
-    car = (ch.topic or "").strip()
+    car = car_of(ch)
     await card.show(look.run_card("checking", None, car or NO_CAR, dev=dev()))
     ready, bear_done = asyncio.get_running_loop().create_future(), asyncio.Event()
     renaming = asyncio.create_task(offer_rename(ch, ready, bear_done)) if rename_offer_on() else None
@@ -456,7 +477,7 @@ async def update(inter: discord.Interaction, force: bool = False):
     restarts it), so it leaves a note: systemd's bear-update.path sees it and runs setup.sh as root."""
     if not UPDATE_UNIT.exists():
         return await inter.response.send_message(look.reply("update_off"), ephemeral=True)
-    if UPDATE_REQUEST.exists():
+    if update_waiting():
         return await inter.response.send_message(look.reply("update_queued"), ephemeral=True)
     working = set(ACTIVE) | {cid for cid, tasks in RENAMES.items() if any(not t.done() for t in tasks)}
     if working and not force:
@@ -473,13 +494,28 @@ async def update(inter: discord.Interaction, force: bool = False):
     await bot.to_errors(look.update_requested(inter.user, bool(working)))
 
 
-async def read_folder(ch):
+def update_waiting():
+    """True while an /update note is waiting to be picked up. A note older than UPDATE_STALE was
+    never picked up (the watcher wasn't running): it no longer blocks /update, which writes a new one."""
+    try:
+        return time.time() - UPDATE_REQUEST.stat().st_mtime < UPDATE_STALE
+    except OSError:
+        return False
+
+
+async def read_folder(ch, pinned=None):
     """(name, messages after the latest marker oldest first, the marker). Raises D02 if there is no folder.
     Reads back from the newest message and stops at the marker (the same answer as fo.split_folder
-    over all HISTORY_LIMIT messages), so a folder of 40 photos reads about 40 messages, not 5000."""
+    over all HISTORY_LIMIT messages), so a folder of 40 photos reads about 40 messages, not 5000.
+    pinned: the id of the marker /run started with. A /newfolder typed while /run was still waiting
+    for uploads doesn't take the run over: the run keeps the folder it started with, which is then
+    the messages between its marker and the newer one."""
     after = []
     async for m in ch.history(limit=HISTORY_LIMIT):
         name = fo.marker_name(m, bot.user.id)
+        if name and pinned is not None and getattr(m, "id", None) != pinned:
+            after = []   # a newer folder: what came after its marker belongs to it, not to this run
+            continue
         if name:
             return name, after[::-1], m
         after.append(m)
@@ -504,7 +540,7 @@ async def settled_folder(ch, seen=None, waiting=None):
         pause = UPLOAD_WAIT - age + 1
         await asyncio.sleep(pause)
         waited += pause
-        folder, msgs, marker = await read_folder(ch)
+        folder, msgs, marker = await read_folder(ch, getattr(marker, "id", None))
         if seen:
             await seen(folder, marker)
     return folder, msgs, marker
@@ -512,7 +548,7 @@ async def settled_folder(ch, seen=None, waiting=None):
 
 async def run_folder(ch, card, a, ready):
     """BEAR's side of /run. ready gets (folder, messages) once uploads have stopped, for the rename."""
-    car = (ch.topic or "").strip()
+    car = car_of(ch)
 
     async def seen(folder, marker):
         first = a["folder"] is None
@@ -926,7 +962,7 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
     photos, priced = fo.count_results(a2.read_text() if a2.exists() else "")
     name = fo.xlsx_name(folder, car)
     await card.show(look.done_card(folder, car, photos, priced, name, round((time.time() - started) / 60), dev()),
-                    file=discord.File(xlsx, filename=name))
+                    file=lambda: discord.File(xlsx, filename=name))
     trace = results / "trace.json"
     code = fo.partial_problem(trace.read_text(errors="replace")) if trace.exists() else None
     code = code or fo.outage_problem(a2.read_text() if a2.exists() else "")

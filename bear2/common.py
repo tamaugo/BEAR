@@ -51,7 +51,11 @@ _SPEND_AT_IMPORT = total_spend()  # per-run cap: only spend since this process s
 
 
 def _check_cap():
-    cap = float(os.environ.get("BEAR_RUN_CAP_USD", "1.00"))
+    raw = os.environ.get("BEAR_RUN_CAP_USD", "1.00")
+    try:
+        cap = float(raw)
+    except ValueError:   # say what is wrong, not "could not convert string to float" on every photo
+        raise RuntimeError(f"BEAR_RUN_CAP_USD in .env must be a number only (no comment after it), not {raw!r}") from None
     s = total_spend() - _SPEND_AT_IMPORT
     if s >= cap:
         raise RuntimeError(f"spend cap reached: ${s:.4f} this run (cap ${cap:.2f})")
@@ -223,8 +227,11 @@ def _retry_wait(err, attempt):
 
 
 def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=None, extra=None, tag="",
-         attempts=CHAT_ATTEMPTS):
-    _check_cap()
+         attempts=CHAT_ATTEMPTS, capped=True):
+    """capped=False: this call goes ahead even when the run has reached BEAR_RUN_CAP_USD (the part
+    names: see assemble.clean_batch). It is still written to the spend ledger."""
+    if capped:
+        _check_cap()
     body = {"model": model, "messages": messages, "temperature": temperature,
             "max_tokens": max_tokens, "usage": {"include": True}}
     if response_format:

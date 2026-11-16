@@ -96,13 +96,14 @@ def main(run_dir, photo_dir, vehicle):
         except Exception:   # e.g. a corrupt photo: no hints for it, the others still get theirs
             found = []
         top = rank(found, ctx)[:PER_PHOTO]
-        trace[img] = [(it.get("title"), it["price"]["value"]) for it in top]
+        # (it.get("price") or {}): one listing with no price used to lose every hint in the folder
+        trace[img] = [(it.get("title"), (it.get("price") or {}).get("value")) for it in top]
         if not top:
             out.append(f"\u21b3 POSSIBLE MATCH - none found by image search | | | | {img}")
         for k, it in enumerate(top, 1):
             s = c.summarize(it)
             title = (s["title"] or "").replace("|", " ")
-            price = f"listed \u00a3{float(it['price']['value']):.2f}"
+            price = f"listed \u00a3{s['price']:.2f}"
             out.append(f"\u21b3 POSSIBLE MATCH {k} (check by eye) - {title} | {price} | {s['category']} | {s['url']} | {img}")
             n_hints += 1
     (run / "image_hints.json").write_text(json.dumps({"context": ctx.most_common(15), "hints": trace}, indent=1))

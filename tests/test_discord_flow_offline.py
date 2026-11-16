@@ -565,6 +565,86 @@ async def main():
     check("/update force goes ahead", B.UPDATE_REQUEST.exists(), True)
     B.UPDATE_REQUEST.unlink()
 
+    # An /update note nobody picked up (the watcher wasn't running) stops blocking /update after 45 minutes.
+    B.UPDATE_REQUEST.write_text("old\n")
+    os.utime(B.UPDATE_REQUEST, (time.time() - B.UPDATE_STALE - 60,) * 2)
+    i = Inter(Channel(95))
+    await B.update.callback(i)
+    check("/update: a stale note is replaced", any("Updating BEAR" in r for r in i.replies)
+          and "person" in B.UPDATE_REQUEST.read_text(), True)
+    B.UPDATE_REQUEST.unlink()
+
+    # The run card was deleted (or Discord wouldn't edit it) when the spreadsheet was ready: discord.py
+    # closes a file once it has tried to send it, so the new message needs a fresh one. The
+    # spreadsheet used to be lost here, with BEAR-R01 for a run that had worked.
+    ch = folder(96)
+    real_send = ch.send
+
+    async def send_closing(**kw):
+        if kw.get("file") is not None and kw["file"].fp.closed:
+            raise ValueError("I/O operation on closed file")   # what discord.py does with a used File
+        m = await real_send(**kw)
+
+        async def edit(content=None, embeds=None, attachments=None, view=False):
+            if attachments:
+                for f in attachments:
+                    f.close()   # as discord.py does, whether the edit worked or not
+                raise B.discord.DiscordException("Unknown Message")
+            ch.sent[0] = (flat(content, embeds), ch.sent[0][1])
+        m.edit = edit
+        return m
+    ch.send = send_closing
+    ERRORS.sent.clear()
+    await run(ch)
+    text, fname = card(ch)
+    check("card gone: spreadsheet still posted", (fname, "Done" in text), ("Q184-mitsubishi-shogun-2007.xlsx", True))
+    check("card gone: no error", ERRORS.sent, [])
+
+    # A topic typed over two lines, or with a | in it, is one line with spaces: BEAR's result lines
+    # are one line each with | between the fields, so it used to break every row of the spreadsheet.
+    ch = await run(folder(97, topic="MITSUBISHI SHOGUN\n2007 | 3.2 DI-D "))
+    check("two-line topic: car on one line", B.car_of(ch), "MITSUBISHI SHOGUN 2007 3.2 DI-D")
+    check("two-line topic: done", "Done" in card(ch)[0], True)
+    lines = (next((TMP / "car-97-97").iterdir()) / "results" / "agent3_results.txt").read_text().splitlines()
+    check("two-line topic: every row has its 5 fields", {len(l.split("|")) for l in lines}, {5})
+    check("two-line topic: no error", ERRORS.sent, [])
+
+    # /newfolder typed while /run is still waiting for uploads doesn't take the run over: the run
+    # keeps the folder it started with (its photos only), instead of switching to the new, empty one.
+    ch = folder(98, name="Q200", parts=2)
+    first = ch.msgs[0]
+    check("pinned: the folder /run started with", (await B.read_folder(ch, first.id))[0], "Q200")
+    ch.add(ME, fo.marker("Q201"))
+    ch.add(files=["IMG_50.jpg"])
+    name, msgs, marker = await B.read_folder(ch, first.id)
+    check("pinned: still the first folder", (name, marker is first), ("Q200", True))
+    check("pinned: only its own photos", [att.filename for m in msgs for att in m.attachments], ["IMG_1.jpg", "IMG_2.jpg"])
+    check("not pinned: the newest folder", (await B.read_folder(ch))[0], "Q201")
+    ch = folder(98, name="Q200", parts=2)
+    ch.msgs[-1].created_at = datetime.now(timezone.utc)   # an upload just now: /run waits a second
+    task = asyncio.create_task(run(ch))
+    while not any("Waiting for uploads" in t for t in ch.shown):
+        await asyncio.sleep(0.01)
+    ch.add(ME, fo.marker("Q201"))
+    await task
+    check("newfolder during the wait: the first folder is run", ("Q200" in card(ch)[0], "Done" in card(ch)[0]), (True, True))
+    check("newfolder during the wait: its 2 photos", any("Running 2 parts" in t for t in ch.shown), True)
+
+    # The error report still arrives when its log can't be attached (too big for Discord).
+    ERRORS.sent.clear()
+    real_error_send = ERRORS.send
+
+    async def no_files(files=None, **kw):
+        if files:
+            raise B.discord.DiscordException("413 Payload Too Large")
+        return await real_error_send(**kw)
+    ERRORS.send = no_files
+    logfile = TMP / "big-log.txt"
+    logfile.write_text("log")
+    await B.bot.fail(Channel(94), "Q1", "BEAR-R01", "boom", logfile)
+    ERRORS.send = real_error_send
+    check("error report sent without its log", "BEAR-R01" in last_error(), True)
+
     # A restart while a folder runs: the run dies without a word (here: its task is cancelled the
     # way the bot's shutdown cancels it), its note stays, and the next start marks the card stopped.
     os.environ["BEAR_SIM_PAUSE"] = "1"

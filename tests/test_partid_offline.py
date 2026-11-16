@@ -227,6 +227,13 @@ async def main():
     check("no number text", "Agent 1 found no part number" in P.card_text(empty) and "Answer: none yet" in P.card_text(empty), True)
     check("no number buttons", [b.custom_id for b in P.Buttons(empty).children], ["partid:type", "partid:none", *LOC])
 
+    # Very long readings and backticks can't push the card past Discord's 2000 characters or break
+    # its layout; the saved answer keeps the whole text.
+    long = {"card": 2, "photo_name": "x.jpg", "choice": 1, "answer": "A`B" + "9" * 900, "how": "default",
+            "options": [{"text": "A`B" + "9" * 900, "score": 0.5}] * 3}
+    check("long readings fit a message", len(P.card_text(long)) < 2000 and "`A'B9" in P.card_text(long), True)
+    check("short readings shown whole", P.shown("97420-3Z000"), "97420-3Z000")
+
     # Two photos and a HEIC in one message: a card each, and HEIC is refused.
     m, replies = message(part_id, ["a.jpg", "b.png", "c.heic", "notes.pdf"], 501)
     await B.bot.on_message(m)
