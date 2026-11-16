@@ -78,7 +78,7 @@ def listing_match(s1, listings, vehicle, cap=60):
     qs = {f"L{i+1}": {"type": "noul", "instructions": (
         f"All these listings carry the same part number. Is listing L{i+1} selling the same single "
         "component that the majority of the listings are selling, in the same quantity as the photo? "
-        "Answer false if L{i+1} is a pair/set/multiple pieces when the photo has one item, a larger "
+        f"Answer false if L{i+1} is a pair/set/multiple pieces when the photo has one item, a larger "
         "assembly or different component that merely includes this number, or clearly a different "
         "part from what most sellers list.")}
         for i in range(len(listings))}

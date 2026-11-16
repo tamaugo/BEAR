@@ -28,7 +28,7 @@ TAG = "\N{LABEL}\N{VARIATION SELECTOR-16}"
 # Discord's limit is 100 characters for each description.
 COMMANDS = {
     "newfolder": {
-        "description": "Start a new folder (one box of parts) in this car's channel",
+        "description": "Start a new folder of parts in this car's channel",
         "options": {"name": "Folder name, e.g. Q184"},
     },
     "run": {
@@ -49,6 +49,14 @@ COMMANDS = {
     },
     "sheet": {
         "description": "#part-id: every part number since the last /sheet, as a spreadsheet",
+        "options": {},
+    },
+    "health": {
+        "description": "Check BEAR's keys, credit, eBay calls today and disk space",
+        "options": {},
+    },
+    "summary": {
+        "description": "What BEAR has cost and done this week so far, day by day",
         "options": {},
     },
     "update": {
@@ -141,6 +149,10 @@ def _plural(n, word):
     return f"{n} {word}" + ("" if n == 1 else "s")
 
 
+import datetime as _dt  # noqa: E402
+_DAY = _dt.timedelta(days=1)
+
+
 def kwargs(post):
     """Turn a post into channel.send / message.edit arguments (the only place discord.py is needed)."""
     import discord
@@ -199,13 +211,17 @@ def run_card(state, folder, car, parts=None, got=None, queue_ahead=None, since=N
     return _post(_embed(colour, title, desc, footer=_footer(dev)))
 
 
-def done_card(folder, car, parts, priced, filename, minutes=None, dev=False):
+def done_card(folder, car, parts, priced, filename, minutes=None, dev=False, late=0):
     """Last edit of the run card when the spreadsheet is ready. The spreadsheet itself is attached to
-    the same message (or posted right under it if the card can't take a file)."""
+    the same message (or posted right under it if the card can't take a file).
+    late: photos (or zips) uploaded to the folder after /run had started, so not in this spreadsheet."""
     missed = parts - priced
     lines = [f"**{car}**",
              f"BEAR priced **{priced} of {parts}** parts" + (f" ({missed} not priced)" if missed else "") + ".",
              f"Spreadsheet: `{filename}`"]
+    if late:
+        lines.append(f"\n\N{WARNING SIGN} **{_plural(late, 'upload')} arrived after /run started** and "
+                     f"{'is' if late == 1 else 'are'} not in this spreadsheet. **/run** again to price the whole folder.")
     extra = f"took {minutes} min" if minutes is not None else None
     return _post(_embed(GREEN, f"\N{WHITE HEAVY CHECK MARK} {folder} · Done", "\n".join(lines),
                         footer=_footer(dev, extra)))
@@ -355,6 +371,75 @@ def shadow_ping(folders, parts, log_path, user_id=None):
                  content=f"<@{user_id}>" if user_id else None)
 
 
+# --- Upkeep: disk, eBay calls, health, the weekly summary (upkeep.py) ---------------------------------
+
+def _usd(x):
+    return f"${x:.2f}" if x >= 0.995 or x == 0 else f"${x:.3f}"
+
+
+def disk_warning(free_gb, percent):
+    """Error channel, once a day while the disk the runs are kept on is nearly full."""
+    return _post(_embed(AMBER, "\N{WARNING SIGN} The server's disk is nearly full",
+                        f"**{free_gb:.1f} GB** free ({percent:.0f}%). When it fills, runs fail.\n"
+                        "BEAR already deletes a run's photos from the server after `BEAR_KEEP_DAYS` days "
+                        "(they stay in Discord). Lower that number in `.env`, or clear old folders in "
+                        "`/var/lib/bear/runs` (SETUP.md §6)."))
+
+
+def ebay_warning(calls, limit):
+    """Error channel, once a day when BEAR has used most of eBay's daily allowance."""
+    return _post(_embed(AMBER, "\N{WARNING SIGN} BEAR is close to eBay's daily limit",
+                        f"**{calls} of {limit}** eBay calls used today. Past the limit every part comes back "
+                        "*eBay Lookup Unavailable* until the count starts again (the next day).\n"
+                        "Hold big folders until tomorrow. Photos that are hard to read use the most calls."))
+
+
+def health_card(rows, dev=False, daily=False):
+    """/health (everything), or the daily check in the error channel (posted only when something is
+    wrong). rows: [(what, ok, text)], ok True / False / None = not checked."""
+    mark = {True: "\N{WHITE HEAVY CHECK MARK}", False: "\N{CROSS MARK}", None: "\N{WHITE CIRCLE}"}
+    bad = any(ok is False for _, ok, _ in rows)
+    title = (f"\N{CROSS MARK} BEAR's daily check found a problem" if daily else
+             f"{BEAR} BEAR health: " + ("something needs a look" if bad else "all good"))
+    lines = [f"{mark[ok]} **{what}**: {text}" for what, ok, text in rows]
+    return _post(_embed(RED if bad else GREEN, title, "\n".join(lines), footer=_footer(dev)))
+
+
+def summary_card(s, key_spent=None, dev=False):
+    """The weekly summary (error channel, each Sunday) and /summary (this week so far). s is
+    upkeep.summary(); key_spent is what the OpenRouter key has spent all time, when OpenRouter says."""
+    day = lambda d: f"{d.strftime('%a')} {d.day} {d.strftime('%b')}"   # noqa: E731
+    if s["whole_week"]:
+        title = f"\N{BAR CHART} Weekly summary"
+        span, this, last = f"{day(s['start'])} to {day(s['end'] - _DAY)}", "that week", "the week before"
+    else:
+        title = f"\N{BAR CHART} This week so far"
+        span, this, last = f"{day(s['start'])} to now", "this week so far", "the same days last week"
+    lines = [f"*{span}*",
+             f"BEAR has cost **{_usd(s['cost'])}** {this}. It did **{_plural(s['runs'], 'run')}**: "
+             f"{_plural(s['parts'], 'part')}, {s['priced']} priced."]
+    if s["partid_cost"] or s["partid_photos"]:
+        lines.append(f"#part-id read {_plural(s['partid_photos'], 'photo')} ({_usd(s['partid_cost'])} of that).")
+    if s["change"] is None:
+        lines.append(f"Nothing was spent in {last}, so there is nothing to compare with."
+                     if not s["last"]["runs"] else f"{last.capitalize()} cost nothing ({_plural(s['last']['runs'], 'run')}).")
+    elif s["change"] == 0:
+        lines.append(f"That is the same as {last} ({_usd(s['last']['cost'])}, {_plural(s['last']['runs'], 'run')}).")
+    else:
+        way = "higher" if s["change"] > 0 else "lower"
+        lines.append(f"That is **{abs(s['change'])}% {way}** than {last} ({_usd(s['last']['cost'])}, "
+                     f"{_plural(s['last']['runs'], 'run')}).")
+    lines.append(f"**{_plural(s['updates'], 'update')}** to BEAR in that time.")
+    if key_spent is not None:
+        lines.append(f"The OpenRouter key has spent **{_usd(key_spent)}** in all (OpenRouter's own count).")
+    else:
+        lines.append(f"BEAR's own log adds up to **{_usd(s['all_time'])}** in all since it started keeping it.")
+    table = "\n".join(f"{d['day']:<11}{_plural(d['runs'], 'run'):>8}{_plural(d['parts'], 'part'):>11}{_usd(d['cost']):>9}"
+                      for d in s["days"])
+    desc = "\n".join(lines) + (f"\n```\n{table}\n```" if table else "")
+    return _post(_embed(BRAND, title, desc, footer=_footer(dev, "Money is in US dollars, as OpenRouter bills it")))
+
+
 # --- /status -------------------------------------------------------------------------------------
 
 def status_card(active, max_runs, now, dev=False):
@@ -422,7 +507,8 @@ def guide(error_channel_id=None):
             "**/rename** renames every photo to `SKU-1`, `SKU-2` ... and posts them as a zip.\n"
             "**/quit** stops whatever is running in the channel.\n"
             "**/status** shows what BEAR is working on.\n"
-            "**/update** updates BEAR to the latest version (it restarts, so check **/status** first).")
+            "**/update** updates BEAR to the latest version (it restarts, so check **/status** first).\n"
+            "**/health** checks BEAR's keys, credit and disk. **/summary** shows this week's cost and runs.")
     if error_channel_id:
         tips += f"\nProblems also go to <#{error_channel_id}>."
     return _post(_embed(BRAND, f"{BEAR} How to use BEAR", steps, [("Good to know", tips, False)]))

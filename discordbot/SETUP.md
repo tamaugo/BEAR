@@ -29,7 +29,7 @@ BEAR runs live on the VM; the Mac is not involved. Takes about 30 minutes.
 
 Why that size: BEAR mostly waits on OpenRouter and eBay, so CPU barely matters. Each run opens
 up to 6 photos at once (~300 MB peak), two runs plus the bot fit easily in 4 GB. Every photo in a
-folder is kept (~3 MB each), so watch the disk and delete old runs (§6).
+folder is kept (~3 MB each) for 4 days (`BEAR_KEEP_DAYS`), then BEAR deletes it from the server (§6).
 
 The VM only connects **out** (to Discord, OpenRouter, eBay): no port forwarding, no public IP.
 
@@ -204,6 +204,22 @@ unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap 
 2 hours · `R01` anything else (log attached).
 
 ---
+
+### BEAR looks after itself
+
+- **Old photos:** once a day BEAR deletes the photos (and zips) of runs older than `BEAR_KEEP_DAYS`
+  days (4) from the server. They stay in Discord and `/run` downloads them again. Spreadsheets, logs
+  and reads are kept. `BEAR_KEEP_DAYS=0` keeps photos for good.
+- **Daily check:** once a day BEAR checks that the OpenRouter and eBay keys still work, how much
+  credit is left and how full the disk is. The error channel hears only when something is wrong.
+  `/health` shows all of it at any time (only to you).
+- **eBay calls:** eBay allows about 5,000 calls a day (`BEAR_EBAY_DAILY_LIMIT`). The error channel
+  hears once when BEAR has used 80% of them; past the limit parts come back *eBay Lookup Unavailable*.
+  BEAR counts by the UTC day, which may not be exactly when eBay starts its own count again.
+- **Weekly summary:** every Sunday the error channel gets last week's cost, runs, the change on the
+  week before, and how many updates there were, day by day. `/summary` shows this week so far (since
+  Sunday) at any time, compared with the same days of last week. The numbers come from BEAR's own
+  log, `/var/lib/bear/runs/usage/usage.jsonl` (one line per `/run`, kept for good), in US dollars.
 
 ## 7. Is BEAR up? (down/up messages in the error channel)
 

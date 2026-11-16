@@ -260,6 +260,38 @@ def audit_checks():
         check("candidates not a list", s1.usable("nope"), [])
         check("dedupe takes them", [x["text"] for x in s1.dedupe(odd)], ["9643895780", "1K0615601", "A1"])
 
+        # e. Jev's veto question names the listing in every sentence (one used to say "L{i+1}" as text)
+        import stage3_listing as s3
+        asked = {}
+        jev_was, s3.c.jev = s3.c.jev, lambda state, qs, tag="": asked.update(qs) or {
+            "answers": {k: {"type": "noul", "noul": 0.9} for k in qs}}
+        its = [{"title": f"PUMP {k}", "price": {"value": "20"}} for k in range(3)]
+        s3.listing_match({"item_count": 1}, its, "VW GOLF")
+        s3.c.jev = jev_was
+        check("veto question: no unfilled blanks", [k for k, q in asked.items() if "{" in q["instructions"]], [])
+        check("veto question: names its own listing", asked["L3"]["instructions"].count("L3"), 2)
+
+        # f. a name that can't be used is asked for once more, on its own and less strictly; the
+        #    good names are not asked for again, and a name still unusable stops the run as before
+        asks = []
+
+        def names_chat(model, messages, **kw):
+            items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+            asks.append((sorted(items), kw.get("temperature")))
+            second = kw.get("temperature", 0) > 0
+            return json.dumps({"names": {k: ("Fog Light" if second or k != "i1" else "Fog Light 2015")
+                                         for k in items if stubborn is False or not second}}), {}
+        c.chat, stubborn = names_chat, False
+        check("second ask gives the name", a.clean_names({"i0": FOG_OSF, "i1": FOG_OSF}), {"i0": "Fog Light", "i1": "Fog Light"})
+        check("second ask: only the bad row, less strictly", asks, [(["i0", "i1"], 0), (["i1"], a.NAME_RETRY_TEMPERATURE)])
+        stubborn = True
+        try:
+            a.clean_names({"i0": FOG_OSF, "i1": FOG_OSF})
+            check("still unusable stops the run", "no stop", "NamesFailed")
+        except a.NamesFailed as e:
+            check("still unusable stops the run", "gave a name BEAR can't use" in str(e), True)
+        c.chat = saved[2]
+
         # d. possible matches: a listing with no price keeps its row, and the others keep theirs
         run = tmp / "run"
         run.mkdir()

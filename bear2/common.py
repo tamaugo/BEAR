@@ -65,6 +65,23 @@ def _check_cap():
 _tok = {"v": None, "exp": 0}
 
 
+def ebay_calls_file(day=None):
+    """Where today's eBay API calls are counted: one byte per call, so the file's size is the count.
+    One file a day (UTC), shared by every run and #part-id; the bot reads it and warns the error
+    channel at 80% of eBay's daily allowance (discordbot/upkeep.py)."""
+    return CACHE / f"calls-ebay-{day or time.strftime('%Y-%m-%d', time.gmtime())}.count"
+
+
+def count_ebay_call():
+    """Count one real call to eBay (a saved search read from the cache is not a call). Appending a
+    byte is safe with several runs at once. Never raises: counting must not cost a part."""
+    try:
+        with ebay_calls_file().open("ab") as f:
+            f.write(b".")
+    except OSError:
+        pass
+
+
 # eBay hiccups (HTTP 429/5xx, a timeout, a dropped connection) are retried with backoff,
 # 2+4+8s (or Retry-After), before a search counts as "eBay Lookup Unavailable". Other 4xx
 # answers mean the request itself is wrong, so they are not retried.
@@ -90,6 +107,7 @@ def ebay_token():
         req = urllib.request.Request("https://api.ebay.com/identity/v1/oauth2/token", data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         req.add_header("Authorization", f"Basic {basic}")
+        count_ebay_call()
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 d = json.loads(r.read())
@@ -138,6 +156,7 @@ def ebay_search_raw(q, limit=200, max_age_h=24, category=CAR_PARTS_CATEGORY):
                                      + urllib.parse.urlencode(params))
         req.add_header("Authorization", f"Bearer {ebay_token()}")
         req.add_header("X-EBAY-C-MARKETPLACE-ID", "EBAY_GB")
+        count_ebay_call()
         try:
             with urllib.request.urlopen(req, timeout=45) as r:
                 items = json.loads(r.read()).get("itemSummaries", []) or []

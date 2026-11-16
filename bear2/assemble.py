@@ -26,6 +26,7 @@ NAME_MODELS = {MODEL: "Qwen 3.8 Flash",
                "google/gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
                "anthropic/claude-haiku-5.5": "Claude Haiku 5.5"}
 NAME_BATCH = 25                   # rows per name-model call: a big folder can't be cut off at max_tokens
+NAME_RETRY_TEMPERATURE = 0.4      # the second ask for a name that couldn't be used (the first is at 0)
 
 CLEAN_PROMPT = """You clean eBay listing titles into short part names for a UK car breaker's spreadsheet.
 For each item, return ONLY the words that say what the component is. Remove:
@@ -76,9 +77,29 @@ def clean_names(rows, model=MODEL, attempts=c.CHAT_ATTEMPTS):
 
 
 def clean_batch(rows, model, attempts):
-    """One name-model call for up to NAME_BATCH rows (clean_names)."""
+    """The names for up to NAME_BATCH rows (clean_names). A row whose name can't be used (missing,
+    a year or number left in it, too long) is asked for once more on its own, a little less
+    strictly: the first ask is at temperature 0, where asking again gives the same answer, so one
+    bad name used to cost the whole folder its spreadsheet however often it was retried. Still
+    never partial: a name that can't be used after the second ask stops the run as before."""
     if not rows:
         return {}
+    names = ask_names(rows, model, attempts)
+    bad = {k: f for k, f in rows.items() if not tidy_name(names.get(k), f[1])}
+    if bad:
+        print(f"Asking again for {len(bad)} part name(s) {label(model)} got wrong ...", file=sys.stderr, flush=True)
+        names.update(ask_names(bad, model, attempts, NAME_RETRY_TEMPERATURE))
+    tidy = {}
+    for k, f in rows.items():
+        tidy[k] = tidy_name(names.get(k), f[1])
+        if not tidy[k]:
+            raise NamesFailed(f"{label(model)} gave a name BEAR can't use for {f[0]}: {names.get(k)!r}")
+    return tidy
+
+
+def ask_names(rows, model, attempts, temperature=0):
+    """One name-model call: {id: the model's name, as it gave it}. NamesFailed if the model is
+    unavailable or its answer has no names at all."""
     user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f) for k, f in rows.items()}, indent=0)
     # Not held back by the folder's spend cap (BEAR_RUN_CAP_USD): the names cost a fraction of a
     # penny and are what turns the parts already read and priced into a spreadsheet. With the cap
@@ -87,7 +108,7 @@ def clean_batch(rows, model, attempts):
         out, raw = c.chat(model, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
                           max_tokens=3000, response_format={"type": "json_object"},
                           extra={"reasoning": {"effort": "none", "exclude": True}}, tag="clean_names",
-                          attempts=attempts, capped=False)   # see below
+                          attempts=attempts, capped=False, temperature=temperature)
     except Exception as e:
         raise NamesFailed(f"{label(model)} is unavailable: {str(e)[:160]}") from None
     m = re.search(r"\{.*\}", out, re.S)
@@ -97,12 +118,7 @@ def clean_batch(rows, model, attempts):
         names = None
     if not isinstance(names, dict):
         raise NamesFailed(f"{label(model)} gave an unusable answer (no names)")
-    tidy = {}
-    for k, f in rows.items():
-        tidy[k] = tidy_name(names.get(k), f[1])
-        if not tidy[k]:
-            raise NamesFailed(f"{label(model)} gave a name BEAR can't use for {f[0]}: {names.get(k)!r}")
-    return tidy
+    return names
 
 
 def tidy_name(name, pn):

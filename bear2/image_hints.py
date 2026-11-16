@@ -39,6 +39,7 @@ def search_by_image(path, limit=50):
         req.add_header("Authorization", f"Bearer {c.ebay_token()}")
         req.add_header("X-EBAY-C-MARKETPLACE-ID", "EBAY_GB")
         req.add_header("Content-Type", "application/json")
+        c.count_ebay_call()
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 return json.loads(r.read()).get("itemSummaries", []) or []
