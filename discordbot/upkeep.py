@@ -3,7 +3,7 @@
 
   The usage log     <storage>/usage/usage.jsonl, kept for good: one line per /run (when, channel,
                     folder, parts, priced, cost in US dollars, how it ended) and one per update.
-                    summary() adds it up per day and per week (weeks start on Sunday, UK time) for
+                    summary() adds it up per day and per week (weeks start on Monday, UK time) for
                     the weekly summary and /summary. #part-id's spend comes from its own ledger.
   Housekeeping      a run's photos (and the zips they came in) are deleted from the server after
                     BEAR_KEEP_DAYS days (4). They stay in Discord, and /run downloads them again.
@@ -98,15 +98,15 @@ def uk_now():
 
 
 def week_start(now):
-    """The Sunday this week started on, at midnight UK time."""
+    """The Monday this week started on, at midnight UK time (owner, 2026-11-16: weeks start on Monday)."""
     day = now.astimezone(UK).replace(hour=0, minute=0, second=0, microsecond=0)
-    return day - timedelta(days=(day.weekday() + 1) % 7)   # Monday is 0, so Sunday is 6
+    return day - timedelta(days=day.weekday())   # Monday is 0
 
 
 def summary(storage, now=None, whole_week=False):
     """What BEAR did and cost over a week, from the usage log and #part-id's ledger.
-    whole_week=False (/summary): this week so far, Sunday to now, compared with last week up to
-    the same day and time, so a Tuesday is compared with last week's Sunday to Tuesday.
+    whole_week=False (/summary): this week so far, Monday to now, compared with last week up to
+    the same day and time, so a Wednesday is compared with last week's Monday to Wednesday.
     whole_week=True (the weekly post): the week that just ended, compared with the one before it.
     Dev-mode runs (simulated, no credit) are left out. Money is in US dollars, as OpenRouter bills."""
     now = (now or uk_now()).astimezone(UK)

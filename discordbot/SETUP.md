@@ -212,13 +212,13 @@ unusable names · `K01` OpenRouter out of credit · `K02` BEAR's per-folder cap 
   and reads are kept. `BEAR_KEEP_DAYS=0` keeps photos for good.
 - **Daily check:** once a day BEAR checks that the OpenRouter and eBay keys still work, how much
   credit is left and how full the disk is. The error channel hears only when something is wrong.
-  `/health` shows all of it at any time (only to you).
+  `/health` shows all of it at any time, in the channel for everyone to see.
 - **eBay calls:** eBay allows about 5,000 calls a day (`BEAR_EBAY_DAILY_LIMIT`). The error channel
   hears once when BEAR has used 80% of them; past the limit parts come back *eBay Lookup Unavailable*.
   BEAR counts by the UTC day, which may not be exactly when eBay starts its own count again.
-- **Weekly summary:** every Sunday the error channel gets last week's cost, runs, the change on the
+- **Weekly summary:** every Monday the error channel gets last week's cost (weeks run Monday to Sunday), runs, the change on the
   week before, and how many updates there were, day by day. `/summary` shows this week so far (since
-  Sunday) at any time, compared with the same days of last week. The numbers come from BEAR's own
+  Monday) at any time, in the channel for everyone to see, compared with the same days of last week. The numbers come from BEAR's own
   log, `/var/lib/bear/runs/usage/usage.jsonl` (one line per `/run`, kept for good), in US dollars.
 
 ## 7. Is BEAR up? (down/up messages in the error channel)

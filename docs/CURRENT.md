@@ -49,8 +49,9 @@ A restart in the middle of a run marks its card "stopped by a restart": `/run` i
 
 ## Looking after itself
 
-Every `/run` is added to a usage log (cost, parts, how it ended). Each Sunday the error channel gets the
-week's summary (cost, runs, change on the week before, updates); `/summary` shows this week so far.
+Every `/run` is added to a usage log (cost, parts, how it ended). Each Monday the error channel gets the
+week's summary (cost, runs, change on the week before, updates); `/summary` shows this week so far (weeks start on Monday).
+`/health` and `/summary` post in the channel, for everyone to see.
 Once a day BEAR deletes run photos older than 4 days from the server (`BEAR_KEEP_DAYS`; they stay in
 Discord) and checks its keys, credit and disk: the error channel hears only about problems, and
 `/health` shows it all. eBay calls are counted, with a warning at 80% of the daily 5,000. Photos

@@ -406,7 +406,7 @@ def health_card(rows, dev=False, daily=False):
 
 
 def summary_card(s, key_spent=None, dev=False):
-    """The weekly summary (error channel, each Sunday) and /summary (this week so far). s is
+    """The weekly summary (error channel, each Monday) and /summary (this week so far). s is
     upkeep.summary(); key_spent is what the OpenRouter key has spent all time, when OpenRouter says."""
     day = lambda d: f"{d.strftime('%a')} {d.day} {d.strftime('%b')}"   # noqa: E731
     if s["whole_week"]:

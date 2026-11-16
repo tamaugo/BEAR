@@ -114,19 +114,19 @@ fits("health", look.health_card(rows))
 check("health: a problem is red and named", look.health_card(rows)["embeds"][0]["color"] == look.RED
       and "eBay sign-in failed" in look.health_card(rows)["embeds"][0]["description"])
 check("health: all good is green", look.health_card(rows[:1])["embeds"][0]["color"] == look.GREEN)
-start = dt.datetime(2026, 11, 15)
+start = dt.datetime(2026, 11, 16)
 week = {"whole_week": False, "start": start, "end": start + dt.timedelta(days=2, hours=9), "cost": 0.42, "runs": 12,
         "parts": 431, "priced": 388, "partid_cost": 0.02, "partid_photos": 14, "updates": 2, "change": 18, "all_time": 3.5,
-        "last": {"cost": 0.356, "runs": 9}, "days": [{"day": "Sun 15 Nov", "runs": 5, "parts": 200, "cost": 0.2},
-                                                     {"day": "Mon 16 Nov", "runs": 7, "parts": 231, "cost": 0.22}]}
+        "last": {"cost": 0.356, "runs": 9}, "days": [{"day": "Mon 16 Nov", "runs": 5, "parts": 200, "cost": 0.2},
+                                                     {"day": "Tue 17 Nov", "runs": 7, "parts": 231, "cost": 0.22}]}
 fits("summary so far", look.summary_card(week, 3.21))
 d = look.summary_card(week, 3.21)["embeds"][0]["description"]
 check("summary: cost, runs, change, updates, key total, a line per day",
       all(t in d for t in ("cost **$0.420** this week so far", "**12 runs**", "**18% higher** than the same days last week",
-                           "**2 updates**", "key has spent **$3.21**", "Sun 15 Nov", "Mon 16 Nov")))
+                           "**2 updates**", "key has spent **$3.21**", "Mon 16 Nov", "Tue 17 Nov")))
 done = look.summary_card({**week, "whole_week": True, "end": start + dt.timedelta(days=7), "change": -25}, None)
 check("weekly summary: the whole week, lower, own log when OpenRouter can't say",
-      all(t in done["embeds"][0]["description"] for t in ("Sun 15 Nov to Sat 21 Nov", "**25% lower** than the week before",
+      all(t in done["embeds"][0]["description"] for t in ("Mon 16 Nov to Sun 22 Nov", "**25% lower** than the week before",
                                                           "BEAR's own log adds up to **$3.50**")))
 check("summary: nothing last week", "nothing to compare with" in
       look.summary_card({**week, "change": None, "last": {"cost": 0, "runs": 0}})["embeds"][0]["description"])

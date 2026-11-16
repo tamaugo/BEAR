@@ -525,9 +525,10 @@ import upkeep as up  # noqa: E402
 import os, tempfile, time, urllib.error  # noqa: E402
 from datetime import datetime as _dt, timedelta as _td  # noqa: E402
 store = Path(tempfile.mkdtemp(prefix="bear-upkeep-test-"))
-tue = _dt(2026, 11, 17, 9, 30, tzinfo=up.UK)   # a Tuesday morning; that week started Sunday 15 Nov
-check("week starts on Sunday", up.week_start(tue), _dt(2026, 11, 15, tzinfo=up.UK))
-check("a Sunday starts its own week", up.week_start(_dt(2026, 11, 15, 0, 5, tzinfo=up.UK)), _dt(2026, 11, 15, tzinfo=up.UK))
+wed = _dt(2026, 11, 18, 9, 30, tzinfo=up.UK)   # a Wednesday morning; that week started Monday 16 Nov
+check("week starts on Monday", up.week_start(wed), _dt(2026, 11, 16, tzinfo=up.UK))
+check("a Monday starts its own week", up.week_start(_dt(2026, 11, 16, 0, 5, tzinfo=up.UK)), _dt(2026, 11, 16, tzinfo=up.UK))
+check("a Sunday is the end of its week", up.week_start(_dt(2026, 11, 22, 23, 0, tzinfo=up.UK)), _dt(2026, 11, 16, tzinfo=up.UK))
 
 
 def at(when, kind="run", **f):
@@ -536,32 +537,32 @@ def at(when, kind="run", **f):
         fh.write(json.dumps({"t": when.timestamp(), "kind": kind, **f}) + "\n")
 
 
-sun = _dt(2026, 11, 15, tzinfo=up.UK)
-at(sun + _td(hours=10), parts=40, priced=36, cost=0.05)
-at(sun + _td(days=1, hours=11), parts=10, priced=9, cost=0.02)
-at(sun + _td(days=1, hours=12), parts=7, priced=0, cost=0.5, dev=True)          # dev mode: never counted
-at(sun + _td(days=1, hours=13), kind="update")
-at(sun + _td(days=2, hours=15), parts=99, priced=99, cost=9.0)                  # later on Tuesday: not yet
-at(sun - _td(days=7) + _td(hours=10), parts=20, priced=20, cost=0.04)           # last week, Sunday
-at(sun - _td(days=7) + _td(days=3), parts=50, priced=45, cost=0.10)             # last week, Wednesday
-at(sun - _td(days=7) + _td(days=4), kind="update")
+mon = _dt(2026, 11, 16, tzinfo=up.UK)
+at(mon + _td(hours=10), parts=40, priced=36, cost=0.05)
+at(mon + _td(days=1, hours=11), parts=10, priced=9, cost=0.02)
+at(mon + _td(days=1, hours=12), parts=7, priced=0, cost=0.5, dev=True)          # dev mode: never counted
+at(mon + _td(days=1, hours=13), kind="update")
+at(mon + _td(days=2, hours=15), parts=99, priced=99, cost=9.0)                  # later on Wednesday: not yet
+at(mon - _td(days=7) + _td(hours=10), parts=20, priced=20, cost=0.04)           # last week, Monday
+at(mon - _td(days=7) + _td(days=3), parts=50, priced=45, cost=0.10)             # last week, Thursday
+at(mon - _td(days=7) + _td(days=4), kind="update")
 (up.usage_dir(store) / "usage.jsonl").open("a").write("not json\n")
 (store / "part-id").mkdir()
-(store / "part-id" / "spend.jsonl").write_text(json.dumps({"t": (sun + _td(hours=12)).timestamp(), "kind": "chat",
+(store / "part-id" / "spend.jsonl").write_text(json.dumps({"t": (mon + _td(hours=12)).timestamp(), "kind": "chat",
                                                           "cost": 0.01, "tag": "partid:1.jpg"}) + "\n")
-s = up.summary(store, tue)
-check("so far: Sunday to now", (s["start"], s["end"], s["whole_week"]), (sun, tue, False))
+s = up.summary(store, wed)
+check("so far: Monday to now", (s["start"], s["end"], s["whole_week"]), (mon, wed, False))
 check("so far: runs, parts, priced (no dev run, nothing from later)", (s["runs"], s["parts"], s["priced"]), (2, 50, 45))
 check("so far: cost with #part-id", (round(s["cost"], 4), round(s["partid_cost"], 4), s["partid_photos"]), (0.08, 0.01, 1))
 check("so far: compared with the same days last week", (round(s["last"]["cost"], 4), s["last"]["runs"], s["change"]), (0.04, 1, 100))
 check("so far: updates this week", s["updates"], 1)
 check("so far: a line per day so far", [(d["day"], d["runs"], round(d["cost"], 4)) for d in s["days"]],
-      [("Sun 15 Nov", 1, 0.06), ("Mon 16 Nov", 1, 0.02), ("Tue 17 Nov", 0, 0)])
-w = up.summary(store, sun + _td(days=7, minutes=5), whole_week=True)   # the next Sunday: the week just ended
-check("weekly: the whole week", (w["start"], w["end"], w["runs"], round(w["cost"], 4)), (sun, sun + _td(days=7), 3, 9.08))
+      [("Mon 16 Nov", 1, 0.06), ("Tue 17 Nov", 1, 0.02), ("Wed 18 Nov", 0, 0)])
+w = up.summary(store, mon + _td(days=7, minutes=5), whole_week=True)   # the next Monday: the week just ended
+check("weekly: the whole week", (w["start"], w["end"], w["runs"], round(w["cost"], 4)), (mon, mon + _td(days=7), 3, 9.08))
 check("weekly: against the whole week before", (round(w["last"]["cost"], 4), w["last"]["runs"], w["change"]), (0.14, 2, 6386))
 check("weekly: seven days", len(w["days"]), 7)
-check("nothing last week: no percent", up.summary(store, sun - _td(days=5))["change"], None)
+check("nothing last week: no percent", up.summary(store, mon - _td(days=5))["change"], None)
 check("record adds a line", up.record(store, "run", parts=1) and up.read_lines(up.usage_dir(store) / "usage.jsonl")[-1]["parts"], 1)
 up.save_state(store, {"daily": "2026-11-17"})
 check("state kept", up.load_state(store), {"daily": "2026-11-17"})

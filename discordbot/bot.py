@@ -40,7 +40,8 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_EBAY_DAILY_LIMIT  eBay's daily call allowance (5000); the error channel hears at 80% of it
 Looking after itself (upkeep.py): every /run is added to the usage log; once a day old photos are
 cleared and the keys, credit and disk are checked (the error channel hears only about problems);
-each Sunday the error channel gets the week's summary. /health and /summary show both at any time.
+each Monday the error channel gets the week's summary. /health and /summary show both at any time,
+in the channel for everyone to see.
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
 
@@ -1125,17 +1126,18 @@ def health_rows():
 
 @bot.tree.command(name="health", description=look.COMMANDS["health"]["description"])
 async def health(inter: discord.Interaction):
-    await inter.response.defer(ephemeral=True, thinking=True)   # the key checks can take longer than Discord's 3 s
+    """Posted in the channel, for everyone to see (owner, 2026-11-16)."""
+    await inter.response.defer(thinking=True)   # the key checks can take longer than Discord's 3 s
     rows = await asyncio.to_thread(health_rows)
-    await inter.followup.send(**look.kwargs(look.health_card(rows, dev())), ephemeral=True)
+    await inter.followup.send(**look.kwargs(look.health_card(rows, dev())))
 
 
 @bot.tree.command(name="summary", description=look.COMMANDS["summary"]["description"])
 async def summary(inter: discord.Interaction):
-    """This week so far (since Sunday), against last week up to the same day. Changes nothing: the
-    weekly post still goes out on Sunday."""
-    await inter.response.defer(ephemeral=True, thinking=True)
-    await inter.followup.send(**look.kwargs(await summary_post(False)), ephemeral=True)
+    """This week so far (since Monday), against last week up to the same day. Posted in the channel,
+    for everyone to see (owner, 2026-11-16). Changes nothing: the weekly post still goes out on Monday."""
+    await inter.response.defer(thinking=True)
+    await inter.followup.send(**look.kwargs(await summary_post(False)))
 
 
 async def summary_post(whole_week, now=None):
@@ -1159,7 +1161,7 @@ async def chores_once(now=None):
     - any time: the error channel hears once a day when BEAR has used 80% of eBay's daily calls;
     - once a day: photos of runs older than BEAR_KEEP_DAYS are deleted from the server, and the disk,
       keys and credit are checked. The error channel hears only when something is wrong;
-    - once a week, the first look on or after Sunday: the summary of the week that just ended."""
+    - once a week, the first look on or after Monday: the summary of the week that just ended."""
     now = now or up.uk_now()
     state = up.load_state(STORAGE)
     today, utc_day = now.strftime("%Y-%m-%d"), time.strftime("%Y-%m-%d", time.gmtime())
