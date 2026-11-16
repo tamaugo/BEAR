@@ -39,7 +39,6 @@ For each item, return ONLY the words that say what the component is. Remove:
   Exception: if the item says "locationcode": true, also remove Front/Rear, because the operator's code already says it.
 - quantity words when the photo shows one item (keep "Pair" only if the item is a pair).
 Keep the seller's own component wording otherwise; do not invent or reword.
-- If the title's component words are not in English (a seller abroad, e.g. German "Wischergriff"), give the English name UK sellers use instead: take it from "other_titles" (other UK listings of the same part number) when they name it, otherwise translate it to the usual UK trade name. Use "other_titles" only for this: never change an English title's wording because of them.
 Capitalise The First Letter Of Every Word, lowercase the rest (acronyms like SRS, ECU, LDC become Srs, Ecu, Ldc). Replace & with & (keep it).
 Return JSON: {"names": {"<id>": "<clean name>", ...}}"""
 
@@ -48,8 +47,21 @@ EXAMPLES = """Examples (other cars, for style only):
 "2016 FORD FOCUS MK3 1.0 ECOBOOST REAR WIPER MOTOR 1234567 FREE POST" -> "Rear Wiper Motor"
 "VW GOLF MK7 2015 N/S FRONT WINDOW CONTROL SWITCH 5G0959857 OEM" -> "Window Control Switch"
 "Kia Ceed 2014 Front Right Seat Control Motor 88583-3S500 100kW" -> "Front Seat Control Motor"
-"VW GOLF 7 Blinkerschalter 5Q0953513 Original" with other_titles ["VW GOLF MK7 INDICATOR STALK SWITCH 5Q0953513"] -> "Indicator Stalk Switch"
 """
+
+# Titles not in English (a seller abroad: run 2026-11-15 named a Mazda wiper stalk "Wischergriff").
+# Only the titles LANG_PROMPT finds are named with these: every English title gets exactly the
+# instructions above, unchanged (a version that sent everyone the other titles reworded ~50 of
+# 257 English names in a test on the saved server runs).
+FOREIGN_PROMPT = CLEAN_PROMPT.replace("Keep the seller's own component wording otherwise; do not invent or reword.\n",
+    "These titles are not in English: give the English name UK sellers use for the component instead. "
+    "Take it from \"other_titles\" (other UK listings of the same part number) when they name it, "
+    "otherwise translate it to the usual UK trade name. Do not invent anything beyond that.\n")
+FOREIGN_EXAMPLES = EXAMPLES + """"VW GOLF 7 Blinkerschalter 5Q0953513 Original" with other_titles ["VW GOLF MK7 INDICATOR STALK SWITCH 5Q0953513"] -> "Indicator Stalk Switch"
+"""
+LANG_PROMPT = """Each item is an eBay listing title for a used car part. Look only at the words that name the component; ignore car makes and models, model codes, part numbers, engine and fuel words (Diesel, TDI, kW) and seller codes.
+List the ids of the titles whose component words are NOT in English (German, French, Italian, Spanish, Polish and so on). A title with an English component name, even with a typo or a trade abbreviation, is English.
+Return JSON: {"not_english": ["<id>", ...]} (an empty list when every title is English)."""
 
 
 def image_no(fn):
@@ -89,11 +101,22 @@ def clean_batch(rows, model, attempts, others=None):
     never partial: a name that can't be used after the second ask stops the run as before."""
     if not rows:
         return {}
-    names = ask_names(rows, model, attempts, others=others)
+    foreign = not_english(rows, model, attempts)
+    if foreign:
+        print(f"{len(foreign)} listing title(s) not in English: naming them in English ...", file=sys.stderr, flush=True)
+
+    def ask(part, temperature=0):
+        eng = {k: f for k, f in part.items() if k not in foreign}
+        frn = {k: f for k, f in part.items() if k in foreign}
+        got = ask_names(eng, model, attempts, temperature) if eng else {}
+        if frn:
+            got.update(ask_names(frn, model, attempts, temperature, others or {}))
+        return got
+    names = ask(rows)
     bad = {k: f for k, f in rows.items() if not tidy_name(names.get(k), f[1])}
     if bad:
         print(f"Asking again for {len(bad)} part name(s) {label(model)} got wrong ...", file=sys.stderr, flush=True)
-        names.update(ask_names(bad, model, attempts, NAME_RETRY_TEMPERATURE, others))
+        names.update(ask(bad, NAME_RETRY_TEMPERATURE))
     tidy = {}
     for k, f in rows.items():
         tidy[k] = tidy_name(names.get(k), f[1])
@@ -102,16 +125,44 @@ def clean_batch(rows, model, attempts, others=None):
     return tidy
 
 
+def not_english(rows, model, attempts):
+    """The ids of the rows whose listing title is not in English (one call, same model as the
+    names). Like the names, it never falls back silently: no usable answer stops the run."""
+    titles = json.dumps({k: f[2] for k, f in rows.items()}, indent=0)
+    try:
+        out, raw = c.chat(model, [{"role": "system", "content": LANG_PROMPT}, {"role": "user", "content": "Items:\n" + titles}],
+                          max_tokens=500, response_format={"type": "json_object"},
+                          extra={"reasoning": {"effort": "none", "exclude": True}}, tag="title_language",
+                          attempts=attempts, capped=False, temperature=0)
+    except Exception as e:
+        raise NamesFailed(f"{label(model)} is unavailable: {str(e)[:160]}") from None
+    ids = None
+    m = re.search(r"\{.*\}|\[.*\]", out or "", re.S)
+    try:
+        got = json.loads(m.group(0))
+        ids = got.get("not_english") if isinstance(got, dict) else got   # Qwen sometimes answers a bare list
+    except Exception:
+        pass
+    if not isinstance(ids, list):
+        raise NamesFailed(f"{label(model)} gave an unusable answer (title languages)")
+    return {k for k in ids if k in rows}
+
+
 def ask_names(rows, model, attempts, temperature=0, others=None):
     """One name-model call: {id: the model's name, as it gave it}. NamesFailed if the model is
-    unavailable or its answer has no names at all."""
-    others = others or {}
-    user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f, others.get(k)) for k, f in rows.items()}, indent=0)
+    unavailable or its answer has no names at all. others (a dict, even empty) means these titles
+    are not in English: they are named with FOREIGN_PROMPT and each item carries the other UK
+    sellers' titles. Without it, the request is exactly what it always was."""
+    if others is None:
+        system, user = CLEAN_PROMPT, EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f) for k, f in rows.items()}, indent=0)
+    else:
+        system, user = FOREIGN_PROMPT, FOREIGN_EXAMPLES + "\nItems:\n" + json.dumps(
+            {k: title_item(f, others.get(k)) for k, f in rows.items()}, indent=0)
     # Not held back by the folder's spend cap (BEAR_RUN_CAP_USD): the names cost a fraction of a
     # penny and are what turns the parts already read and priced into a spreadsheet. With the cap
     # applied here, a folder that reached it lost every part it had paid for, not just the rest.
     try:
-        out, raw = c.chat(model, [{"role": "system", "content": CLEAN_PROMPT}, {"role": "user", "content": user}],
+        out, raw = c.chat(model, [{"role": "system", "content": system}, {"role": "user", "content": user}],
                           max_tokens=3000, response_format={"type": "json_object"},
                           extra={"reasoning": {"effort": "none", "exclude": True}}, tag="clean_names",
                           attempts=attempts, capped=False, temperature=temperature)

@@ -180,6 +180,8 @@ def batch_checks():
     real = a.c.chat
 
     def fake_chat(model, messages, **kw):
+        if kw.get("tag") == "title_language":
+            return json.dumps({"not_english": []}), {}
         items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
         calls.append(len(items))
         if kw.get("tag") == "clean_names" and "i55" in items:
@@ -236,11 +238,13 @@ def audit_checks():
             sent.append(kw.get("capped"))
             if kw.get("capped", True):
                 c._check_cap()
+            if kw.get("tag") == "title_language":
+                return json.dumps({"not_english": []}), {}
             items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
             return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
         c.chat = fake_chat
         check("names still made at the cap", a.clean_names({"i0": FOG_OSF}), {"i0": "Fog Light"})
-        check("names call is not capped", sent, [False])
+        check("names calls (language check, names) are not capped", sent, [False, False])
         c.chat = saved[2]
 
         # b. a cap that isn't a number says so
@@ -277,6 +281,8 @@ def audit_checks():
         asks = []
 
         def names_chat(model, messages, **kw):
+            if kw.get("tag") == "title_language":
+                return json.dumps({"not_english": []}), {}
             items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
             asks.append((sorted(items), kw.get("temperature")))
             second = kw.get("temperature", 0) > 0
@@ -345,25 +351,57 @@ def english_checks():
     many = [f"Wiper Stalk Switch {n}" for n in range(15)] + [english, english]
     check("capped", len(a.title_item(row, many)["other_titles"]), a.OTHER_TITLES)
 
-    # the instructions say what other_titles are for, and only for a title not in English
-    check("prompt explains other_titles", "other_titles" in a.CLEAN_PROMPT and "not in English" in a.CLEAN_PROMPT, True)
+    # English titles are named with exactly the instructions and input they always had
+    check("English instructions unchanged", ("do not invent or reword" in a.CLEAN_PROMPT,
+          "other_titles" in a.CLEAN_PROMPT + a.EXAMPLES), (True, False))
+    check("foreign instructions explain other_titles", "other_titles" in a.FOREIGN_PROMPT and "not in English" in a.FOREIGN_PROMPT, True)
 
-    # the name model sees the other sellers' wording for that row, on the first ask and the retry
+    # a folder with one English and one German title: only the German one is named with the other
+    # sellers' titles, on the first ask and on the retry; the English one is asked for as before
+    fog = FOG_OSF
     sent, real = [], a.c.chat
 
     def fake_chat(model, messages, **kw):
+        if kw.get("tag") == "title_language":
+            titles = json.loads(messages[1]["content"].split("Items:\n", 1)[1])
+            sent.append(("lang", sorted(titles)))
+            return json.dumps({"not_english": [k for k, t in titles.items() if "Wischergriff" in t]}), {}
         items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
-        sent.append(items)
-        name = "Wischergriff 30685304" if len(sent) == 1 else (
-            "Wiper Stalk Switch" if "Wiper Stalk Switch" in " ".join(items["i0"].get("other_titles", [])) else "Wischergriff")
-        return json.dumps({"names": {"i0": name}}), {}
+        foreign = messages[0]["content"] == a.FOREIGN_PROMPT
+        sent.append(("foreign" if foreign else "english", items))
+        if not foreign:
+            return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
+        retry = kw.get("temperature", 0) > 0
+        seen_en = "Wiper Stalk Switch" in " ".join(items["i1"].get("other_titles", []))
+        return json.dumps({"names": {"i1": "Wiper Stalk Switch" if retry and seen_en else "Wischergriff 30685304"}}), {}
     a.c.chat = fake_chat
     try:
-        got = a.clean_names({"i0": row}, others={"i0": seen["021.jpeg"]})
+        got = a.clean_names({"i0": fog, "i1": row}, others={"i0": [fog[2], "FOG LAMP"], "i1": seen["021.jpeg"]})
     finally:
         a.c.chat = real
-    check("english name", got, {"i0": "Wiper Stalk Switch"})
-    check("others on first ask and retry", [i["i0"].get("other_titles") for i in sent], [[english], [english]])
+    check("english name for the German title", got, {"i0": "Fog Light", "i1": "Wiper Stalk Switch"})
+    check("calls", [x[0] for x in sent], ["lang", "english", "foreign", "foreign"])
+    check("English title asked exactly as before", sent[1][1], {"i0": {"title": fog[2], "locationcode": False}})
+    check("German title sent with the others, first ask and retry", [x[1]["i1"].get("other_titles") for x in sent[2:]],
+          [[english], [english]])
+
+    # the model sometimes answers the language question with a bare list: [] still means all English
+    for answer, want in (("[]", set()), ('["i1"]', {"i1"}), ('{"not_english": ["i1", "i9"]}', {"i1"})):
+        a.c.chat = lambda model, messages, answer=answer, **kw: (answer, {})
+        try:
+            check(f"language answer {answer}", a.not_english({"i0": fog, "i1": row}, a.MODEL, 1), want)
+        finally:
+            a.c.chat = real
+
+    # the language check never falls back silently: no usable answer stops the run like the names
+    a.c.chat = lambda model, messages, **kw: (json.dumps({"names": {}}), {})
+    try:
+        a.clean_names({"i0": fog})
+        check("unusable language answer stops", "no stop", "NamesFailed")
+    except a.NamesFailed as e:
+        check("unusable language answer stops", "title languages" in str(e), True)
+    finally:
+        a.c.chat = real
     return bad
 
 
