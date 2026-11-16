@@ -76,6 +76,20 @@ def rank(items, ctx):
     return [x[3] for x in scored]
 
 
+def english(out):
+    """The sheet lines, with each possible-match title not in English translated (a seller abroad
+    can list on eBay UK in German). If the name model can't be reached the seller's own titles stay:
+    hints are a convenience and never stop the run."""
+    import assemble
+    titles = {f"t{i}": l[1] for i, l in enumerate(out) if isinstance(l, list)}
+    try:
+        en = assemble.english_titles(titles) if titles else {}
+    except assemble.NamesFailed as e:
+        print(f"(possible-match titles not translated: {e})", file=sys.stderr, flush=True)
+        en = titles
+    return [l if isinstance(l, str) else l[0] + en.get(f"t{i}", l[1]) + l[2] for i, l in enumerate(out)]
+
+
 def main(run_dir, photo_dir, vehicle):
     """Rebuilds results.xlsx with up to 3 possible-match rows directly under each unpriced
     photo (FAILED / NO PART NUMBER), keeping the scanned order. The validated
@@ -105,8 +119,10 @@ def main(run_dir, photo_dir, vehicle):
             s = c.summarize(it)
             title = (s["title"] or "").replace("|", " ")
             price = f"listed \u00a3{s['price']:.2f}"
-            out.append(f"\u21b3 POSSIBLE MATCH {k} (check by eye) - {title} | {price} | {s['category']} | {s['url']} | {img}")
+            out.append([f"\u21b3 POSSIBLE MATCH {k} (check by eye) - ", title,
+                        f" | {price} | {s['category']} | {s['url']} | {img}"])
             n_hints += 1
+    out = english(out)
     (run / "image_hints.json").write_text(json.dumps({"context": ctx.most_common(15), "hints": trace}, indent=1))
     if not trace:
         return 0

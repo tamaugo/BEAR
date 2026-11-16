@@ -308,6 +308,7 @@ def audit_checks():
             {"title": "FORD FOCUS PUMP", "condition": "Used", "itemWebUrl": "https://www.ebay.co.uk/itm/1"},
             {"title": "FORD FOCUS PUMP B", "price": {"value": "12.50"}, "condition": "Used",
              "itemWebUrl": "https://www.ebay.co.uk/itm/2"}]
+        c.chat = lambda model, messages, **kw: (json.dumps({"not_english": []}), {})   # offline: all English
         check("hints: both rows added", h.main(run, tmp, "FORD FOCUS"), 2)
         sheet = (run / "results_sheet.txt").read_text()
         check("hints: prices", ("listed \u00a30.00" in sheet, "listed \u00a312.50" in sheet), (True, True))
@@ -392,6 +393,35 @@ def english_checks():
             check(f"language answer {answer}", a.not_english({"i0": fog, "i1": row}, a.MODEL, 1), want)
         finally:
             a.c.chat = real
+
+    # possible-match rows: a title not in English is translated, codes kept; English ones untouched
+    import image_hints as h
+    hint_de = "MAZDA CX-5 KE Wischergriff KD47-66-128 110kw"
+    hint_en = "MAZDA CX-5 FUEL CAP KD3542250"
+
+    def tr_chat(model, messages, answer=None, **kw):
+        items = json.loads(messages[1]["content"].split("Items:\n", 1)[1])
+        if kw.get("tag") == "title_language":
+            return json.dumps({"not_english": [k for k, t in items.items() if "Wischer" in t]}), {}
+        return json.dumps({"titles": {k: answer or t.replace("Wischergriff", "Wiper Stalk Switch") for k, t in items.items()}}), {}
+    a.c.chat = tr_chat
+    try:
+        check("translated title", a.english_titles({"t0": hint_de, "t1": hint_en}),
+              {"t0": "MAZDA CX-5 KE Wiper Stalk Switch KD47-66-128 110kw", "t1": hint_en})
+        a.c.chat = lambda model, messages, **kw: tr_chat(model, messages, answer="MAZDA CX-5 Wiper Stalk Switch", **kw)
+        check("translation that drops a part number is not used", a.english_titles({"t0": hint_de})["t0"], hint_de)
+        a.c.chat = tr_chat
+        lines = h.english(["MAZDA - Fuel Cap KD3542250 | 19.99 | 1 | u | 001.jpg",
+                           ["\u21b3 POSSIBLE MATCH 1 (check by eye) - ", hint_de, " | listed \u00a35.00 | 1 | u | 002.jpg"]])
+        check("hint row in English", lines[1], "\u21b3 POSSIBLE MATCH 1 (check by eye) - MAZDA CX-5 KE Wiper Stalk Switch "
+              "KD47-66-128 110kw | listed \u00a35.00 | 1 | u | 002.jpg")
+        def down(*x, **k):
+            raise RuntimeError("HTTP 503")
+        a.c.chat = down
+        check("model down: hint keeps the seller's title, no stop",
+              h.english([["- ", hint_de, " | x"]]), ["- " + hint_de + " | x"])
+    finally:
+        a.c.chat = real
 
     # the language check never falls back silently: no usable answer stops the run like the names
     a.c.chat = lambda model, messages, **kw: (json.dumps({"names": {}}), {})

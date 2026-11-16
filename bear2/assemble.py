@@ -148,6 +148,47 @@ def not_english(rows, model, attempts):
     return {k for k in ids if k in rows}
 
 
+TRANSLATE_PROMPT = """Each item is an eBay listing title for a used car part that is not written in English. Translate it into English the way a UK car breaker would write the title.
+Keep every car make, model, model code, engine code, part number and seller code exactly as written (same letters, digits and dashes). Do not add or drop anything else.
+Return JSON: {"titles": {"<id>": "<English title>", ...}}"""
+
+
+def english_titles(titles, model=None, attempts=c.CHAT_ATTEMPTS):
+    """{id: eBay title} -> {id: title in English} for the possible-match rows, so no foreign words
+    reach the sheet. English titles come back untouched; so does any title whose translation lost a
+    part number or code (a wrong code would be worse than a German word). Raises NamesFailed if the
+    model can't be reached: the caller keeps the original titles then."""
+    model = model or start_model()
+    rows = {k: ["", "", t] for k, t in titles.items() if t}
+    out = dict(titles)
+    foreign = not_english(rows, model, attempts) if rows else set()
+    if not foreign:
+        return out
+    items = json.dumps({k: titles[k] for k in foreign}, indent=0, ensure_ascii=False)
+    try:
+        got, raw = c.chat(model, [{"role": "system", "content": TRANSLATE_PROMPT}, {"role": "user", "content": "Items:\n" + items}],
+                          max_tokens=2000, response_format={"type": "json_object"},
+                          extra={"reasoning": {"effort": "none", "exclude": True}}, tag="translate_titles",
+                          attempts=attempts, capped=False, temperature=0)
+        m = re.search(r"\{.*\}", got, re.S)
+        done = json.loads(m.group(0)).get("titles") or {}
+    except Exception as e:
+        raise NamesFailed(f"{label(model)} could not translate: {str(e)[:160]}") from None
+    for k in foreign:
+        en = done.get(k)
+        if isinstance(en, str) and en.strip() and len(en) <= 200 and codes_kept(titles[k], en):
+            out[k] = " ".join(en.replace("|", " ").split())
+    return out
+
+
+def codes_kept(original, english):
+    """Every part number / code in the original title (a word with a digit, 4+ characters) is
+    still in the translation."""
+    en = c.norm(english)
+    return all(c.norm(w) in en for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-/]*", original)
+               if re.search(r"\d", w) and len(c.norm(w)) >= 4)
+
+
 def ask_names(rows, model, attempts, temperature=0, others=None):
     """One name-model call: {id: the model's name, as it gave it}. NamesFailed if the model is
     unavailable or its answer has no names at all. others (a dict, even empty) means these titles
