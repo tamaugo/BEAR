@@ -53,7 +53,7 @@ def counter(label, n):
         say(f"\r{label} {i}/{n}", end="\n" if i == n else "")
 
 
-def fake_clean_names(rows, model=assemble.MODEL, attempts=None):
+def fake_clean_names(rows, model=assemble.MODEL, attempts=None, others=None):
     """Stands in for assemble.clean_names: same answers and failures, no API call."""
     time.sleep(PAUSE * 2)
     lab = assemble.label(model)

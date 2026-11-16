@@ -69,6 +69,7 @@ def main():
     bad += batch_checks()
     bad += spend_checks()
     bad += audit_checks()
+    bad += english_checks()
     # The Terminal / web page question code is gone: the server never asks, it stops (tidy, 2026-11-13).
     import inspect
     gone = [f for f in ("terminal_ask", "web_ask", "web_say", "asker", "verify", "approve", "pick_model", "save_check")
@@ -179,6 +180,8 @@ def batch_checks():
     real = a.c.chat
 
     def fake_chat(model, messages, **kw):
+        if kw.get("tag") == "title_language":
+            return json.dumps({"not_english": []}), {}
         items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
         calls.append(len(items))
         if kw.get("tag") == "clean_names" and "i55" in items:
@@ -235,11 +238,13 @@ def audit_checks():
             sent.append(kw.get("capped"))
             if kw.get("capped", True):
                 c._check_cap()
+            if kw.get("tag") == "title_language":
+                return json.dumps({"not_english": []}), {}
             items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
             return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
         c.chat = fake_chat
         check("names still made at the cap", a.clean_names({"i0": FOG_OSF}), {"i0": "Fog Light"})
-        check("names call is not capped", sent, [False])
+        check("names calls (language check, names) are not capped", sent, [False, False])
         c.chat = saved[2]
 
         # b. a cap that isn't a number says so
@@ -276,6 +281,8 @@ def audit_checks():
         asks = []
 
         def names_chat(model, messages, **kw):
+            if kw.get("tag") == "title_language":
+                return json.dumps({"not_english": []}), {}
             items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
             asks.append((sorted(items), kw.get("temperature")))
             second = kw.get("temperature", 0) > 0
@@ -309,6 +316,93 @@ def audit_checks():
         h.search_by_image = saved[4]
         os.environ.pop("BEAR_RUN_CAP_USD", None) if saved[3] is None else os.environ.update(BEAR_RUN_CAP_USD=saved[3])
     return len(fails)
+
+
+def english_checks():
+    """A title not in English gets the English name (run 2026-11-15, Mazda CX-5 021.jpeg: the only
+    listing at the chosen price was a German seller's "Wischergriff", and the sheet said so). The
+    name model is now sent what the other UK sellers call the part, read from trace.json."""
+    import json, re
+    bad = 0
+
+    def check(what, got, want):
+        nonlocal bad
+        if got != want:
+            bad += 1
+            print(f"FAIL english: {what}: got {got!r}, want {want!r}")
+
+    german = "MAZDA CX-5 KE, GH Wischergriff KD4766128 KD47-66-128 2.19 Diesel 110kw 30685304"
+    english = "Mazda CX-5 KE 12-17 Wiper Stalk Switch KD47-66-128, KS04-66-128 A69531"
+    row = ["021.jpeg", "KD47 66 128", german, "50459", "21.99", "https://www.ebay.co.uk/itm/820269666915"]
+
+    # the run's trace.json gives each photo's titles; a run without one gives none
+    run = TMP / "english-run"
+    run.mkdir()
+    check("no trace.json: no other titles", a.market_titles(run), {})
+    (run / "trace.json").write_text(json.dumps({"021.jpeg": {"market_titles": [german, english]},
+                                                "019.jpeg": {"error": "x"}}))
+    seen = a.market_titles(run)
+    check("trace.json read", seen["021.jpeg"], [german, english])
+
+    # the chosen title is not repeated, duplicates go, and at most OTHER_TITLES are sent
+    check("other titles sent", a.title_item(row, seen["021.jpeg"]),
+          {"title": german, "locationcode": False, "other_titles": [english]})
+    check("no others: same item as before", a.title_item(row, []), {"title": german, "locationcode": False})
+    many = [f"Wiper Stalk Switch {n}" for n in range(15)] + [english, english]
+    check("capped", len(a.title_item(row, many)["other_titles"]), a.OTHER_TITLES)
+
+    # English titles are named with exactly the instructions and input they always had
+    check("English instructions unchanged", ("do not invent or reword" in a.CLEAN_PROMPT,
+          "other_titles" in a.CLEAN_PROMPT + a.EXAMPLES), (True, False))
+    check("foreign instructions explain other_titles", "other_titles" in a.FOREIGN_PROMPT and "not in English" in a.FOREIGN_PROMPT, True)
+
+    # a folder with one English and one German title: only the German one is named with the other
+    # sellers' titles, on the first ask and on the retry; the English one is asked for as before
+    fog = FOG_OSF
+    sent, real = [], a.c.chat
+
+    def fake_chat(model, messages, **kw):
+        if kw.get("tag") == "title_language":
+            titles = json.loads(messages[1]["content"].split("Items:\n", 1)[1])
+            sent.append(("lang", sorted(titles)))
+            return json.dumps({"not_english": [k for k, t in titles.items() if "Wischergriff" in t]}), {}
+        items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+        foreign = messages[0]["content"] == a.FOREIGN_PROMPT
+        sent.append(("foreign" if foreign else "english", items))
+        if not foreign:
+            return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
+        retry = kw.get("temperature", 0) > 0
+        seen_en = "Wiper Stalk Switch" in " ".join(items["i1"].get("other_titles", []))
+        return json.dumps({"names": {"i1": "Wiper Stalk Switch" if retry and seen_en else "Wischergriff 30685304"}}), {}
+    a.c.chat = fake_chat
+    try:
+        got = a.clean_names({"i0": fog, "i1": row}, others={"i0": [fog[2], "FOG LAMP"], "i1": seen["021.jpeg"]})
+    finally:
+        a.c.chat = real
+    check("english name for the German title", got, {"i0": "Fog Light", "i1": "Wiper Stalk Switch"})
+    check("calls", [x[0] for x in sent], ["lang", "english", "foreign", "foreign"])
+    check("English title asked exactly as before", sent[1][1], {"i0": {"title": fog[2], "locationcode": False}})
+    check("German title sent with the others, first ask and retry", [x[1]["i1"].get("other_titles") for x in sent[2:]],
+          [[english], [english]])
+
+    # the model sometimes answers the language question with a bare list: [] still means all English
+    for answer, want in (("[]", set()), ('["i1"]', {"i1"}), ('{"not_english": ["i1", "i9"]}', {"i1"})):
+        a.c.chat = lambda model, messages, answer=answer, **kw: (answer, {})
+        try:
+            check(f"language answer {answer}", a.not_english({"i0": fog, "i1": row}, a.MODEL, 1), want)
+        finally:
+            a.c.chat = real
+
+    # the language check never falls back silently: no usable answer stops the run like the names
+    a.c.chat = lambda model, messages, **kw: (json.dumps({"names": {}}), {})
+    try:
+        a.clean_names({"i0": fog})
+        check("unusable language answer stops", "no stop", "NamesFailed")
+    except a.NamesFailed as e:
+        check("unusable language answer stops", "title languages" in str(e), True)
+    finally:
+        a.c.chat = real
+    return bad
 
 
 def spend_checks():
