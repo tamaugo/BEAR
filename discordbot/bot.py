@@ -36,6 +36,12 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   BEAR_HEARTBEAT_URL   the healthchecks.io ping URL checked in with every 10 minutes (blank: off)
   UPDATE_CHANNEL_ID    where the update log goes (blank: the channel named update-log; none: no log)
   PART_ID_CHANNEL_ID   the #part-id channel (blank: the channel named part-id)
+  BEAR_KEEP_DAYS       days a run's photos stay on the server (4; 0 = for good). They stay in Discord
+  BEAR_EBAY_DAILY_LIMIT  eBay's daily call allowance (5000); the error channel hears at 80% of it
+Looking after itself (upkeep.py): every /run is added to the usage log; once a day old photos are
+cleared and the keys, credit and disk are checked (the error channel hears only about problems);
+each Monday the error channel gets the week's summary. /health and /summary show both at any time,
+in the channel for everyone to see.
 Every BEAR_* line in .env is passed to the BEAR runs (BEAR_RUN_CAP_USD, BEAR_NAME_MODEL, ...)
 and read again for each run, so changing them needs no restart. The token is never passed on.
 
@@ -57,6 +63,7 @@ import look  # noqa: E402
 import partid_bot  # noqa: E402
 import renames as rn  # noqa: E402
 import shadow as sh  # noqa: E402
+import upkeep as up  # noqa: E402
 
 log = logging.getLogger("bear-bot")
 RUN_PY = REPO / "bear2" / "run.py"
@@ -64,6 +71,9 @@ SIM_PY = REPO / "bear2" / "simulate.py"
 HISTORY_LIMIT = 5000      # messages read back looking for the folder marker
 NAME_RETRY_WAITS = (60, 180)   # a name-model failure: retry only the names after these many seconds
 MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this many seconds
+CHORES_EVERY = 600        # seconds between looks at the daily and weekly jobs (chores)
+EBAY_CACHE = REPO / "bear2" / "cache"   # where bear2/common.py counts today's eBay calls
+UPDATE_STALE = 45 * 60    # an /update note older than this was never picked up (an update takes 30 minutes at most)
 LINK = __import__("re").compile(r"https://discord\.com/channels/\S+")
 
 
@@ -99,7 +109,7 @@ def number(name, default=None):
 TOKEN = setting("DISCORD_TOKEN")
 GUILD_ID = number("DISCORD_GUILD_ID")
 ERROR_CHANNEL_ID = number("ERROR_CHANNEL_ID")
-CARS_CATEGORY_ID = number("CARS_CATEGORY_ID", 0) or None   # unset: commands work anywhere, nothing is deleted
+CARS_CATEGORY_ID = number("CARS_CATEGORY_ID", 0) or None   # unset: commands work in any channel
 MAX_RUNS = max(1, number("BEAR_MAX_RUNS", 2))
 UPLOAD_WAIT = number("BEAR_UPLOAD_WAIT", 30)
 RUN_TIMEOUT = number("BEAR_RUN_TIMEOUT", 7200)
@@ -158,15 +168,18 @@ class Card:
         self.ch, self.msg, self.on_post = ch, None, on_post   # on_post(): called each time a new message goes up
 
     async def show(self, post, file=None, view=False):
-        """view: buttons to put under the card, None to take them away, False to leave them."""
+        """view: buttons to put under the card, None to take them away, False to leave them.
+        file: a function that makes the discord.File to attach. It is called again for each try,
+        because discord.py closes a file once it has tried to send it: when the card couldn't be
+        edited (someone deleted it, or Discord hiccuped) the same File can't go on the new message."""
         buttons = {} if view is False else {"view": view}
         try:
             if self.msg is not None:
-                extra = {"attachments": [file]} if file else {}
+                extra = {"attachments": [file()]} if file else {}
                 return await self.msg.edit(**look.kwargs(post), **extra, **buttons)
         except discord.DiscordException:
             log.warning("can't edit the card in %s, posting a new one", self.ch, exc_info=True)
-        extra = {"file": file} if file else {}
+        extra = {"file": file()} if file else {}
         self.msg = await self.ch.send(**look.kwargs(post), **extra, **({"view": view} if view else {}))
         if self.on_post:
             self.on_post()
@@ -204,7 +217,12 @@ class Bot(discord.Client):
         self.heartbeat = asyncio.create_task(heartbeat())
         await self.to_errors(look.bot_started(MAX_RUNS, setting("BEAR_SIM"), version()))
         # First start on new code: say what changed in #update-log (nothing when the code is the same)
-        await asyncio.to_thread(hb.update_log, STORAGE / "update-log.last")
+        try:
+            await asyncio.to_thread(hb.update_log, STORAGE / "update-log.last")
+        except Exception:   # the update log is a nicety: cards cut off by the restart still get marked
+            log.exception("can't post the update log")
+        await asyncio.to_thread(note_update)
+        self.chores = asyncio.create_task(chores())   # after note_update: both keep notes in the same file
         await stopped_by_restart()
 
     async def error_channel(self):
@@ -213,8 +231,15 @@ class Bot(discord.Client):
     async def to_errors(self, post, files=None, mention=False):
         extra = {"allowed_mentions": discord.AllowedMentions(users=True)} if mention else {}
         try:
-            await (await self.error_channel()).send(**look.kwargs(post), files=files or [], **extra)
-        except discord.DiscordException:
+            try:
+                return await (await self.error_channel()).send(**look.kwargs(post), files=files or [], **extra)
+            except (discord.DiscordException, OSError, ValueError):
+                if not files:
+                    raise
+                # The report matters more than its log (too big for Discord, or unreadable): send it alone.
+                log.warning("can't attach the log to the error report, posting it without", exc_info=True)
+            await (await self.error_channel()).send(**look.kwargs(post), **extra)
+        except (discord.DiscordException, OSError, ValueError):
             log.exception("can't post to the error channel %s", ERROR_CHANNEL_ID)
 
     async def fail(self, ch, folder, code, detail="", logfile=None, card=None, partial=False, jump_url=None):
@@ -224,7 +249,7 @@ class Bot(discord.Client):
         log.warning("%s %s %s: %s", ch, label, code, detail[:300])
         files = [discord.File(logfile, filename=f"{label}-log.txt")] if logfile and Path(logfile).exists() else []
         meaning, fix = fo.ERRORS[code]
-        await self.to_errors(look.error_report(label, code, meaning, fix, ch.id, (ch.topic or "").strip() or None,
+        await self.to_errors(look.error_report(label, code, meaning, fix, ch.id, car_of(ch) or None,
                                                detail, jump_url, dev()), files)
         links = LINK.findall(detail) if code in ("BEAR-D05", "BEAR-D06", "BEAR-D07") else []
         post = look.problem_card(folder, code, ERROR_CHANNEL_ID, links, dev(), partial)
@@ -243,6 +268,13 @@ class Bot(discord.Client):
 
 
 bot = Bot()
+
+
+def car_of(ch):
+    """The car, from the channel topic, on one line. BEAR's result lines are one line each with
+    | between the fields, so a topic typed over two lines or with a | in it would break every row
+    of the spreadsheet: line breaks and | become spaces."""
+    return " ".join((getattr(ch, "topic", None) or "").replace("|", " ").split())
 
 
 def car_channel_problem(ch):
@@ -270,7 +302,7 @@ async def newfolder(inter: discord.Interaction, name: str):
         return await inter.response.send_message(problem, ephemeral=True)
     if not fo.FOLDER_NAME.fullmatch(name):
         return await inter.response.send_message(look.reply("bad_name"), ephemeral=True)
-    car = (ch.topic or "").strip()
+    car = car_of(ch)
     if not car:
         await inter.response.send_message(look.reply("no_topic", name=name), ephemeral=True)
         return await bot.fail(ch, name, "BEAR-D01")
@@ -341,7 +373,7 @@ async def whole_run(ch, card, a):
     """Everything one /run does: BEAR on the folder's photos, and, if BEAR_RENAME_OFFER is on, beside it
     the offer to rename every photo in the folder, whose zip is posted after the spreadsheet. The
     two don't depend on each other: either can fail on its own. Cancelling this task (/quit) stops both."""
-    car = (ch.topic or "").strip()
+    car = car_of(ch)
     await card.show(look.run_card("checking", None, car or NO_CAR, dev=dev()))
     ready, bear_done = asyncio.get_running_loop().create_future(), asyncio.Event()
     renaming = asyncio.create_task(offer_rename(ch, ready, bear_done)) if rename_offer_on() else None
@@ -359,6 +391,7 @@ async def whole_run(ch, card, a):
                 ready.set_result(None)
         a["bear_finished"] = True
         forget_run(ch)   # its card is final now (spreadsheet or problem): a restart leaves it alone
+        record_run(ch, a, "sheet" if a.get("sheet") else "failed")
         bear_done.set()
         got = ready.result() if ready.done() and not ready.cancelled() else None
         if got and shadow_on():
@@ -367,9 +400,41 @@ async def whole_run(ch, card, a):
             a.update(state="renaming photos")
             await renaming
     finally:
+        if not a.get("recorded"):   # stopped part way (/quit, a restart): what it spent still counts
+            record_run(ch, a, "stopped")
         if renaming and not renaming.done():
             renaming.cancel()
             await asyncio.gather(renaming, return_exceptions=True)
+
+
+def record_run(ch, a, outcome):
+    """One line in the usage log for this /run (upkeep.py), once: what it cost and how it ended.
+    Runs that never got as far as downloading photos (no folder, no photos) aren't runs. Never raises."""
+    if a.get("recorded") or not a.get("run_dir"):
+        return
+    a["recorded"] = True
+    try:
+        run_dir = a["run_dir"]
+        a2 = run_dir / "results" / "agent2_results.md"
+        parts, priced = fo.count_results(a2.read_text()) if outcome == "sheet" and a2.exists() else (a.get("parts", 0), 0)
+        up.record(STORAGE, "run", channel=f"{ch.name}-{ch.id}", folder=a.get("folder"), parts=parts, priced=priced,
+                  cost=round(up.spend_total(run_dir / "spend.jsonl"), 6), outcome=outcome, dev=dev())
+    except Exception:
+        log.exception("can't add the run in %s to the usage log", ch)
+
+
+def note_update():
+    """Add an "update" line to the usage log when the bot starts on different code from last time
+    (the weekly summary counts them). The first start only remembers the code. Never raises."""
+    try:
+        head = hb.git("rev-parse", "HEAD").strip()
+        state = up.load_state(STORAGE)
+        if state.get("head") and state["head"] != head:
+            up.record(STORAGE, "update", head=head[:12], version=version())
+        if state.get("head") != head:
+            up.save_state(STORAGE, {**state, "head": head})
+    except Exception:
+        log.warning("can't note the update in the usage log", exc_info=True)
 
 
 @bot.tree.command(name="quit", description=look.COMMANDS["quit"]["description"])
@@ -456,7 +521,7 @@ async def update(inter: discord.Interaction, force: bool = False):
     restarts it), so it leaves a note: systemd's bear-update.path sees it and runs setup.sh as root."""
     if not UPDATE_UNIT.exists():
         return await inter.response.send_message(look.reply("update_off"), ephemeral=True)
-    if UPDATE_REQUEST.exists():
+    if update_waiting():
         return await inter.response.send_message(look.reply("update_queued"), ephemeral=True)
     working = set(ACTIVE) | {cid for cid, tasks in RENAMES.items() if any(not t.done() for t in tasks)}
     if working and not force:
@@ -473,13 +538,28 @@ async def update(inter: discord.Interaction, force: bool = False):
     await bot.to_errors(look.update_requested(inter.user, bool(working)))
 
 
-async def read_folder(ch):
+def update_waiting():
+    """True while an /update note is waiting to be picked up. A note older than UPDATE_STALE was
+    never picked up (the watcher wasn't running): it no longer blocks /update, which writes a new one."""
+    try:
+        return time.time() - UPDATE_REQUEST.stat().st_mtime < UPDATE_STALE
+    except OSError:
+        return False
+
+
+async def read_folder(ch, pinned=None):
     """(name, messages after the latest marker oldest first, the marker). Raises D02 if there is no folder.
     Reads back from the newest message and stops at the marker (the same answer as fo.split_folder
-    over all HISTORY_LIMIT messages), so a folder of 40 photos reads about 40 messages, not 5000."""
+    over all HISTORY_LIMIT messages), so a folder of 40 photos reads about 40 messages, not 5000.
+    pinned: the id of the marker /run started with. A /newfolder typed while /run was still waiting
+    for uploads doesn't take the run over: the run keeps the folder it started with, which is then
+    the messages between its marker and the newer one."""
     after = []
     async for m in ch.history(limit=HISTORY_LIMIT):
         name = fo.marker_name(m, bot.user.id)
+        if name and pinned is not None and getattr(m, "id", None) != pinned:
+            after = []   # a newer folder: what came after its marker belongs to it, not to this run
+            continue
         if name:
             return name, after[::-1], m
         after.append(m)
@@ -504,7 +584,7 @@ async def settled_folder(ch, seen=None, waiting=None):
         pause = UPLOAD_WAIT - age + 1
         await asyncio.sleep(pause)
         waited += pause
-        folder, msgs, marker = await read_folder(ch)
+        folder, msgs, marker = await read_folder(ch, getattr(marker, "id", None))
         if seen:
             await seen(folder, marker)
     return folder, msgs, marker
@@ -512,7 +592,7 @@ async def settled_folder(ch, seen=None, waiting=None):
 
 async def run_folder(ch, card, a, ready):
     """BEAR's side of /run. ready gets (folder, messages) once uploads have stopped, for the rename."""
-    car = (ch.topic or "").strip()
+    car = car_of(ch)
 
     async def seen(folder, marker):
         first = a["folder"] is None
@@ -535,6 +615,7 @@ async def run_folder(ch, card, a, ready):
     run_dir = new_dir(STORAGE / f"{fo.slug(ch.name)}-{ch.id}", folder)
     photos, results = run_dir / "photos", run_dir / "results"
     photos.mkdir(parents=True)
+    a["run_dir"] = run_dir
     picks = await unpack_zips(uploads, run_dir / "zips")   # [(message, attachment, photo in its zip or None)]
     a.update(parts=len(picks))
     await card.show(look.run_card("downloading", folder, car, parts=len(picks), got=0, dev=dev()))
@@ -563,8 +644,21 @@ async def run_folder(ch, card, a, ready):
         await card.show(look.run_card("running", folder, car, parts=len(picks), since=a["since"], dev=dev()))
         rc = await run_bear(photos, car, results, run_dir / "bear.log")
     rc, log_from = await retry_names(a, photos, car, results, run_dir / "bear.log", rc)
-    await report(ch, card, folder, car, rc, run_dir, results, started, a.get("marker_url"), log_from)
+    late = await late_uploads(ch, marker, msgs)
+    a["sheet"] = await report(ch, card, folder, car, rc, run_dir, results, started, a.get("marker_url"), log_from, late)
     return folder
+
+
+async def late_uploads(ch, marker, msgs):
+    """How many photos or zips were uploaded to the folder after /run read it (msgs): they are not in
+    this run, and the card says so. 0 if the channel can't be read: the run matters more."""
+    try:
+        seen = {m.id for m in msgs}
+        _, now, _ = await read_folder(ch, getattr(marker, "id", None))
+        return sum(1 for m in now if m.id not in seen and not m.author.bot
+                   for att in m.attachments if fo.is_photo(att) or fo.is_zip(att))
+    except (fo.FolderError, discord.DiscordException, AttributeError):
+        return 0
 
 
 class _Zip:
@@ -913,8 +1007,9 @@ def rename_log(ch, folder, sku, outcome, photos=0, zips=0, where=""):
         log.exception("can't write the rename log")
 
 
-async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=None, log_from=0):
-    """log_from: where the last attempt starts in bear.log (after names-only retries)."""
+async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=None, log_from=0, late=0):
+    """log_from: where the last attempt starts in bear.log (after names-only retries). late: uploads
+    that arrived after /run started. Returns True when the spreadsheet was posted."""
     logfile = run_dir / "bear.log"
     text = logfile.read_text(errors="replace")[log_from:] if logfile.exists() else ""
     xlsx = results / "results.xlsx"
@@ -925,8 +1020,9 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
     a2 = results / "agent2_results.md"
     photos, priced = fo.count_results(a2.read_text() if a2.exists() else "")
     name = fo.xlsx_name(folder, car)
-    await card.show(look.done_card(folder, car, photos, priced, name, round((time.time() - started) / 60), dev()),
-                    file=discord.File(xlsx, filename=name))
+    await card.show(look.done_card(folder, car, photos, priced, name, round((time.time() - started) / 60), dev(),
+                                   late),
+                    file=lambda: discord.File(xlsx, filename=name))
     trace = results / "trace.json"
     code = fo.partial_problem(trace.read_text(errors="replace")) if trace.exists() else None
     code = code or fo.outage_problem(a2.read_text() if a2.exists() else "")
@@ -939,6 +1035,7 @@ async def report(ch, card, folder, car, rc, run_dir, results, started, jump_url=
         log.warning("%s %s %s: %s", ch, folder, code, flagged[:300])
         await bot.to_errors(look.error_report(folder, code, meaning, fix, ch.id, car, flagged, jump_url, dev()),
                             [discord.File(logfile, filename=f"{folder}-log.txt")] if logfile.exists() else [])
+    return True
 
 
 # --- Shadow test (shadow.py) ------------------------------------------------------------------
@@ -1010,6 +1107,93 @@ async def shadow_ping(path):
     user = setting("BEAR_SHADOW_PING_USER")
     user = user if user and user.isdigit() else None
     await bot.to_errors(look.shadow_ping(folders, parts, path, user), mention=bool(user))
+
+
+def whole_number(name, default):
+    """A whole-number setting read now (no restart needed); a typo logs a warning and uses default."""
+    v = setting(name)
+    if v is None:
+        return default
+    if not v.isdigit():
+        log.warning("%s in .env must be a number only, not %r: using %s", name, v, default)
+        return default
+    return int(v)
+
+
+def health_rows():
+    return up.health(STORAGE, EBAY_CACHE, dev(), whole_number("BEAR_EBAY_DAILY_LIMIT", up.EBAY_DAILY_LIMIT))
+
+
+@bot.tree.command(name="health", description=look.COMMANDS["health"]["description"])
+async def health(inter: discord.Interaction):
+    """Posted in the channel, for everyone to see (owner, 2026-11-16)."""
+    await inter.response.defer(thinking=True)   # the key checks can take longer than Discord's 3 s
+    rows = await asyncio.to_thread(health_rows)
+    await inter.followup.send(**look.kwargs(look.health_card(rows, dev())))
+
+
+@bot.tree.command(name="summary", description=look.COMMANDS["summary"]["description"])
+async def summary(inter: discord.Interaction):
+    """This week so far (since Monday), against last week up to the same day. Posted in the channel,
+    for everyone to see (owner, 2026-11-16). Changes nothing: the weekly post still goes out on Monday."""
+    await inter.response.defer(thinking=True)
+    await inter.followup.send(**look.kwargs(await summary_post(False)))
+
+
+async def summary_post(whole_week, now=None):
+    s = await asyncio.to_thread(up.summary, STORAGE, now, whole_week)
+    spent = None if dev() else (await asyncio.to_thread(up.openrouter))["spent"]
+    return look.summary_card(s, spent, dev())
+
+
+async def chores():
+    """The daily and weekly jobs, looked at every CHORES_EVERY seconds. A problem in one never stops the bot."""
+    while True:
+        try:
+            await chores_once()
+        except Exception:
+            log.exception("chores failed")
+        await asyncio.sleep(CHORES_EVERY)
+
+
+async def chores_once(now=None):
+    """What is due now (upkeep.py; <storage>/usage/state.json remembers what was done):
+    - any time: the error channel hears once a day when BEAR has used 80% of eBay's daily calls;
+    - once a day: photos of runs older than BEAR_KEEP_DAYS are deleted from the server, and the disk,
+      keys and credit are checked. The error channel hears only when something is wrong;
+    - once a week, the first look on or after Monday: the summary of the week that just ended."""
+    now = now or up.uk_now()
+    state = up.load_state(STORAGE)
+    today, utc_day = now.strftime("%Y-%m-%d"), time.strftime("%Y-%m-%d", time.gmtime())
+    limit = whole_number("BEAR_EBAY_DAILY_LIMIT", up.EBAY_DAILY_LIMIT)
+    calls = up.ebay_calls(EBAY_CACHE)
+    if calls >= limit * up.EBAY_WARN_AT and state.get("ebay_warned") != utc_day:
+        state["ebay_warned"] = utc_day
+        await bot.to_errors(look.ebay_warning(calls, limit))
+    if state.get("daily") != today:
+        state["daily"] = today
+        up.save_state(STORAGE, state)   # first, so a job that fails isn't tried again every ten minutes
+        busy = [a["run_dir"] for a in ACTIVE.values() if a.get("run_dir")]
+        cleared, freed = await asyncio.to_thread(up.clear_old_photos, STORAGE, whole_number("BEAR_KEEP_DAYS", up.KEEP_DAYS),
+                                                 None, busy)
+        if cleared:
+            log.info("housekeeping: photos of %s old runs deleted, %.1f MB freed", cleared, freed / 2**20)
+        await asyncio.to_thread(up.prune_ebay_counts, EBAY_CACHE)
+        rows = await asyncio.to_thread(health_rows)
+        free, percent = up.disk(STORAGE)
+        if free is not None and percent < up.DISK_WARN_PERCENT:
+            await bot.to_errors(look.disk_warning(free, percent))
+        problems = [r for r in rows if r[1] is False and r[0] not in ("Disk", "eBay calls today")]   # those two have their own posts
+        if problems:
+            await bot.to_errors(look.health_card(problems, dev(), daily=True))
+    week = up.week_start(now).strftime("%Y-%m-%d")
+    if state.get("weekly") != week:
+        first = "weekly" not in state   # the first start: nothing to sum up yet
+        state["weekly"] = week
+        up.save_state(STORAGE, state)
+        if not first:
+            await bot.to_errors(await summary_post(True, now))
+    up.save_state(STORAGE, state)
 
 
 async def heartbeat():

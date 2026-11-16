@@ -38,7 +38,7 @@ explain things in plain English, and keep pull request descriptions plain.
 | `bear2/` | The `/run` pipeline: `run.py` (stages 1-3), `stage1_read.py` (photo read), `stage2_numbers.py` + `stage2b_rescue.py` (eBay checks), `stage3_listing.py` (pick listing, price), `assemble.py` (part names, spreadsheet), `common.py` (eBay, OpenRouter, spend ledger) | Live |
 | `bear2/simulate.py` | Fake run for dev mode (`BEAR_SIM`), no credits | Live (tests) |
 | `bear2/score.py`, `cmp_s1.py` | Old scoring helpers | History |
-| `discordbot/` | The bot: `bot.py` (commands, runs), `look.py` (every post's wording), `folders.py` (folders, error codes), `heartbeat.py`, `renames.py` | Live |
+| `discordbot/` | The bot: `bot.py` (commands, runs), `look.py` (every post's wording), `folders.py` (folders, error codes), `upkeep.py` (usage log, weekly summary, housekeeping, health), `heartbeat.py`, `renames.py` | Live |
 | `discordbot/partid_bot.py`, `partid_sheet.py`, `partid/` | #part-id channel | Live, separate |
 | `discordbot/shadow.py`, `shadow_report.py` | Location shadow test | Dormant (off) |
 | `discordbot/deploy/` | Server install and update (`setup.sh`, systemd service) | Live |

@@ -19,7 +19,18 @@ cd /   # the bear user can't read root's home, where su - leaves us
 notify() { [ -f "$DIR/discordbot/heartbeat.py" ] && python3 "$DIR/discordbot/heartbeat.py" "$@" >/dev/null 2>&1 || true; }
 STEP="starting"
 step() { STEP="$1"; echo "== $1"; }
-trap 'rc=$?; [ "$rc" = 0 ] || notify failed "$STEP"' EXIT
+# An update that stops before its tests have passed puts the code back as it was. The bot keeps
+# running, and it starts every /run from the files on disk: left alone, the next folder would run
+# on code that just failed its tests, and so would the bot itself after its next restart.
+OLD=""   # the commit the code was on before this update; blank once the new code has passed its tests
+undo() {
+  [ -n "$OLD" ] || return 0
+  [ "$(as_bear git -C "$DIR" rev-parse HEAD 2>/dev/null)" != "$OLD" ] || return 0
+  if as_bear git -C "$DIR" reset -q --keep "$OLD"; then echo "The code was put back as it was before this update."
+  else echo "The code could NOT be put back: $DIR holds the new, untested code. Fix it by hand before the next /run."; STEP="$STEP (and the code could not be put back: the server holds untested code)"
+  fi
+}
+trap 'rc=$?; [ "$rc" = 0 ] || { undo; notify failed "$STEP"; }' EXIT
 step "Installing system packages"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git python3 python3-venv ca-certificates systemd-timesyncd >/dev/null
@@ -32,6 +43,7 @@ chown -R bear:bear "$DATA"
 
 step "Code in $DIR ($BRANCH)"
 if [ -d "$DIR/.git" ]; then
+  OLD="$(as_bear git -C "$DIR" rev-parse HEAD)"
   as_bear git -C "$DIR" fetch -q origin "$BRANCH"
   as_bear git -C "$DIR" checkout -q "$BRANCH"
   as_bear git -C "$DIR" merge -q --ff-only "origin/$BRANCH"
@@ -65,6 +77,7 @@ if ! as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_discord_flow_offline.py" >
   exit 1
 fi
 tail -n 1 "$DATA/flow-test.log"
+OLD=""   # the new code passed: it stays, whatever happens next
 
 step "bear-send command"
 install -m 755 "$DIR/discordbot/deploy/bear-send" /usr/local/bin/bear-send

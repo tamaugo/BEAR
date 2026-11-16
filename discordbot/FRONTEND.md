@@ -79,7 +79,10 @@ everyone. The owner can set `#bear-errors` to *All messages* so problems still p
 
 | When | What people see | `look.py` |
 |---|---|---|
-| Typing `/` | `/newfolder` *Start a new folder (one box of parts) in this car's channel*, `/run` *Finish the folder and price every photo in it*, `/status` *See which folders BEAR is working on*, `/rename` *Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip*, `/quit` *Stop everything /run or /rename is doing in this channel*, `/update` *Update BEAR to the latest version and restart it (anyone can)* | `COMMANDS` |
+| Typing `/` | `/newfolder` *Start a new folder of parts in this car's channel*, `/run` *Finish the folder and price every photo in it*, `/status` *See which folders BEAR is working on*, `/rename` *Rename every photo in this folder to SKU-1, SKU-2 ... and get them back as a zip*, `/quit` *Stop everything /run or /rename is doing in this channel*, `/update` *Update BEAR to the latest version and restart it (anyone can)*, `/health` *Check BEAR's keys, credit, eBay calls today and disk space*, `/summary` *What BEAR has cost and done this week so far, day by day* | `COMMANDS` |
+| `/health` | In the channel, for everyone: green *BEAR health: all good*, or red with what needs a look (keys, credit, eBay calls today, disk) | `health_card` |
+| `/summary` | In the channel, for everyone: *This week so far* (since Monday): cost, runs, % higher or lower than the same days last week, updates, a line per day | `summary_card` |
+| Finished, but photos arrived after `/run` started | The green card adds: *2 uploads arrived after /run started … /run again* | `done_card(late=)` |
 | `/newfolder Q184` | `📁 Folder **Q184**` + a brand-red card: the car, then the three steps | `folder_card` |
 | `/newfolder` while the last folder was never run | Only you: *"Heads up: folder Q183 was never run…"* | `open_folder_warning` |
 | Someone types text | Nothing: it stays in the channel and BEAR ignores it (only photos are read) | none |

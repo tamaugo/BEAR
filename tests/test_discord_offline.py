@@ -520,6 +520,103 @@ for t in sorted((ROOT / "tests").glob("test_*.py")):
     check(f"setup.sh runs {t.name}", f"tests/{t.name}" in setup_sh, True)
     check(f"GitHub runs {t.name}", t.stem in workflow, True)
 
+# --- Upkeep (discordbot/upkeep.py): the usage log and summary, housekeeping, eBay calls, health ---
+import upkeep as up  # noqa: E402
+import os, tempfile, time, urllib.error  # noqa: E402
+from datetime import datetime as _dt, timedelta as _td  # noqa: E402
+store = Path(tempfile.mkdtemp(prefix="bear-upkeep-test-"))
+wed = _dt(2026, 11, 18, 9, 30, tzinfo=up.UK)   # a Wednesday morning; that week started Monday 16 Nov
+check("week starts on Monday", up.week_start(wed), _dt(2026, 11, 16, tzinfo=up.UK))
+check("a Monday starts its own week", up.week_start(_dt(2026, 11, 16, 0, 5, tzinfo=up.UK)), _dt(2026, 11, 16, tzinfo=up.UK))
+check("a Sunday is the end of its week", up.week_start(_dt(2026, 11, 22, 23, 0, tzinfo=up.UK)), _dt(2026, 11, 16, tzinfo=up.UK))
+
+
+def at(when, kind="run", **f):
+    (up.usage_dir(store)).mkdir(parents=True, exist_ok=True)
+    with (up.usage_dir(store) / "usage.jsonl").open("a") as fh:
+        fh.write(json.dumps({"t": when.timestamp(), "kind": kind, **f}) + "\n")
+
+
+mon = _dt(2026, 11, 16, tzinfo=up.UK)
+at(mon + _td(hours=10), parts=40, priced=36, cost=0.05)
+at(mon + _td(days=1, hours=11), parts=10, priced=9, cost=0.02)
+at(mon + _td(days=1, hours=12), parts=7, priced=0, cost=0.5, dev=True)          # dev mode: never counted
+at(mon + _td(days=1, hours=13), kind="update")
+at(mon + _td(days=2, hours=15), parts=99, priced=99, cost=9.0)                  # later on Wednesday: not yet
+at(mon - _td(days=7) + _td(hours=10), parts=20, priced=20, cost=0.04)           # last week, Monday
+at(mon - _td(days=7) + _td(days=3), parts=50, priced=45, cost=0.10)             # last week, Thursday
+at(mon - _td(days=7) + _td(days=4), kind="update")
+(up.usage_dir(store) / "usage.jsonl").open("a").write("not json\n")
+(store / "part-id").mkdir()
+(store / "part-id" / "spend.jsonl").write_text(json.dumps({"t": (mon + _td(hours=12)).timestamp(), "kind": "chat",
+                                                          "cost": 0.01, "tag": "partid:1.jpg"}) + "\n")
+s = up.summary(store, wed)
+check("so far: Monday to now", (s["start"], s["end"], s["whole_week"]), (mon, wed, False))
+check("so far: runs, parts, priced (no dev run, nothing from later)", (s["runs"], s["parts"], s["priced"]), (2, 50, 45))
+check("so far: cost with #part-id", (round(s["cost"], 4), round(s["partid_cost"], 4), s["partid_photos"]), (0.08, 0.01, 1))
+check("so far: compared with the same days last week", (round(s["last"]["cost"], 4), s["last"]["runs"], s["change"]), (0.04, 1, 100))
+check("so far: updates this week", s["updates"], 1)
+check("so far: a line per day so far", [(d["day"], d["runs"], round(d["cost"], 4)) for d in s["days"]],
+      [("Mon 16 Nov", 1, 0.06), ("Tue 17 Nov", 1, 0.02), ("Wed 18 Nov", 0, 0)])
+w = up.summary(store, mon + _td(days=7, minutes=5), whole_week=True)   # the next Monday: the week just ended
+check("weekly: the whole week", (w["start"], w["end"], w["runs"], round(w["cost"], 4)), (mon, mon + _td(days=7), 3, 9.08))
+check("weekly: against the whole week before", (round(w["last"]["cost"], 4), w["last"]["runs"], w["change"]), (0.14, 2, 6386))
+check("weekly: seven days", len(w["days"]), 7)
+check("nothing last week: no percent", up.summary(store, mon - _td(days=5))["change"], None)
+check("record adds a line", up.record(store, "run", parts=1) and up.read_lines(up.usage_dir(store) / "usage.jsonl")[-1]["parts"], 1)
+up.save_state(store, {"daily": "2026-11-17"})
+check("state kept", up.load_state(store), {"daily": "2026-11-17"})
+
+# Housekeeping: photos and zips of runs older than 4 days go; everything else, and newer runs, stay.
+for name, days in (("old", 5), ("new", 3), ("busy", 9)):
+    run = store / "car-1" / name
+    for sub in ("photos", "zips", "results"):
+        (run / sub).mkdir(parents=True)
+        (run / sub / "f.bin").write_bytes(b"x" * 1000)
+    (run / "photos.tsv").write_text("001.jpg\n")
+    os.utime(run / "photos.tsv", (time.time() - days * 86400,) * 2)
+(store / "renames" / "car-1" / "SKU" / "photos").mkdir(parents=True)   # too-big photos kept for the owner
+check("housekeeping: one old run cleared", up.clear_old_photos(store, 4, busy=[store / "car-1" / "busy"]), (1, 2000))
+check("housekeeping: what is left", sorted(str(p.relative_to(store / "car-1")) for p in (store / "car-1").glob("*/*")),
+      ["busy/photos", "busy/photos.tsv", "busy/results", "busy/zips", "new/photos", "new/photos.tsv", "new/results",
+       "new/zips", "old/photos.tsv", "old/results"])
+check("housekeeping: renames untouched", (store / "renames" / "car-1" / "SKU" / "photos").is_dir(), True)
+check("housekeeping: 0 days keeps everything", up.clear_old_photos(store, 0), (0, 0))
+
+# eBay calls: bear2/common.py adds a byte per call, upkeep reads the count.
+sys.path.insert(0, str(ROOT / "bear2"))
+import common as bc  # noqa: E402
+cache_was, bc.CACHE = bc.CACHE, store
+for _ in range(3):
+    bc.count_ebay_call()
+bc.CACHE = cache_was
+check("eBay calls counted", up.ebay_calls(store), 3)
+check("eBay calls: another day is its own count", up.ebay_calls(store, "2020-01-01"), 0)
+
+# Health: the keys are checked through fakes here (no network); no key ever appears in the text.
+def fake_get(answers):
+    def get(url, key):
+        a = answers[url.rsplit("/", 1)[1]]
+        if isinstance(a, Exception):
+            raise a
+        return a
+    return get
+
+
+ok = up.openrouter(fake_get({"key": {"data": {"usage": 3.21, "limit": None, "limit_remaining": None}},
+                             "credits": {"data": {"total_credits": 10, "total_usage": 5.8}}}), key="SECRET")
+check("openrouter: works, spend and credit", (ok["ok"], ok["spent"], round(ok["left"], 2), ok["text"]),
+      (True, 3.21, 4.2, "key works, $4.20 credit left"))
+low = up.openrouter(fake_get({"key": {"data": {"usage": 9.9, "limit_remaining": 0.4}}, "credits": OSError("no")}), key="SECRET")
+check("openrouter: nearly out of credit is a problem", (low["ok"], low["text"]), (False, "OpenRouter credit is nearly gone: $0.40 left"))
+bad = up.openrouter(fake_get({"key": urllib.error.HTTPError("u", 401, "no", {}, None)}), key="SECRET")
+check("openrouter: a refused key", (bad["ok"], "SECRET" in str(bad)), (False, False))
+check("openrouter: unreachable", up.openrouter(fake_get({"key": TimeoutError()}), key="SECRET")["text"],
+      "OpenRouter can't be reached (TimeoutError)")
+rows = up.health(store, store, check_openrouter=lambda: ok, check_ebay=lambda: {"ok": False, "text": "eBay sign-in failed: x"}, limit=3)
+check("health rows", [(r[0], r[1]) for r in rows], [("OpenRouter", True), ("eBay", False), ("eBay calls today", False), ("Disk", True)])
+check("health: dev mode checks no keys", [r[1] for r in up.health(store, store, dev=True)][:2], [None, None])
+
 # AGENTS.md (read by every assistant) points pull requests at the live branch, not the old main
 agents = (ROOT / "AGENTS.md").read_text()
 check("AGENTS.md: PRs into discord-bear", "gh pr create --base discord-bear" in agents, True)

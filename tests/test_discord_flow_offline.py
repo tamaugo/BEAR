@@ -565,6 +565,161 @@ async def main():
     check("/update force goes ahead", B.UPDATE_REQUEST.exists(), True)
     B.UPDATE_REQUEST.unlink()
 
+    # An /update note nobody picked up (the watcher wasn't running) stops blocking /update after 45 minutes.
+    B.UPDATE_REQUEST.write_text("old\n")
+    os.utime(B.UPDATE_REQUEST, (time.time() - B.UPDATE_STALE - 60,) * 2)
+    i = Inter(Channel(95))
+    await B.update.callback(i)
+    check("/update: a stale note is replaced", any("Updating BEAR" in r for r in i.replies)
+          and "person" in B.UPDATE_REQUEST.read_text(), True)
+    B.UPDATE_REQUEST.unlink()
+
+    # The run card was deleted (or Discord wouldn't edit it) when the spreadsheet was ready: discord.py
+    # closes a file once it has tried to send it, so the new message needs a fresh one. The
+    # spreadsheet used to be lost here, with BEAR-R01 for a run that had worked.
+    ch = folder(96)
+    real_send = ch.send
+
+    async def send_closing(**kw):
+        if kw.get("file") is not None and kw["file"].fp.closed:
+            raise ValueError("I/O operation on closed file")   # what discord.py does with a used File
+        m = await real_send(**kw)
+
+        async def edit(content=None, embeds=None, attachments=None, view=False):
+            if attachments:
+                for f in attachments:
+                    f.close()   # as discord.py does, whether the edit worked or not
+                raise B.discord.DiscordException("Unknown Message")
+            ch.sent[0] = (flat(content, embeds), ch.sent[0][1])
+        m.edit = edit
+        return m
+    ch.send = send_closing
+    ERRORS.sent.clear()
+    await run(ch)
+    text, fname = card(ch)
+    check("card gone: spreadsheet still posted", (fname, "Done" in text), ("Q184-mitsubishi-shogun-2007.xlsx", True))
+    check("card gone: no error", ERRORS.sent, [])
+
+    # A topic typed over two lines, or with a | in it, is one line with spaces: BEAR's result lines
+    # are one line each with | between the fields, so it used to break every row of the spreadsheet.
+    ch = await run(folder(97, topic="MITSUBISHI SHOGUN\n2007 | 3.2 DI-D "))
+    check("two-line topic: car on one line", B.car_of(ch), "MITSUBISHI SHOGUN 2007 3.2 DI-D")
+    check("two-line topic: done", "Done" in card(ch)[0], True)
+    lines = (next((TMP / "car-97-97").iterdir()) / "results" / "agent3_results.txt").read_text().splitlines()
+    check("two-line topic: every row has its 5 fields", {len(l.split("|")) for l in lines}, {5})
+    check("two-line topic: no error", ERRORS.sent, [])
+
+    # /newfolder typed while /run is still waiting for uploads doesn't take the run over: the run
+    # keeps the folder it started with (its photos only), instead of switching to the new, empty one.
+    ch = folder(98, name="Q200", parts=2)
+    first = ch.msgs[0]
+    check("pinned: the folder /run started with", (await B.read_folder(ch, first.id))[0], "Q200")
+    ch.add(ME, fo.marker("Q201"))
+    ch.add(files=["IMG_50.jpg"])
+    name, msgs, marker = await B.read_folder(ch, first.id)
+    check("pinned: still the first folder", (name, marker is first), ("Q200", True))
+    check("pinned: only its own photos", [att.filename for m in msgs for att in m.attachments], ["IMG_1.jpg", "IMG_2.jpg"])
+    check("not pinned: the newest folder", (await B.read_folder(ch))[0], "Q201")
+    ch = folder(98, name="Q200", parts=2)
+    ch.msgs[-1].created_at = datetime.now(timezone.utc)   # an upload just now: /run waits a second
+    task = asyncio.create_task(run(ch))
+    while not any("Waiting for uploads" in t for t in ch.shown):
+        await asyncio.sleep(0.01)
+    ch.add(ME, fo.marker("Q201"))
+    await task
+    check("newfolder during the wait: the first folder is run", ("Q200" in card(ch)[0], "Done" in card(ch)[0]), (True, True))
+    check("newfolder during the wait: its 2 photos", any("Running 2 parts" in t for t in ch.shown), True)
+
+    # Photos uploaded after /run has read the folder aren't in the run: the done card says so.
+    os.environ["BEAR_SIM_PAUSE"] = "0.3"
+    ch = folder(93, parts=2)
+    task = asyncio.create_task(run(ch))
+    while not any("pricing the parts" in t for t in ch.shown):
+        await asyncio.sleep(0.01)
+    ch.add(files=["LATE_1.jpg", "LATE_2.jpg", "notes.pdf"], ago=0)
+    await task
+    os.environ["BEAR_SIM_PAUSE"] = "0.02"
+    check("late uploads: the card says 2", "2 uploads arrived after /run started" in card(ch)[0], True)
+    check("late uploads: still done, with its spreadsheet", ("Done" in card(ch)[0], card(ch)[1] is not None), (True, True))
+    check("no late uploads: no warning", "arrived after" in card(await run(folder(92)))[0], False)
+
+    # Every /run is added to the usage log: a spreadsheet, a failure and a /quit; never a folder with no photos.
+    usage = [r for r in B.up.read_lines(B.up.usage_dir(TMP) / "usage.jsonl") if r["kind"] == "run"]
+    check("usage log: the run just done", [(usage[-1][k]) for k in ("channel", "folder", "parts", "priced", "outcome", "dev")],
+          ["car-92-92", "Q184", 7, 6, "sheet", True])
+    check("usage log: failures and stops are there too", {"failed", "stopped"} <= {r["outcome"] for r in usage}, True)
+    before = len(usage)
+    await run(folder(91, parts=0))
+    check("usage log: no photos is not a run", len(B.up.read_lines(B.up.usage_dir(TMP) / "usage.jsonl")), before + sum(
+        1 for r in B.up.read_lines(B.up.usage_dir(TMP) / "usage.jsonl") if r["kind"] != "run"))
+
+    # /health and /summary (dev mode: no keys checked, no network), posted in the channel for everyone to see.
+    class Deferred(Inter):
+        def __init__(self, ch):
+            super().__init__(ch)
+            self.response = NS(defer=self.defer, send_message=self.reply, is_done=lambda: True)
+
+        async def defer(self, ephemeral=False, thinking=False):
+            self.deferred = ephemeral
+    i = Deferred(Channel(90))
+    await B.health.callback(i)
+    check("/health", (not i.deferred, "BEAR health" in i.replies[0], "not checked in dev mode" in i.replies[0],
+                      "Disk" in i.replies[0]), (True, True, True, True))
+    i = Deferred(Channel(90))
+    await B.summary.callback(i)
+    check("/summary", (not i.deferred, "This week so far" in i.replies[0], "BEAR has cost" in i.replies[0]), (True, True, True))
+    check("/health and /summary are posted in the channel for everyone", len(i.channel.msgs), 1)
+
+    # The daily and weekly jobs. First look: nothing to sum up yet, the day's jobs are done once.
+    ERRORS.sent.clear()
+    (B.up.usage_dir(TMP) / "state.json").unlink(missing_ok=True)
+    old_run = TMP / "car-10-10"
+    old_photos = next(old_run.iterdir()) / "photos"
+    os.utime(old_photos.parent / "photos.tsv", (time.time() - 5 * 86400,) * 2)
+    monday = datetime(2026, 11, 16, 8, 0, tzinfo=B.up.UK)
+    await B.chores_once(monday)
+    check("chores: photos older than 4 days deleted, results kept",
+          (old_photos.exists(), (old_photos.parent / "results" / "results.xlsx").exists()), (False, True))
+    check("chores: nothing posted when all is well", ERRORS.sent, [])
+    await B.chores_once(monday + timedelta(days=6, hours=12))
+    check("chores: no summary on the Sunday, the week isn't over", ERRORS.sent, [])
+    await B.chores_once(monday + timedelta(days=7, minutes=10))
+    check("chores: the weekly summary on Monday", len(ERRORS.sent) == 1 and "Weekly summary" in last_error()
+          and "Mon 16 Nov to Sun 22 Nov" in last_error(), True)
+    await B.chores_once(monday + timedelta(days=7, minutes=20))
+    check("chores: once a week only", len(ERRORS.sent), 1)
+    # eBay's daily allowance: one warning a day at 80%; a full disk and a dead key are reported once a day.
+    ERRORS.sent.clear()
+    cache_was, B.EBAY_CACHE = B.EBAY_CACHE, TMP
+    os.environ["BEAR_EBAY_DAILY_LIMIT"] = "10"
+    (TMP / f"calls-ebay-{time.strftime('%Y-%m-%d', time.gmtime())}.count").write_bytes(b"." * 8)
+    disk_was, health_was = B.up.disk, B.health_rows
+    B.up.disk = lambda storage: (0.5, 2.0)
+    B.health_rows = lambda: [("OpenRouter", False, "OpenRouter refused the key (wrong or revoked)"), ("Disk", False, "0.5 GB free (2%)")]
+    for _ in range(2):
+        await B.chores_once(monday + timedelta(days=8))
+    B.up.disk, B.health_rows, B.EBAY_CACHE = disk_was, health_was, cache_was
+    os.environ.pop("BEAR_EBAY_DAILY_LIMIT")
+    text = "\n".join(s[0] for s in ERRORS.sent)
+    check("chores: eBay, disk and key warnings, once each", (len(ERRORS.sent), "8 of 10" in text, "disk is nearly full" in text,
+                                                             "daily check found a problem" in text and "refused the key" in text),
+          (3, True, True, True))
+
+    # The error report still arrives when its log can't be attached (too big for Discord).
+    ERRORS.sent.clear()
+    real_error_send = ERRORS.send
+
+    async def no_files(files=None, **kw):
+        if files:
+            raise B.discord.DiscordException("413 Payload Too Large")
+        return await real_error_send(**kw)
+    ERRORS.send = no_files
+    logfile = TMP / "big-log.txt"
+    logfile.write_text("log")
+    await B.bot.fail(Channel(94), "Q1", "BEAR-R01", "boom", logfile)
+    ERRORS.send = real_error_send
+    check("error report sent without its log", "BEAR-R01" in last_error(), True)
+
     # A restart while a folder runs: the run dies without a word (here: its task is cancelled the
     # way the bot's shutdown cancels it), its note stays, and the next start marks the card stopped.
     os.environ["BEAR_SIM_PAUSE"] = "1"
@@ -592,7 +747,7 @@ async def main():
 
     async def no_heartbeat():
         pass
-    B.heartbeat, B.hb.update_log = no_heartbeat, lambda path: None
+    B.heartbeat, B.chores, B.hb.update_log = no_heartbeat, no_heartbeat, lambda path: None   # chores: checked above
     B.bot.started = False
     await B.bot.on_ready()
     await asyncio.sleep(0)

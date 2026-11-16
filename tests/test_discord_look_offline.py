@@ -94,8 +94,44 @@ for name, c in look.COMMANDS.items():
     check(f"/{name} name", re.fullmatch(r"[a-z0-9_-]{1,32}", name) is not None)
     check(f"/{name} description", 1 <= len(c["description"]) <= 100)
     check(f"/{name} options", all(1 <= len(d) <= 100 for d in c["options"].values()))
-check("messages say folder, not box", "box" not in str([look.guide(), look.REPLIES, look.UPLOADER_FIX, look.TITLES]).replace("box of parts", ""))
-check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit", "sheet", "update"})
+check("messages say folder, not box", "box" not in str([look.guide(), look.REPLIES, look.UPLOADER_FIX, look.TITLES, look.COMMANDS]))
+check("agreed command names", set(look.COMMANDS) == {"newfolder", "run", "status", "rename", "quit", "sheet", "update",
+                                                     "health", "summary"})
+
+# Uploads that arrived after /run started are called out on the done card.
+late = look.done_card("Q", CAR, 5, 5, "f.xlsx", late=2)["embeds"][0]["description"]
+check("done card warns of late uploads", "2 uploads arrived after /run started" in late and "/run** again" in late)
+check("done card: no warning without late uploads", "arrived after" not in look.done_card("Q", CAR, 5, 5, "f.xlsx")["embeds"][0]["description"])
+
+# Upkeep: the warnings, /health and the weekly summary all fit and say the numbers.
+import datetime as dt  # noqa: E402
+fits("disk warning", look.disk_warning(1.2, 4))
+fits("ebay warning", look.ebay_warning(4100, 5000))
+check("ebay warning says how many", "4100 of 5000" in look.ebay_warning(4100, 5000)["embeds"][0]["description"])
+rows = [("OpenRouter", True, "key works, $4.20 credit left"), ("eBay", False, "eBay sign-in failed: HTTP 401"),
+        ("Disk", None, "can't be read")]
+fits("health", look.health_card(rows))
+check("health: a problem is red and named", look.health_card(rows)["embeds"][0]["color"] == look.RED
+      and "eBay sign-in failed" in look.health_card(rows)["embeds"][0]["description"])
+check("health: all good is green", look.health_card(rows[:1])["embeds"][0]["color"] == look.GREEN)
+start = dt.datetime(2026, 11, 16)
+week = {"whole_week": False, "start": start, "end": start + dt.timedelta(days=2, hours=9), "cost": 0.42, "runs": 12,
+        "parts": 431, "priced": 388, "partid_cost": 0.02, "partid_photos": 14, "updates": 2, "change": 18, "all_time": 3.5,
+        "last": {"cost": 0.356, "runs": 9}, "days": [{"day": "Mon 16 Nov", "runs": 5, "parts": 200, "cost": 0.2},
+                                                     {"day": "Tue 17 Nov", "runs": 7, "parts": 231, "cost": 0.22}]}
+fits("summary so far", look.summary_card(week, 3.21))
+d = look.summary_card(week, 3.21)["embeds"][0]["description"]
+check("summary: cost, runs, change, updates, key total, a line per day",
+      all(t in d for t in ("cost **$0.420** this week so far", "**12 runs**", "**18% higher** than the same days last week",
+                           "**2 updates**", "key has spent **$3.21**", "Mon 16 Nov", "Tue 17 Nov")))
+done = look.summary_card({**week, "whole_week": True, "end": start + dt.timedelta(days=7), "change": -25}, None)
+check("weekly summary: the whole week, lower, own log when OpenRouter can't say",
+      all(t in done["embeds"][0]["description"] for t in ("Mon 16 Nov to Sun 22 Nov", "**25% lower** than the week before",
+                                                          "BEAR's own log adds up to **$3.50**")))
+check("summary: nothing last week", "nothing to compare with" in
+      look.summary_card({**week, "change": None, "last": {"cost": 0, "runs": 0}})["embeds"][0]["description"])
+fits("summary, a full week of big numbers", look.summary_card({**week, "days": [{"day": "Sun 15 Nov", "runs": 999, "parts": 99999,
+                                                                               "cost": 123.45}] * 7}, 99999.0))
 
 # Renaming: every state fits, the offer says when it closes, the done card names the zips.
 fits("stopped", look.stopped_card("Q184", dev=True))

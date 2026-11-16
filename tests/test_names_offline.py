@@ -68,6 +68,7 @@ def main():
     bad += pipeline_checks()
     bad += batch_checks()
     bad += spend_checks()
+    bad += audit_checks()
     # The Terminal / web page question code is gone: the server never asks, it stops (tidy, 2026-11-13).
     import inspect
     gone = [f for f in ("terminal_ask", "web_ask", "web_say", "asker", "verify", "approve", "pick_model", "save_check")
@@ -202,6 +203,112 @@ def batch_checks():
     finally:
         a.c.chat = real
     return bad
+
+
+def audit_checks():
+    """Fixes from the 2026-11-16 audit: a folder at its spend cap still gets its names (so its
+    spreadsheet), a bad BEAR_RUN_CAP_USD says so, a model's slightly-off candidates no longer crash
+    the photo's read, and one listing with no price no longer loses every possible-match row."""
+    import re, tempfile
+    import common as c, stage1_read as s1, image_hints as h
+    fails = []
+
+    def check(what, got, want):
+        if got != want:
+            fails.append(what)
+            print(f"FAIL {what}: got {got!r}, want {want!r}")
+    tmp = Path(tempfile.mkdtemp(prefix="bear-audit-test-"))
+    saved = c.LEDGER, c._SPEND_AT_IMPORT, c.chat, os.environ.get("BEAR_RUN_CAP_USD"), h.search_by_image
+    c.LEDGER, c._SPEND_AT_IMPORT = tmp / "spend.jsonl", 0.0
+    try:
+        # a. the cap is reached: other chat calls stop, the names call still goes out
+        os.environ["BEAR_RUN_CAP_USD"] = "0.50"
+        c.log_spend("chat", "m", 0.75, {"tag": "x"})
+        try:
+            c.chat("m", [])
+            check("cap stops a normal call", "no error", "spend cap reached")
+        except RuntimeError as e:
+            check("cap stops a normal call", "spend cap reached" in str(e), True)
+        sent = []
+
+        def fake_chat(model, messages, **kw):
+            sent.append(kw.get("capped"))
+            if kw.get("capped", True):
+                c._check_cap()
+            items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+            return json.dumps({"names": {k: "Fog Light" for k in items}}), {}
+        c.chat = fake_chat
+        check("names still made at the cap", a.clean_names({"i0": FOG_OSF}), {"i0": "Fog Light"})
+        check("names call is not capped", sent, [False])
+        c.chat = saved[2]
+
+        # b. a cap that isn't a number says so
+        os.environ["BEAR_RUN_CAP_USD"] = "3 # dollars"
+        try:
+            c._check_cap()
+            check("bad cap is an error", "no error", "error")
+        except RuntimeError as e:
+            check("bad cap says what to fix", "BEAR_RUN_CAP_USD in .env must be a number" in str(e), True)
+
+        # c. candidates a little off the asked shape are put right, not a crash; good ones are untouched
+        good = {"text": "97420-3Z000", "role": "primary", "legibility": "clear", "alt_readings": ["97420-3Z0O0"], "note": "n"}
+        check("good candidate unchanged", s1.usable([good]), [good])
+        odd = s1.usable([{"text": 9643895780, "alt_readings": "9643695780"}, "junk", None, {"text": None},
+                         {"text": "1K0615601", "alt_readings": [None, 5, "1K0615G01"]}, {"text": "A1", "alt_readings": None}])
+        check("odd candidates", [(x["text"], x["alt_readings"]) for x in odd],
+              [("9643895780", ["9643695780"]), ("1K0615601", ["5", "1K0615G01"]), ("A1", [])])
+        check("candidates not a list", s1.usable("nope"), [])
+        check("dedupe takes them", [x["text"] for x in s1.dedupe(odd)], ["9643895780", "1K0615601", "A1"])
+
+        # e. Jev's veto question names the listing in every sentence (one used to say "L{i+1}" as text)
+        import stage3_listing as s3
+        asked = {}
+        jev_was, s3.c.jev = s3.c.jev, lambda state, qs, tag="": asked.update(qs) or {
+            "answers": {k: {"type": "noul", "noul": 0.9} for k in qs}}
+        its = [{"title": f"PUMP {k}", "price": {"value": "20"}} for k in range(3)]
+        s3.listing_match({"item_count": 1}, its, "VW GOLF")
+        s3.c.jev = jev_was
+        check("veto question: no unfilled blanks", [k for k, q in asked.items() if "{" in q["instructions"]], [])
+        check("veto question: names its own listing", asked["L3"]["instructions"].count("L3"), 2)
+
+        # f. a name that can't be used is asked for once more, on its own and less strictly; the
+        #    good names are not asked for again, and a name still unusable stops the run as before
+        asks = []
+
+        def names_chat(model, messages, **kw):
+            items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+            asks.append((sorted(items), kw.get("temperature")))
+            second = kw.get("temperature", 0) > 0
+            return json.dumps({"names": {k: ("Fog Light" if second or k != "i1" else "Fog Light 2015")
+                                         for k in items if stubborn is False or not second}}), {}
+        c.chat, stubborn = names_chat, False
+        check("second ask gives the name", a.clean_names({"i0": FOG_OSF, "i1": FOG_OSF}), {"i0": "Fog Light", "i1": "Fog Light"})
+        check("second ask: only the bad row, less strictly", asks, [(["i0", "i1"], 0), (["i1"], a.NAME_RETRY_TEMPERATURE)])
+        stubborn = True
+        try:
+            a.clean_names({"i0": FOG_OSF, "i1": FOG_OSF})
+            check("still unusable stops the run", "no stop", "NamesFailed")
+        except a.NamesFailed as e:
+            check("still unusable stops the run", "gave a name BEAR can't use" in str(e), True)
+        c.chat = saved[2]
+
+        # d. possible matches: a listing with no price keeps its row, and the others keep theirs
+        run = tmp / "run"
+        run.mkdir()
+        (run / "agent3_results.txt").write_text("FAILED - Agent 2 - No eBay Listing Found | | | | 001.jpg\n")
+        (run / "agent2_results.md").write_text("001.jpg | FAILED | Agent 2 | No eBay Listing Found\n")
+        h.search_by_image = lambda path, limit=50: [
+            {"title": "FORD FOCUS PUMP", "condition": "Used", "itemWebUrl": "https://www.ebay.co.uk/itm/1"},
+            {"title": "FORD FOCUS PUMP B", "price": {"value": "12.50"}, "condition": "Used",
+             "itemWebUrl": "https://www.ebay.co.uk/itm/2"}]
+        check("hints: both rows added", h.main(run, tmp, "FORD FOCUS"), 2)
+        sheet = (run / "results_sheet.txt").read_text()
+        check("hints: prices", ("listed \u00a30.00" in sheet, "listed \u00a312.50" in sheet), (True, True))
+    finally:
+        c.LEDGER, c._SPEND_AT_IMPORT, c.chat = saved[:3]
+        h.search_by_image = saved[4]
+        os.environ.pop("BEAR_RUN_CAP_USD", None) if saved[3] is None else os.environ.update(BEAR_RUN_CAP_USD=saved[3])
+    return len(fails)
 
 
 def spend_checks():

@@ -51,7 +51,11 @@ _SPEND_AT_IMPORT = total_spend()  # per-run cap: only spend since this process s
 
 
 def _check_cap():
-    cap = float(os.environ.get("BEAR_RUN_CAP_USD", "1.00"))
+    raw = os.environ.get("BEAR_RUN_CAP_USD", "1.00")
+    try:
+        cap = float(raw)
+    except ValueError:   # say what is wrong, not "could not convert string to float" on every photo
+        raise RuntimeError(f"BEAR_RUN_CAP_USD in .env must be a number only (no comment after it), not {raw!r}") from None
     s = total_spend() - _SPEND_AT_IMPORT
     if s >= cap:
         raise RuntimeError(f"spend cap reached: ${s:.4f} this run (cap ${cap:.2f})")
@@ -59,6 +63,23 @@ def _check_cap():
 
 # ---------------- eBay ----------------
 _tok = {"v": None, "exp": 0}
+
+
+def ebay_calls_file(day=None):
+    """Where today's eBay API calls are counted: one byte per call, so the file's size is the count.
+    One file a day (UTC), shared by every run and #part-id; the bot reads it and warns the error
+    channel at 80% of eBay's daily allowance (discordbot/upkeep.py)."""
+    return CACHE / f"calls-ebay-{day or time.strftime('%Y-%m-%d', time.gmtime())}.count"
+
+
+def count_ebay_call():
+    """Count one real call to eBay (a saved search read from the cache is not a call). Appending a
+    byte is safe with several runs at once. Never raises: counting must not cost a part."""
+    try:
+        with ebay_calls_file().open("ab") as f:
+            f.write(b".")
+    except OSError:
+        pass
 
 
 # eBay hiccups (HTTP 429/5xx, a timeout, a dropped connection) are retried with backoff,
@@ -86,6 +107,7 @@ def ebay_token():
         req = urllib.request.Request("https://api.ebay.com/identity/v1/oauth2/token", data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         req.add_header("Authorization", f"Basic {basic}")
+        count_ebay_call()
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 d = json.loads(r.read())
@@ -134,6 +156,7 @@ def ebay_search_raw(q, limit=200, max_age_h=24, category=CAR_PARTS_CATEGORY):
                                      + urllib.parse.urlencode(params))
         req.add_header("Authorization", f"Bearer {ebay_token()}")
         req.add_header("X-EBAY-C-MARKETPLACE-ID", "EBAY_GB")
+        count_ebay_call()
         try:
             with urllib.request.urlopen(req, timeout=45) as r:
                 items = json.loads(r.read()).get("itemSummaries", []) or []
@@ -223,8 +246,11 @@ def _retry_wait(err, attempt):
 
 
 def chat(model, messages, *, temperature=0, max_tokens=1500, response_format=None, extra=None, tag="",
-         attempts=CHAT_ATTEMPTS):
-    _check_cap()
+         attempts=CHAT_ATTEMPTS, capped=True):
+    """capped=False: this call goes ahead even when the run has reached BEAR_RUN_CAP_USD (the part
+    names: see assemble.clean_batch). It is still written to the spend ledger."""
+    if capped:
+        _check_cap()
     body = {"model": model, "messages": messages, "temperature": temperature,
             "max_tokens": max_tokens, "usage": {"include": True}}
     if response_format:
