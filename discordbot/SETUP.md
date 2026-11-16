@@ -146,7 +146,7 @@ real (folders, downloads, queue, errors) but the photo reads, eBay results and n
    Mac run of the same photos. Only switch over once they match.
 3. First real folder: a small box, checked by hand.
 
-Cost: about 0.2p per part. `BEAR_RUN_CAP_USD` (default 3 in `.env`) stops a single folder from
+Cost: about 0.13p per part (measured 16 Nov 2026, see `docs/CURRENT.md`). `BEAR_RUN_CAP_USD` (default 3 in `.env`) stops a single folder from
 spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K01` when hit).
 
 ---

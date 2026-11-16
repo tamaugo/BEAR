@@ -19,7 +19,7 @@ explain things in plain English, and keep pull request descriptions plain.
 ## How to work
 
 - **Accuracy comes first.** The owner will pay more per part for better accuracy, up to about
-  30p a part (today about 0.12p). Never make BEAR less accurate to make it cheaper.
+  30p a part (today about 0.13p). Never make BEAR less accurate to make it cheaper.
 - **Diagnose and propose before fixing** anything the owner didn't ask for: explain the cause,
   give options with a recommendation, and wait for the owner to choose.
 - **No version bumps.** Don't change `VERSION` or `CHANGELOG.md`; the owner does that once a
