@@ -69,6 +69,7 @@ def main():
     bad += batch_checks()
     bad += spend_checks()
     bad += audit_checks()
+    bad += english_checks()
     # The Terminal / web page question code is gone: the server never asks, it stops (tidy, 2026-11-13).
     import inspect
     gone = [f for f in ("terminal_ask", "web_ask", "web_say", "asker", "verify", "approve", "pick_model", "save_check")
@@ -309,6 +310,61 @@ def audit_checks():
         h.search_by_image = saved[4]
         os.environ.pop("BEAR_RUN_CAP_USD", None) if saved[3] is None else os.environ.update(BEAR_RUN_CAP_USD=saved[3])
     return len(fails)
+
+
+def english_checks():
+    """A title not in English gets the English name (run 2026-11-15, Mazda CX-5 021.jpeg: the only
+    listing at the chosen price was a German seller's "Wischergriff", and the sheet said so). The
+    name model is now sent what the other UK sellers call the part, read from trace.json."""
+    import json, re
+    bad = 0
+
+    def check(what, got, want):
+        nonlocal bad
+        if got != want:
+            bad += 1
+            print(f"FAIL english: {what}: got {got!r}, want {want!r}")
+
+    german = "MAZDA CX-5 KE, GH Wischergriff KD4766128 KD47-66-128 2.19 Diesel 110kw 30685304"
+    english = "Mazda CX-5 KE 12-17 Wiper Stalk Switch KD47-66-128, KS04-66-128 A69531"
+    row = ["021.jpeg", "KD47 66 128", german, "50459", "21.99", "https://www.ebay.co.uk/itm/820269666915"]
+
+    # the run's trace.json gives each photo's titles; a run without one gives none
+    run = TMP / "english-run"
+    run.mkdir()
+    check("no trace.json: no other titles", a.market_titles(run), {})
+    (run / "trace.json").write_text(json.dumps({"021.jpeg": {"market_titles": [german, english]},
+                                                "019.jpeg": {"error": "x"}}))
+    seen = a.market_titles(run)
+    check("trace.json read", seen["021.jpeg"], [german, english])
+
+    # the chosen title is not repeated, duplicates go, and at most OTHER_TITLES are sent
+    check("other titles sent", a.title_item(row, seen["021.jpeg"]),
+          {"title": german, "locationcode": False, "other_titles": [english]})
+    check("no others: same item as before", a.title_item(row, []), {"title": german, "locationcode": False})
+    many = [f"Wiper Stalk Switch {n}" for n in range(15)] + [english, english]
+    check("capped", len(a.title_item(row, many)["other_titles"]), a.OTHER_TITLES)
+
+    # the instructions say what other_titles are for, and only for a title not in English
+    check("prompt explains other_titles", "other_titles" in a.CLEAN_PROMPT and "not in English" in a.CLEAN_PROMPT, True)
+
+    # the name model sees the other sellers' wording for that row, on the first ask and the retry
+    sent, real = [], a.c.chat
+
+    def fake_chat(model, messages, **kw):
+        items = json.loads(re.search(r"Items:\n(\{.*\})", messages[1]["content"], re.S).group(1))
+        sent.append(items)
+        name = "Wischergriff 30685304" if len(sent) == 1 else (
+            "Wiper Stalk Switch" if "Wiper Stalk Switch" in " ".join(items["i0"].get("other_titles", [])) else "Wischergriff")
+        return json.dumps({"names": {"i0": name}}), {}
+    a.c.chat = fake_chat
+    try:
+        got = a.clean_names({"i0": row}, others={"i0": seen["021.jpeg"]})
+    finally:
+        a.c.chat = real
+    check("english name", got, {"i0": "Wiper Stalk Switch"})
+    check("others on first ask and retry", [i["i0"].get("other_titles") for i in sent], [[english], [english]])
+    return bad
 
 
 def spend_checks():

@@ -27,6 +27,7 @@ NAME_MODELS = {MODEL: "Qwen 3.8 Flash",
                "anthropic/claude-haiku-5.5": "Claude Haiku 5.5"}
 NAME_BATCH = 25                   # rows per name-model call: a big folder can't be cut off at max_tokens
 NAME_RETRY_TEMPERATURE = 0.4      # the second ask for a name that couldn't be used (the first is at 0)
+OTHER_TITLES = 10                 # other sellers' titles sent with each part, for titles not in English
 
 CLEAN_PROMPT = """You clean eBay listing titles into short part names for a UK car breaker's spreadsheet.
 For each item, return ONLY the words that say what the component is. Remove:
@@ -38,6 +39,7 @@ For each item, return ONLY the words that say what the component is. Remove:
   Exception: if the item says "locationcode": true, also remove Front/Rear, because the operator's code already says it.
 - quantity words when the photo shows one item (keep "Pair" only if the item is a pair).
 Keep the seller's own component wording otherwise; do not invent or reword.
+- If the title's component words are not in English (a seller abroad, e.g. German "Wischergriff"), give the English name UK sellers use instead: take it from "other_titles" (other UK listings of the same part number) when they name it, otherwise translate it to the usual UK trade name. Use "other_titles" only for this: never change an English title's wording because of them.
 Capitalise The First Letter Of Every Word, lowercase the rest (acronyms like SRS, ECU, LDC become Srs, Ecu, Ldc). Replace & with & (keep it).
 Return JSON: {"names": {"<id>": "<clean name>", ...}}"""
 
@@ -46,6 +48,7 @@ EXAMPLES = """Examples (other cars, for style only):
 "2016 FORD FOCUS MK3 1.0 ECOBOOST REAR WIPER MOTOR 1234567 FREE POST" -> "Rear Wiper Motor"
 "VW GOLF MK7 2015 N/S FRONT WINDOW CONTROL SWITCH 5G0959857 OEM" -> "Window Control Switch"
 "Kia Ceed 2014 Front Right Seat Control Motor 88583-3S500 100kW" -> "Front Seat Control Motor"
+"VW GOLF 7 Blinkerschalter 5Q0953513 Original" with other_titles ["VW GOLF MK7 INDICATOR STALK SWITCH 5Q0953513"] -> "Indicator Stalk Switch"
 """
 
 
@@ -66,17 +69,19 @@ def label(model):
     return NAME_MODELS.get(model, model)
 
 
-def clean_names(rows, model=MODEL, attempts=c.CHAT_ATTEMPTS):
+def clean_names(rows, model=MODEL, attempts=c.CHAT_ATTEMPTS, others=None):
     """{id: agent2 row fields} -> {id: tidy name} for every row, or NamesFailed. Never partial,
     never a mechanical stand-in: a name that can't be used stops the run like an outage does.
-    Sent NAME_BATCH rows per call, so a very large folder can't run past max_tokens."""
+    Sent NAME_BATCH rows per call, so a very large folder can't run past max_tokens.
+    others: {id: other UK sellers' titles for that part number} (market_titles), so a title in
+    another language gets the English name (run 2026-11-15: a German seller's "Wischergriff")."""
     items, tidy = list(rows.items()), {}
     for i in range(0, len(items), NAME_BATCH):
-        tidy.update(clean_batch(dict(items[i:i + NAME_BATCH]), model, attempts))
+        tidy.update(clean_batch(dict(items[i:i + NAME_BATCH]), model, attempts, others))
     return tidy
 
 
-def clean_batch(rows, model, attempts):
+def clean_batch(rows, model, attempts, others=None):
     """The names for up to NAME_BATCH rows (clean_names). A row whose name can't be used (missing,
     a year or number left in it, too long) is asked for once more on its own, a little less
     strictly: the first ask is at temperature 0, where asking again gives the same answer, so one
@@ -84,11 +89,11 @@ def clean_batch(rows, model, attempts):
     never partial: a name that can't be used after the second ask stops the run as before."""
     if not rows:
         return {}
-    names = ask_names(rows, model, attempts)
+    names = ask_names(rows, model, attempts, others=others)
     bad = {k: f for k, f in rows.items() if not tidy_name(names.get(k), f[1])}
     if bad:
         print(f"Asking again for {len(bad)} part name(s) {label(model)} got wrong ...", file=sys.stderr, flush=True)
-        names.update(ask_names(bad, model, attempts, NAME_RETRY_TEMPERATURE))
+        names.update(ask_names(bad, model, attempts, NAME_RETRY_TEMPERATURE, others))
     tidy = {}
     for k, f in rows.items():
         tidy[k] = tidy_name(names.get(k), f[1])
@@ -97,10 +102,11 @@ def clean_batch(rows, model, attempts):
     return tidy
 
 
-def ask_names(rows, model, attempts, temperature=0):
+def ask_names(rows, model, attempts, temperature=0, others=None):
     """One name-model call: {id: the model's name, as it gave it}. NamesFailed if the model is
     unavailable or its answer has no names at all."""
-    user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f) for k, f in rows.items()}, indent=0)
+    others = others or {}
+    user = EXAMPLES + "\nItems:\n" + json.dumps({k: title_item(f, others.get(k)) for k, f in rows.items()}, indent=0)
     # Not held back by the folder's spend cap (BEAR_RUN_CAP_USD): the names cost a fraction of a
     # penny and are what turns the parts already read and priced into a spreadsheet. With the cap
     # applied here, a folder that reached it lost every part it had paid for, not just the rest.
@@ -140,10 +146,29 @@ def parse_row(line):
     return f if len(f) >= 2 else None
 
 
-def title_item(f):
+def title_item(f, others=None):
     # "locationcode" is always false on the server (no location words in 001.jpg names), but it
     # stays so the name model gets exactly the same input its instructions above describe.
-    return {"title": f[2], "locationcode": False}
+    item = {"title": f[2], "locationcode": False}
+    own = " ".join(f[2].split()).lower()
+    rest = []
+    for t in others or []:
+        t = " ".join(str(t).replace("|", " ").split())
+        if t and t.lower() != own and t not in rest:
+            rest.append(t)
+    if rest:
+        item["other_titles"] = rest[:OTHER_TITLES]
+    return item
+
+
+def market_titles(run):
+    """{photo name: every UK title BEAR saw for its part number} from the run's trace.json, or {}
+    for a run saved without one (the names are then made from the chosen title alone, as before)."""
+    try:
+        trace = json.loads((Path(run) / "trace.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return {img: t.get("market_titles") or [] for img, t in trace.items() if isinstance(t, dict)}
 
 
 def part_line(vehicle, f, name):
@@ -180,10 +205,12 @@ def main(run_dir, vehicle):
     run = Path(run_dir)
     rows = [f for f in map(parse_row, (run / "agent2_results.md").read_text().splitlines()) if f]
     priced = {f"i{k}": f for k, f in enumerate(rows) if f[1] != "FAILED"}
+    seen = market_titles(run)
+    others = {k: seen.get(f[0], []) for k, f in priced.items()}
     model = start_model()
     print(f"Cleaning part names ({label(model)}) ...", file=sys.stderr, flush=True)
     try:
-        names = clean_names(priced, model)
+        names = clean_names(priced, model, others=others)
     except NamesFailed as e:
         raise Stop(f"{e}. No names were written.\n" + resume_hint(run, vehicle)) from None
     out = []
