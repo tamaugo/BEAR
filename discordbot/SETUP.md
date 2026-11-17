@@ -159,7 +159,7 @@ spending more than that; the OpenRouter key's own cap is the real limit (`BEAR-K
 | Live log | `journalctl -u bear-bot -f` (Ctrl+C to stop watching) |
 | Restart | `systemctl restart bear-bot` (a running folder is lost; `/run` it again) |
 | Update to the latest `discord-bear` | Type **/update** in Discord (anyone can; it refuses while folders are running unless `force:True`), or `/status` first and then `sudo bash /opt/bear/discordbot/deploy/setup.sh` on the VM. `/update` works once `setup.sh` has been run by hand after this change (it installs `bear-update.path`, which runs `setup.sh` as root when the bot leaves a note). Its output: `journalctl -u bear-update`. With §7 set up the error channel says 🔴 down, then 🟢 up; a failed update says which step failed. |
-| Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_SIM`, `BEAR_RENAME_OFFER`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
+| Change a setting | `nano /opt/bear/.env`. `BEAR_RUN_CAP_USD`, `BEAR_NAME_MODEL`, `BEAR_NO_NUMBER`, `BEAR_NO_NUMBER_NAMER`, `BEAR_SIM`, `BEAR_RENAME_OFFER`, `BEAR_RENAME_WAIT` apply to the next `/run`; anything else needs a restart. |
 | Bring back `/run`'s rename offer (off since 2026-10-25) | In `.env`: `BEAR_RENAME_OFFER=1`. No restart. `/rename` works either way. |
 | Give people longer to type a SKU | In `.env`: `BEAR_RENAME_WAIT=120` (seconds; default 60; only with the offer on). No restart. |
 | What was renamed | `cat /var/lib/bear/runs/renames/renames.log` (one line per rename: when, channel, folder, SKU, what happened, photos, zips) |

@@ -71,6 +71,7 @@ as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_discord_offline.py"
 as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_discord_look_offline.py"
 as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_partid_offline.py"
 as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_agent3_validator.py"
+as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_no_number_offline.py"
 if ! as_bear "$DIR/.venv/bin/python" "$DIR/tests/test_discord_flow_offline.py" >"$DATA/flow-test.log" 2>&1; then
   tail -n 25 "$DATA/flow-test.log"
   echo "The Discord flow test failed (full output: $DATA/flow-test.log). Nothing was started."

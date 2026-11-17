@@ -38,6 +38,8 @@ Settings come from the environment, then .env at the repo root (discordbot/SETUP
   PART_ID_CHANNEL_ID   the #part-id channel (blank: the channel named part-id)
   BEAR_KEEP_DAYS       days a run's photos stay on the server (4; 0 = for good). They stay in Discord
   BEAR_EBAY_DAILY_LIMIT  eBay's daily call allowance (5000); the error channel hears at 80% of it
+  BEAR_NO_NUMBER       on prices parts with no part number by what they are (off); read at each /run
+  BEAR_NO_NUMBER_NAMER a vision model that names those parts (blank: stage 1's description, no extra cost)
 Looking after itself (upkeep.py): every /run is added to the usage log; once a day old photos are
 cleared and the keys, credit and disk are checked (the error channel hears only about problems);
 each Monday the error channel gets the week's summary. /health and /summary show both at any time,

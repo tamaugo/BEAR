@@ -22,6 +22,13 @@ in the channel topic.
    bot retries only the names twice before reporting.
 7. The card in the channel ends green with the spreadsheet, or red with what to do.
 
+A part with **no part number** (a door handle, a towing eye, a badge) can be priced by what it is, when
+`BEAR_NO_NUMBER=on` (off until the owner switches it on): stage 1's description of the part, an eBay search for
+the channel's car + that part, Jev (looking at the photo) keeps only listings of that kind of part, and BEAR's
+usual price rule. The side the yard wrote on the part (NF, OR ...) goes first in the name; the line has no number
+and links the listing the price came from. Not sure (fewer than 3 such listings) leaves the FAILED row as before.
+`bear2/stage4_no_number.py`; about 0.03p a part.
+
 Unpriced photos get up to 3 eBay search-by-image suggestions, shaded, to check by eye.
 `#part-id` is separate: a photo posted there gets Jev's top 3 part numbers to pick from (`partid/`). A part
 with no number is marked 🚫 and looked up on eBay by its photo; `/sheet` lists the look-alikes under it.

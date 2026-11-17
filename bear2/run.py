@@ -10,6 +10,7 @@ import json, sys, threading, concurrent.futures as cf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import common as c, stage1_read as s1m, stage2_numbers as s2, stage2b_rescue as s2b, stage3_listing as s3, assemble, image_hints
+import stage4_no_number as s4
 
 FAIL1 = "FAILED | Agent 1 | Could Not Produce Clear Part Number"
 FAIL_NF = "FAILED | Agent 2 | No eBay Listing Found"
@@ -99,6 +100,24 @@ def no_match_fail(s1):
 
 
 def process(name, s1, vehicle, make, photo_path=None):
+    """Stages 2-3 on one photo's read; then, only if they could not find a number and stage 1 read no
+    real number at all, stage 4 prices the part by what it is (BEAR_NO_NUMBER=on). A not-sure stage 4
+    keeps the FAILED row, so nothing BEAR prices today can change."""
+    line, tr = process_number(name, s1, vehicle, make, photo_path)
+    if line.endswith(FAIL1) and s1 and s4.enabled() and not s4.has_real_number(s1):
+        try:
+            priced, tr["no_number"] = s4.price(name, s1, vehicle, photo_path)
+        except Exception as e:   # eBay or Jev failing here keeps today's row; a spend stop still stops
+            if stops_run(e):
+                raise
+            priced, tr["no_number"] = None, {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+        if priced:
+            tr["market_titles"] = tr["no_number"].pop("market_titles", [])
+            return priced, tr
+    return line, tr
+
+
+def process_number(name, s1, vehicle, make, photo_path=None):
     tr = {"s1": s1}
     if not s1 or not s1.get("candidates"):
         return f"{name} | {FAIL1}", tr

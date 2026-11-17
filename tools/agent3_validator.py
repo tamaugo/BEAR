@@ -325,6 +325,10 @@ def validate_rows(rows, input_index, input_filenames):
             )
             continue
         input_partnums = {rec["part_number_norm"] for rec in records if not rec["is_failed"]}
+        if part_number is None and "" in input_partnums:
+            # A part priced with no part number (bear2/stage4_no_number.py): its input line has a
+            # blank number and the part info ends at the name, so there is nothing to cross-check.
+            continue
         if part_number is None or part_number not in input_partnums:
             row.marks.append(
                 f"part number {part_number!r} not found among input records for "

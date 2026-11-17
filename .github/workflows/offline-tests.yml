@@ -21,7 +21,8 @@ jobs:
         run: |
           set -e
           for t in test_names_offline test_discord_offline test_discord_look_offline \
-                   test_discord_flow_offline test_partid_offline test_agent3_validator; do
+                   test_discord_flow_offline test_partid_offline test_agent3_validator \
+                   test_no_number_offline; do
             echo "== $t"
             python tests/$t.py
           done

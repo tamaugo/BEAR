@@ -35,7 +35,7 @@ explain things in plain English, and keep pull request descriptions plain.
 
 | Where | What it is | State |
 |---|---|---|
-| `bear2/` | The `/run` pipeline: `run.py` (stages 1-3), `stage1_read.py` (photo read), `stage2_numbers.py` + `stage2b_rescue.py` (eBay checks), `stage3_listing.py` (pick listing, price), `assemble.py` (part names, spreadsheet), `common.py` (eBay, OpenRouter, spend ledger) | Live |
+| `bear2/` | The `/run` pipeline: `run.py` (stages 1-3), `stage1_read.py` (photo read), `stage2_numbers.py` + `stage2b_rescue.py` (eBay checks), `stage3_listing.py` (pick listing, price), `stage4_no_number.py` (parts with no number, off unless `BEAR_NO_NUMBER=on`), `assemble.py` (part names, spreadsheet), `common.py` (eBay, OpenRouter, spend ledger) | Live |
 | `bear2/simulate.py` | Fake run for dev mode (`BEAR_SIM`), no credits | Live (tests) |
 | `bear2/score.py`, `cmp_s1.py` | Old scoring helpers | History |
 | `discordbot/` | The bot: `bot.py` (commands, runs), `look.py` (every post's wording), `folders.py` (folders, error codes), `upkeep.py` (usage log, weekly summary, housekeeping, health), `heartbeat.py`, `renames.py` | Live |
@@ -52,7 +52,8 @@ explain things in plain English, and keep pull request descriptions plain.
 
 **Tests** (free, no network, need `discord.py` and Pillow): run each of
 `tests/test_names_offline.py`, `test_discord_offline.py`, `test_discord_look_offline.py`,
-`test_discord_flow_offline.py`, `test_partid_offline.py`, `test_agent3_validator.py` with
+`test_discord_flow_offline.py`, `test_partid_offline.py`, `test_agent3_validator.py`,
+`test_no_number_offline.py` with
 `python3`. All must end with "passed".
 
 **Server updates:** the owner runs `bash /opt/bear/discordbot/deploy/setup.sh` on the VM. It pulls

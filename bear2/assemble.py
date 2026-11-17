@@ -19,7 +19,7 @@ saved run redoes only the names (the photo reads and eBay results are not paid f
 import json, os, re, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-import common as c
+import common as c, stage4_no_number
 
 MODEL = "qwen/qwen3.8-flash"   # default name model for every setup; update with the setups
 NAME_MODELS = {MODEL: "Qwen 3.8 Flash",
@@ -222,12 +222,36 @@ def market_titles(run):
     return {img: t.get("market_titles") or [] for img, t in trace.items() if isinstance(t, dict)}
 
 
+POSITION_WORDS = {"front", "rear", "left", "right", "near", "off", "side", "nearside", "offside", "n/s", "o/s",
+                  "ns", "os", "nsf", "osf", "nsr", "osr", "lh", "rh", "driver", "passenger"}
+
+
+def no_number_sides(run):
+    """{photo name: side code or None} for the parts stage 4 priced with no part number (trace.json)."""
+    try:
+        trace = json.loads((Path(run) / "trace.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return {img: (t.get("no_number") or {}).get("side") for img, t in trace.items()
+            if isinstance(t, dict) and isinstance(t.get("no_number"), dict)}
+
+
+def no_number_name(name, side):
+    """The name of a part priced with no part number (stage 4). Its listing can be for another side or
+    position of the same part (owner: a door handle is a door handle), so the listing's position words
+    are dropped and the side the yard wrote on our part goes first: "Near Side Front Door Handle"."""
+    words = [w for w in name.split() if w.lower() not in POSITION_WORDS] or name.split()
+    lead = stage4_no_number.SIDES.get(side or "", "")
+    return " ".join(([lead] if lead else []) + words)
+
+
 def part_line(vehicle, f, name):
     """The finished results line for a priced row, exactly as it is written to the results.
-    A run saved before the category field (5 fields, no category) gets a blank category."""
+    A run saved before the category field (5 fields, no category) gets a blank category.
+    A part priced with no part number (stage 4) has a blank number: the line ends at the name."""
     img, pn, price, url = f[0], f[1], f[-2], f[-1]
     category = f[3] if len(f) >= 6 else ""
-    info = f"{vehicle} - {name} {c.norm(pn)}"
+    info = f"{vehicle} - {name} {c.norm(pn)}".rstrip()
     return f"{info} | {price} | {category} | {url} | {img}"
 
 
@@ -264,13 +288,17 @@ def main(run_dir, vehicle):
         names = clean_names(priced, model, others=others)
     except NamesFailed as e:
         raise Stop(f"{e}. No names were written.\n" + resume_hint(run, vehicle)) from None
+    sides = no_number_sides(run)
     out = []
     for k, f in enumerate(rows):
         img = f[0]
         if f[1] == "FAILED":
             out.append((image_no(img), f"FAILED - {f[2]} - {f[3]} | | | | {img}"))
             continue
-        out.append((image_no(img), part_line(vehicle, f, names[f"i{k}"])))
+        name = names[f"i{k}"]
+        if not f[1] and img in sides:
+            name = no_number_name(name, sides[img])
+        out.append((image_no(img), part_line(vehicle, f, name)))
     out.sort(key=lambda x: x[0])                      # stable: same number keeps arrival order
     text = "\n".join(l for _, l in out) + "\n"
     (run / "agent3_results.txt").write_text(text)

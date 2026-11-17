@@ -96,19 +96,25 @@ def _error_message(body: bytes, code: int) -> str:
 
 
 def call_decisions(model: str, state, questions: dict, *, api_key: str = None,
-                    timeout: float = 60.0, max_attempts: int = MAX_ATTEMPTS, wait=None) -> dict:
+                    timeout: float = 60.0, max_attempts: int = MAX_ATTEMPTS, wait=None,
+                    assets: dict = None) -> dict:
     """POST one Decisions request and return the parsed JSON response.
 
     `state` is the content being evaluated (string, dict, or list); `questions` is
     a dict of question-key -> question spec. `wait(error, attempt)` gives the seconds
     before retry `attempt` (0 = the first retry); default 1s, 2s, 4s ... BEAR's /run
     passes its chat backoff (bear2/common.py) so Jev gets as long as the chat calls.
+    `assets`: photos, {"@key": {"type": "image", "format": "jpeg", "data_base64": ...}}, each
+    referenced in `state` by its key (Jev reads a photo wherever its key is written).
     """
     def pause(err, attempt):
         time.sleep(wait(err, attempt - 1) if wait else BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
 
     api_key = api_key or resolve_api_key()
-    body = json.dumps({"model": model, "state": state, "questions": questions}).encode("utf-8")
+    payload = {"model": model, "state": state, "questions": questions}
+    if assets:
+        payload["assets"] = assets
+    body = json.dumps(payload).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
