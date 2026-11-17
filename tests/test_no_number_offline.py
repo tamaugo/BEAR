@@ -82,9 +82,10 @@ def unit_checks():
     check("car two-word make", s4.car_words("LAND ROVER DISCOVERY 3 2006"), "LAND ROVER DISCOVERY")
     check("car unknown", s4.car_words("UNKNOWN VEHICLE"), None)
     check("queries", s4.part_queries("exterior door handle assembly with lock mechanism"),
-          ["exterior door handle", "door handle"])
+          ["exterior door handle", "door handle", "exterior door"])
+    check("queries try the start too", s4.part_queries("crankshaft pulley harmonic balancer")[-1], "crankshaft pulley")
     check("queries drop car words", s4.part_queries("Mazda CX-5 MK1 climate control panel unit", "MAZDA CX-5"),
-          ["climate control panel", "control panel"])
+          ["climate control panel", "control panel", "climate control"])
     check("queries alternatives", s4.part_queries("fuel injector leak off return pipe / fuel rail feed pipe")[0],
           "fuel injector leak off return")
     check("name, side first", a.no_number_name("Rear Door Handle", "NSF"), "Near Side Front Door Handle")

@@ -82,7 +82,8 @@ FILLER = {"a", "an", "the", "of", "car", "used", "assembly", "unit", "complete",
 
 def part_queries(desc, vehicle=""):
     """The part words to search, most specific first: "exterior door handle assembly with lock
-    mechanism" -> ["exterior door handle", "door handle"]. Words of the car itself (a description
+    mechanism" -> ["exterior door handle", "door handle", "exterior door"]; "crankshaft pulley harmonic
+    balancer" -> [..., "harmonic balancer", "crankshaft pulley"]. Words of the car itself (a description
     like "Mazda CX-5 MK1 climate control panel") and engine/fuel words are left out: the car is
     added to every search from the channel."""
     car = {w.lower() for w in re.findall(r"[A-Za-z0-9\-]+", vehicle or "")}
@@ -91,11 +92,11 @@ def part_queries(desc, vehicle=""):
     words = [w for w in re.findall(r"[a-z0-9\-]+", d)
              if w not in FILLER and w not in car and not STOP_WORDS.match(w.upper())][:5]
     out = []
-    for k in range(len(words)):
-        q = " ".join(words[k:])
-        if len(words) - k >= 2 or not out:
+    for q in [words, words[-3:], words[-2:], words[:2]]:   # all, then the end (the part's name), then the start
+        q = " ".join(q)
+        if q and q not in out and (len(q.split()) >= 2 or not out):
             out.append(q)
-    return out[:3]
+    return out[:4]
 
 
 def name_part(photo_path, s1, vehicle):
