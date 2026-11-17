@@ -88,6 +88,9 @@ def unit_checks():
           ["climate control panel", "control panel", "climate control"])
     check("queries alternatives", s4.part_queries("fuel injector leak off return pipe / fuel rail feed pipe")[0],
           "fuel injector leak off return")
+    check("title names the part", s4.names_part("FORD S-MAX CAMSHAFT PULLEY QXWA", "engine timing belt camshaft pulley"), True)
+    check("an engine is not a pulley", s4.names_part("Ford S-Max 2.0 TDCi Reconditioned Engine", "engine timing belt camshaft pulley"), False)
+    check("plural", s4.names_part("MAZDA CX-5 TOW HOOKS", "towing eye hook"), True)
     check("name, side first", a.no_number_name("Rear Door Handle", "NSF"), "Near Side Front Door Handle")
     check("name, no side", a.no_number_name("Towing Eye", None), "Towing Eye")
     check("name, only position words", a.no_number_name("Front", "OS"), "Off Side Front")

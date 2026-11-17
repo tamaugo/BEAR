@@ -12,7 +12,7 @@ How it prices, using what BEAR already has (pilot 2026-11-17, experiments/nonum/
   3. eBay UK text search for "<make> <model> <part>": the car comes from the channel, so every
      listing is already for this car. Photo-similarity search was tried and lost: it found parts
      that look alike off other cars (1 of 17 right).
-  4. Jev, looking at the photo, vetoes listings that are not this kind of part (or are a pair, set or
+  4. titles that don't name the part are dropped (free), then Jev, looking at the photo, vetoes listings that are not this kind of part (or are a pair, set or
      bigger assembly). Side and car are NOT judged: the owner's rule is that a door handle is a door
      handle when the car is the same.
   5. at least MIN_KEPT listings left: BEAR's own price rule (used first, most common x.99 price,
@@ -120,13 +120,26 @@ def name_part(photo_path, s1, vehicle):
     return d.get("part") or (s1 or {}).get("part_description"), side or (s if s in SIDES else None)
 
 
+def names_part(title, words):
+    """Does the listing title name the part? One of the search's last two words (the part's own name:
+    "pulley", "connector housing") must be in it, so a long search that also finds a whole engine or a
+    bumper does not send those on. Free; Jev still judges every listing that passes."""
+    t = re.findall(r"[a-z0-9]+", (title or "").lower())
+    for w in words.split()[-2:]:
+        stem = w.replace("-", "")[:5]
+        if len(stem) >= 3 and any(x.startswith(stem) for x in t):
+            return True
+    return False
+
+
 def search(car, desc):  # car: car_words(vehicle)
-    """eBay UK listings for car + part, trying shorter part words until one search finds some."""
+    """eBay UK listings for car + part whose titles name the part, trying shorter part words until a
+    search finds at least MIN_KEPT."""
     tried = []
     for words in part_queries(desc, car):
         q = f"{car} {words}"
         tried.append(q)
-        items = c.ebay_search_raw(q, limit=SEARCH_LIMIT)
+        items = [it for it in c.ebay_search_raw(q, limit=SEARCH_LIMIT) if names_part(it.get("title"), words)]
         if len(items) >= MIN_KEPT:
             return items, tried
     return [], tried
