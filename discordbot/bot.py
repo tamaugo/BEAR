@@ -15,6 +15,7 @@ in the folder and logs the answers; nothing is posted until there is enough data
 #part-id (partid_bot.py) is apart from all of this: a photo posted there is read by Agent 1, Jev scores
 the readings, and the top 3 come back to pick from, or type your own, plus the location. /sheet there
 posts every part number since the last /sheet as a spreadsheet.
+Anywhere that is not a car channel, any message from a person gets a brick wall picture back, deleted 4 seconds later.
 How every post looks and reads is in look.py (discordbot/FRONTEND.md): each /run is one card,
 edited as it goes, that ends green with the spreadsheet or red with what to do.
 
@@ -74,6 +75,8 @@ MAX_UPLOAD_WAIT = 600     # /run gives up waiting for uploads to stop after this
 CHORES_EVERY = 600        # seconds between looks at the daily and weekly jobs (chores)
 EBAY_CACHE = REPO / "bear2" / "cache"   # where bear2/common.py counts today's eBay calls
 UPDATE_STALE = 45 * 60    # an /update note older than this was never picked up (an update takes 30 minutes at most)
+BRICK_WALL = Path(__file__).resolve().parent / "assets" / "brick-wall.jpg"
+BRICK_WALL_SECONDS = 4    # the brick wall picture deletes itself after this long
 LINK = __import__("re").compile(r"https://discord\.com/channels/\S+")
 
 
@@ -261,13 +264,35 @@ class Bot(discord.Client):
     async def on_message(self, msg):
         """Only #part-id photos are handled here. Text in car channels is left alone: notes
         people type are never read, so they can't change a folder or the sheet. Photos in
-        #part-id go to its own Agent 1 (partid_bot.py)."""
+        #part-id go to its own Agent 1 (partid_bot.py). A message anywhere else (not a car
+        channel) gets the brick wall picture, which deletes itself a few seconds later."""
+        if wants_brick_wall(msg):
+            await brick_wall(msg)
         if (msg.attachments and not msg.author.bot and msg.guild
                 and partid_bot.is_partid(msg.channel, PART_ID_CHANNEL_ID)):
             return await partid_bot.handle(msg, run_env())
 
 
 bot = Bot()
+
+
+def wants_brick_wall(msg):
+    """True for a person's message in this server outside the car channels. Needs CARS_CATEGORY_ID:
+    with it unset every channel is a car channel (see car_channel_problem), so none gets the picture."""
+    if CARS_CATEGORY_ID is None or not msg.guild or msg.author.bot:
+        return False
+    if msg.type not in (discord.MessageType.default, discord.MessageType.reply):
+        return False   # joins, pins and the like are not people talking
+    return getattr(msg.channel, "category_id", None) != CARS_CATEGORY_ID   # a thread counts as its channel
+
+
+async def brick_wall(msg):
+    """Reply with the brick wall picture; Discord deletes it BRICK_WALL_SECONDS later. A joke, so
+    any failure (no permission to post there, the message gone) is only logged."""
+    try:
+        await msg.reply(file=discord.File(BRICK_WALL), mention_author=False, delete_after=BRICK_WALL_SECONDS)
+    except (discord.DiscordException, OSError):
+        log.debug("can't post the brick wall in %s", msg.channel, exc_info=True)
 
 
 def car_of(ch):

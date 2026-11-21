@@ -298,7 +298,46 @@ async def main():
         await B.bot.on_message(m)
     check("typed notes are kept", [m.delete_calls for m in notes], [0, 0, 0])
     check("typed notes get no notice", ch.sent, [])
+    # Outside the car channels a person's message gets the brick wall picture, which deletes itself
+    # after 4 seconds. Car channels (this one is in category 555), bots, other kinds of message and
+    # the picture itself (a bot's) get nothing; with no car category set, nothing is a non-car channel.
+    walls = []
+
+    def talk(channel, who=PERSON, kind=B.discord.MessageType.default, guild=True):
+        m = NS(author=who, guild=guild, channel=channel, type=kind, attachments=[])
+
+        async def reply(**kw):
+            walls.append(kw)
+        m.reply = reply
+        return m
+    lounge = NS(id=30, category_id=556)
+    thread = NS(id=31, category_id=556)      # a thread reports its parent's category
+    car_thread = NS(id=32, category_id=555)
+    no_category = NS(id=33)                  # a channel outside any category
+    await B.bot.on_message(talk(ch))
+    await B.bot.on_message(talk(car_thread))
+    await B.bot.on_message(talk(lounge, who=ME))
+    await B.bot.on_message(talk(lounge, kind=B.discord.MessageType.new_member))
+    await B.bot.on_message(talk(lounge, guild=None))
+    check("car channels, bots, joins and DMs get no brick wall", walls, [])
+    await B.bot.on_message(talk(lounge))
+    await B.bot.on_message(talk(thread, kind=B.discord.MessageType.reply))
+    await B.bot.on_message(talk(no_category))
+    check("other channels each get one brick wall", len(walls), 3)
+    check("brick wall deletes itself after 4 seconds", {w["delete_after"] for w in walls}, {4})
+    check("brick wall is the picture, without pinging", {(w["file"].filename, w["mention_author"]) for w in walls},
+          {("brick-wall.jpg", False)})
+    check("brick wall picture is in the repo", B.BRICK_WALL.is_file(), True)
+
+    async def refused(**kw):
+        raise B.discord.Forbidden(NS(status=403, reason="no"), "no permission")
+    m = talk(lounge)
+    m.reply = refused
+    await B.bot.on_message(m)      # no permission to post there: nothing raised
     B.CARS_CATEGORY_ID = None
+    walls.clear()
+    await B.bot.on_message(talk(lounge))
+    check("no car category set: no brick wall", walls, [])
     await run(ch)
     run_dir = next((TMP / "car-14-14").iterdir())
     check("notes don't change the photos", sorted(p.name for p in (run_dir / "photos").iterdir()),
